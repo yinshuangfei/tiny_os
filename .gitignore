@@ -21,3 +21,8 @@ rad.json
 *.flf
 #Test results file
 TestResults.xml
+
+compile_commands.json
+*.o
+*.d
+kernel/kernel
