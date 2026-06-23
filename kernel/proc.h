@@ -85,7 +85,13 @@ struct trapframe {
 	/* 280 */ uint64 t6;
 };
 
-enum procstate { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+enum procstate {
+	UNUSED,		/** 未使用 */
+	SLEEPING,	/** 睡眠态 */
+	RUNNABLE,	/** 就绪态 */
+	RUNNING,	/** 运行态 */
+	ZOMBIE		/** 僵尸态 */
+};
 
 // Per-process state
 struct proc {
@@ -103,9 +109,9 @@ struct proc {
 	uint64 kstack;               // Virtual address of kernel stack
 	uint64 sz;                   // Size of process memory (bytes)
 	pagetable_t pagetable;       // User page table
-	// struct trapframe *trapframe; // data page for trampoline.S
-	// struct context context;      // swtch() here to run process
-	// struct file *ofile[NOFILE];  // Open files
-	// struct inode *cwd;           // Current directory
+	struct trapframe *trapframe; // data page for trampoline.S
+	struct context context;      // swtch() here to run process
+	struct file *ofile[NOFILE];  // Open files
+	struct inode *cwd;           // Current directory
 	char name[16];               // Process name (debugging)
 };

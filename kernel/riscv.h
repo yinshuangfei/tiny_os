@@ -79,6 +79,7 @@ static inline void w_sstatus(uint64 x)
 
 // Supervisor Address Translation and Protection;
 // holds the address of the page table.
+// 设置页表功能的开启和关闭
 static inline void w_satp(uint64 x)
 {
 	asm volatile("csrw satp, %0" : : "r" (x));
@@ -88,6 +89,54 @@ static inline uint64 r_satp()
 {
 	uint64 x;
 	asm volatile("csrr %0, satp" : "=r" (x) );
+	return x;
+}
+
+// Supervisor Scratch register, for early trap handler in trampoline.S.
+static inline void w_sscratch(uint64 x)
+{
+	asm volatile("csrw sscratch, %0" : : "r" (x));
+}
+
+static inline void w_mscratch(uint64 x)
+{
+	asm volatile("csrw mscratch, %0" : : "r" (x));
+}
+
+// Supervisor Trap Cause
+static inline uint64 r_scause()
+{
+	uint64 x;
+	asm volatile("csrr %0, scause" : "=r" (x) );
+	return x;
+}
+
+// Supervisor Trap Value
+static inline uint64 r_stval()
+{
+	uint64 x;
+	asm volatile("csrr %0, stval" : "=r" (x) );
+	return x;
+}
+
+// Machine-mode Counter-Enable
+static inline void w_mcounteren(uint64 x)
+{
+	asm volatile("csrw mcounteren, %0" : : "r" (x));
+}
+
+static inline uint64 r_mcounteren()
+{
+	uint64 x;
+	asm volatile("csrr %0, mcounteren" : "=r" (x) );
+	return x;
+}
+
+// machine-mode cycle counter
+static inline uint64 r_time()
+{
+	uint64 x;
+	asm volatile("csrr %0, time" : "=r" (x) );
 	return x;
 }
 
@@ -105,6 +154,21 @@ static inline uint64 r_sie()
 static inline void w_sie(uint64 x)
 {
 	asm volatile("csrw sie, %0" : : "r" (x));
+}
+
+// machine exception program counter, holds the
+// instruction address to which a return from
+// exception will go.
+static inline void w_sepc(uint64 x)
+{
+	asm volatile("csrw sepc, %0" : : "r" (x));
+}
+
+static inline uint64 r_sepc()
+{
+	uint64 x;
+	asm volatile("csrr %0, sepc" : "=r" (x) );
+	return x;
 }
 
 // Machine Exception Delegation
@@ -133,6 +197,21 @@ static inline void w_mideleg(uint64 x)
 	asm volatile("csrw mideleg, %0" : : "r" (x));
 }
 
+// Supervisor Trap-Vector Base Address
+// low two bits are mode.
+static inline void w_stvec(uint64 x)
+{
+	asm volatile("csrw stvec, %0" : : "r" (x));
+}
+
+static inline uint64 r_stvec()
+{
+	uint64 x;
+	asm volatile("csrr %0, stvec" : "=r" (x) );
+	return x;
+}
+
+
 // enable device interrupts
 static inline void intr_on()
 {
@@ -159,8 +238,15 @@ static inline uint64 r_sp()
 	return x;
 }
 
-// read and write tp, the thread pointer, which holds
+// read and write tp, the Thread Pointer, which holds
 // this core's hartid (core number), the index into cpus[].
+// Thread Pointer（线程指针）, 存储当前正在运行的线程/任务的局部存储区域的基地址
+// 硬件编号：x4
+/**
+ * 在进行任务切换时，为了保证当前线程的状态不丢失，操作系统会将 tp 寄存器的值保存到当前
+ * 任务的上下文结构（Task Context）中；当调度器切换到下一个任务时，再从新任务的上下文中
+ * 恢复 tp 的值
+ */
 static inline uint64 r_tp()
 {
 	uint64 x;
@@ -173,6 +259,8 @@ static inline void w_tp(uint64 x)
 	asm volatile("mv tp, %0" : : "r" (x));
 }
 
+// Return Address（返回地址） 寄存器的缩写
+// 硬件编号: x1
 static inline uint64 r_ra()
 {
 	uint64 x;

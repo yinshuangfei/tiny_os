@@ -74,19 +74,19 @@ uartputc(int c)
 // output register to be empty.
 void uartputc_sync(int c)
 {
-//   push_off();
+	push_off();
 
-//   if(panicked){
-//     for(;;)
-//       ;
-//   }
+	//   if(panicked){
+	//     for(;;)
+	//       ;
+	//   }
 
 	// wait for Transmit Holding Empty to be set in LSR.
 	// while((ReadReg(LSR) & LSR_TX_IDLE) == 0)
 	// 	;
 	WriteReg(THR, c);
 
-//   pop_off();
+	pop_off();
 }
 
 void uartinit(void)

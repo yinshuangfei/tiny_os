@@ -54,7 +54,7 @@ void kvminithart()
 
 // Return the address of the PTE in page table pagetable
 // that corresponds to virtual address va.  If alloc!=0,
-// create any required page-table pages.
+// **create** any required page-table pages.
 //
 // The risc-v Sv39 scheme has three levels of page-table
 // pages. A page-table page contains 512 64-bit PTEs.
@@ -124,8 +124,6 @@ int mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 	uint64 a, last;
 	pte_t *pte;
 
-	printf("mmap: va:0x%lx, pa:0x%lx, size:%ld\n", va, pa, size);
-
 	a = PGROUNDDOWN(va);
 	last = PGROUNDDOWN(va + size - 1);
 
@@ -141,6 +139,140 @@ int mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 		pa += PGSIZE;
 	}
 	return 0;
+}
+
+// Remove npages of mappings starting from va. va must be
+// page-aligned. The mappings must exist.
+// Optionally free the physical memory.
+void uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
+{
+	uint64 a;
+	pte_t *pte;
+
+	if ((va % PGSIZE) != 0)
+		panic("uvmunmap: not aligned");
+
+	for (a = va; a < va + npages*PGSIZE; a += PGSIZE) {
+		if ((pte = walk(pagetable, a, 0)) == 0)
+			panic("uvmunmap: walk");
+		if ((*pte & PTE_V) == 0)
+			panic("uvmunmap: not mapped");
+		if (PTE_FLAGS(*pte) == PTE_V)
+			panic("uvmunmap: not a leaf");
+		if (do_free) {
+			uint64 pa = PTE2PA(*pte);
+			kfree((void*)pa);
+		}
+		*pte = 0;
+	}
+}
+
+// create an empty user page table.
+// returns 0 if out of memory.
+pagetable_t uvmcreate()
+{
+	pagetable_t pagetable;
+	pagetable = (pagetable_t) kalloc();
+	if (pagetable == 0)
+		return 0;
+	memset(pagetable, 0, PGSIZE);
+	return pagetable;
+}
+
+// Load the user initcode into address 0 of pagetable,
+// for the very first process.
+// sz must be less than a page.
+void uvminit(pagetable_t pagetable, uchar *src, uint sz)
+{
+	char *mem;
+
+	if (sz >= PGSIZE)
+		panic("inituvm: more than a page");
+
+	mem = kalloc();
+	memset(mem, 0, PGSIZE);
+	mappages(pagetable, 0, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U);
+	memmove(mem, src, sz);
+}
+
+// Recursively free page-table pages.
+// All leaf mappings must already have been removed.
+void freewalk(pagetable_t pagetable)
+{
+	// there are 2^9 = 512 PTEs in a page table.
+	for (int i = 0; i < 512; i++) {
+		pte_t pte = pagetable[i];
+		if ((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+			// this PTE points to a lower-level page table.
+			uint64 child = PTE2PA(pte);
+			freewalk((pagetable_t)child);
+			pagetable[i] = 0;
+		} else if(pte & PTE_V) {
+			panic("freewalk: leaf");
+		}
+	}
+	kfree((void*)pagetable);
+}
+
+// Free user memory pages,
+// then free page-table pages.
+void uvmfree(pagetable_t pagetable, uint64 sz)
+{
+	if (sz > 0)
+		uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
+	freewalk(pagetable);
+}
+
+// Given a parent process's page table, copy
+// its memory into a child's page table.
+// Copies both the page table and the
+// physical memory.
+// returns 0 on success, -1 on failure.
+// frees any allocated pages on failure.
+int uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
+{
+	pte_t *pte;
+	uint64 pa, i;
+	uint flags;
+	char *mem;
+
+	for (i = 0; i < sz; i += PGSIZE) {
+		if ((pte = walk(old, i, 0)) == 0)
+			panic("uvmcopy: pte should exist");
+
+		if ((*pte & PTE_V) == 0)
+			panic("uvmcopy: page not present");
+
+		pa = PTE2PA(*pte);
+		flags = PTE_FLAGS(*pte);
+
+		if ((mem = kalloc()) == 0)
+			goto err;
+
+		memmove(mem, (char*)pa, PGSIZE);
+
+		if (mappages(new, i, PGSIZE, (uint64)mem, flags) != 0) {
+			kfree(mem);
+			goto err;
+		}
+	}
+	return 0;
+
+err:
+	uvmunmap(new, 0, i / PGSIZE, 1);
+	return -1;
+}
+
+// mark a PTE invalid for user access.
+// used by exec for the user stack guard page.
+void uvmclear(pagetable_t pagetable, uint64 va)
+{
+	pte_t *pte;
+
+	pte = walk(pagetable, va, 0);
+	if (pte == 0)
+		panic("uvmclear");
+	*pte &= ~PTE_U;
 }
 
 // Copy from kernel to user.
@@ -193,4 +325,9 @@ int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 		srcva = va0 + PGSIZE;
 	}
 	return 0;
+}
+
+void dump_pagetable(void)
+{
+	// printf("mmap: va:0x%lx, pa:0x%lx, size:%ld\n", va, pa, size);
 }

@@ -24,7 +24,7 @@ void acquire(struct spinlock *lk)
 	//   amoswap.w.aq a5, a5, (s1)
 	// GCC 提供的一个内置原子操作函数, 以不可分割（原子）的方式，读取指定内存地址
 	// 的旧值，并将该地址的值设置为新值，最后返回读取到的旧值
-	while(__sync_lock_test_and_set(&lk->locked, 1) != 0)
+	while (__sync_lock_test_and_set(&lk->locked, 1) != 0)
 		;
 
 	// Tell the C compiler and the processor to not move loads or stores

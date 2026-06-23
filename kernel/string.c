@@ -21,12 +21,35 @@ void *memmove(void *dst, const void *src, uint n)
 	if (s < d && s + n > d) {
 		s += n;
 		d += n;
-		while(n-- > 0)
+		while (n-- > 0)
 			*--d = *--s;
 	} else {
-		while(n-- > 0)
+		while (n-- > 0)
 			*d++ = *s++;
 	}
 
 	return dst;
+}
+
+// Like strncpy but guaranteed to NUL-terminate.
+char* safestrcpy(char *s, const char *t, int n)
+{
+	char *os;
+
+	os = s;
+	if (n <= 0)
+		return os;
+	while (--n > 0 && (*s++ = *t++) != 0)
+		;
+	*s = 0;
+	return os;
+}
+
+int strlen(const char *s)
+{
+	int n;
+
+	for (n = 0; s[n]; n++)
+		;
+	return n;
 }
