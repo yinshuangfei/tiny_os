@@ -4,9 +4,10 @@
 #include "spinlock.h"
 
 // Saved registers for kernel context switches.
+// TODO: 为什么是这 14 个寄存器
 struct context {
-	uint64 ra;
-	uint64 sp;
+	uint64 ra;	// 返回地址（Return Address）, 寄存器编号：x1
+	uint64 sp;	// 栈指针（Stack Pointer）, 寄存器编号：x2
 
 	// callee-saved
 	uint64 s0;
@@ -110,6 +111,7 @@ struct proc {
 	uint64 sz;                   // Size of process memory (bytes)
 	pagetable_t pagetable;       // User page table
 	struct trapframe *trapframe; // data page for trampoline.S
+	// 当前 proc 的上下文
 	struct context context;      // swtch() here to run process
 	struct file *ofile[NOFILE];  // Open files
 	struct inode *cwd;           // Current directory

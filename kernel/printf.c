@@ -94,6 +94,9 @@ void printf(char *fmt, ...)
 			break;
 
 		switch (c) {
+		// case 'c':
+		// 	consputc(va_arg(ap, int));
+		// 	break;
 		case 'o':
 			printint(va_arg(ap, int), 8, 1);
 			break;

@@ -14,6 +14,7 @@ void brelse(struct buf *b);
 void consputc(int c);
 int consolewrite(int user_src, uint64 src, int n);
 int consoleread(int user_dst, uint64 dst, int n);
+void consoleintr(int c);
 void consoleinit(void);
 
 /** file.c */
@@ -34,6 +35,8 @@ void main();
 /** plic.c */
 void plicinit(void);
 void plicinithart(void);
+int plic_claim(void);
+void plic_complete(int irq);
 
 /** printf.c */
 void printf(char*, ...);
@@ -50,7 +53,10 @@ pagetable_t proc_pagetable(struct proc *p);
 void proc_freepagetable(pagetable_t pagetable, uint64 sz);
 void userinit(void);
 void scheduler(void) __attribute__((noreturn));
+void sched(void);
+void yield(void);
 void forkret(void);
+void wakeup(void *chan);
 int either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 
@@ -82,6 +88,9 @@ void kerneltrap();
 void uartinit(void);
 void uartputc(int);
 void uartputc_sync(int);
+void uartstart();
+int uartgetc(void);
+void uartintr(void);
 
 /** virtio_disk.c */
 void virtio_disk_init(void);

@@ -120,6 +120,7 @@ found:
 	// Set up new context to start executing at forkret,
 	// which returns to user space.
 	memset(&p->context, 0, sizeof(p->context));
+	// 指定了运行地址为 forkret
 	p->context.ra = (uint64)forkret;
 	p->context.sp = p->kstack + PGSIZE;
 
@@ -201,6 +202,16 @@ uchar initcode[] = {
 	0x00, 0x00, 0x00, 0x00
 };
 
+// 用户态触发一次 ecall，由内核打印一行消息。
+// 这样不依赖用户态直接访问 UART MMIO。
+uchar printcode[] = {
+    // ecall
+    0x73, 0x00, 0x00, 0x00,
+
+    // j .
+    0x6f, 0x00, 0x00, 0x00,
+};
+
 // Set up first user process.
 void userinit(void)
 {
@@ -211,7 +222,7 @@ void userinit(void)
 
 	// allocate one user page and copy init's instructions
 	// and data into it.
-	uvminit(p->pagetable, initcode, sizeof(initcode));
+	uvminit(p->pagetable, printcode, sizeof(printcode));
 	p->sz = PGSIZE;
 
 	// prepare for the very first "return" from kernel to user.
@@ -241,14 +252,16 @@ void scheduler(void)
 	c->proc = 0;
 	for (;;) {
 		// Avoid deadlock by ensuring that devices can interrupt.
-		printf("sche: %d noff:%d, intena:%d\n",
-			cpuid(), mycpu()->noff, mycpu()->intena);
+		printf("sche: cpu:%d, noff:%d, intena:%d, sstatus:0x%x\n",
+			cpuid(), mycpu()->noff, mycpu()->intena, r_sstatus());
+		// 开启中断后，触发的中断会进入 kernelvec.S 的 kernelvec 函数
+		// 跳转入口在 trapinithart 函数中确定
 		intr_on();
-		printf("sche: %d 12\n", cpuid());
+		printf("sche: cpu:%d, noff:%d, intena:%d, sstatus:0x%x\n",
+			cpuid(), mycpu()->noff, mycpu()->intena, r_sstatus());
 
 		int found = 0;
 		for (p = proc; p < &proc[NPROC]; p++) {
-			printf("sche: %d 1\n", cpuid());
 			acquire(&p->lock);
 			if (p->state == RUNNABLE) {
 				// Switch to chosen process.  It is the process's job
@@ -257,11 +270,11 @@ void scheduler(void)
 				p->state = RUNNING;
 				c->proc = p;
 
-				printf("sche: %d 2\n", cpuid());
+				printf("sche: cpu:%d, schedule into -> '%s'\n", cpuid(), p->name);
 				/** 完成进程切换, 调用汇编代码 swtch.S */
 				swtch(&c->context, &p->context);
 				/** 返回，表示切换会调度程序 */
-				printf("sche: %d 3\n", cpuid());
+				printf("sche: cpu:%d, schedule back\n", cpuid());
 
 				// Process is done running for now.
 				// It should have changed its p->state before coming back.
@@ -272,6 +285,7 @@ void scheduler(void)
 			release(&p->lock);
 		}
 		if (found == 0) {
+			printf("not find proc, wfi\n");
 			intr_on();
 			/**
 			 * 让 CPU 暂停当前的执行流，进入低功耗等待状态，直到有中断
@@ -283,10 +297,47 @@ void scheduler(void)
 	}
 }
 
+// Switch to scheduler.  Must hold only p->lock
+// and have changed proc->state. Saves and restores
+// intena because intena is a property of this
+// kernel thread, not this CPU. It should
+// be proc->intena and proc->noff, but that would
+// break in the few places where a lock is held but
+// there's no process.
+void sched(void)
+{
+	int intena;
+	struct proc *p = myproc();
+
+	if (!holding(&p->lock))
+		panic("sched p->lock");
+	if (mycpu()->noff != 1)
+		panic("sched locks");
+	if (p->state == RUNNING)
+		panic("sched running");
+	if (intr_get())
+		panic("sched interruptible");
+
+	intena = mycpu()->intena;
+	swtch(&p->context, &mycpu()->context);
+	mycpu()->intena = intena;
+}
+
+// Give up the CPU for one scheduling round.
+void yield(void)
+{
+	struct proc *p = myproc();
+	acquire(&p->lock);
+	p->state = RUNNABLE;
+	sched();
+	release(&p->lock);
+}
+
 // A fork child's very first scheduling by scheduler()
 // will swtch to forkret.
 void forkret(void)
 {
+	printf("forkret\n");
 	static int first = 1;
 
 	// Still holding p->lock from scheduler.
@@ -301,6 +352,21 @@ void forkret(void)
 	}
 
 	usertrapret();
+}
+
+// Wake up all processes sleeping on chan.
+// Must be called without any p->lock.
+void wakeup(void *chan)
+{
+	struct proc *p;
+
+	for (p = proc; p < &proc[NPROC]; p++) {
+		acquire(&p->lock);
+		if (p->state == SLEEPING && p->chan == chan) {
+			p->state = RUNNABLE;
+		}
+		release(&p->lock);
+	}
 }
 
 // Copy to either a user address, or kernel address,

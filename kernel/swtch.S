@@ -4,9 +4,11 @@
 #
 # Save current registers in old. Load from new.
 
-
 .globl swtch
 swtch:
+        # sd 指令 (Store Doubleword), 将源寄存器中的 64位（8字节）数据，
+        # 写入到指定的内存地址中
+        # sd x10, 16(x2) 表示将 x10 寄存器中的 64位值，写入到 x2 + 16 的内存地址中
         sd ra, 0(a0)
         sd sp, 8(a0)
         sd s0, 16(a0)
@@ -22,6 +24,8 @@ swtch:
         sd s10, 96(a0)
         sd s11, 104(a0)
 
+        # ld 指令 (Load Doubleword), 从内存中读取一个 64位（8字节）的数据，
+        # 并将其加载到目标寄存器中
         ld ra, 0(a1)
         ld sp, 8(a1)
         ld s0, 16(a1)

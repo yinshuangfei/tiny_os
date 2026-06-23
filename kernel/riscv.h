@@ -55,8 +55,18 @@ static inline void w_mepc(uint64 x)
 
 // Supervisor Status Register, sstatus
 #define SSTATUS_SPP (1L << 8)  // Previous mode, 1=Supervisor, 0=User
+// 中断前的状态备份
+// 作用：它是 SIE 发生中断前的“状态快照”。作为一个“状态快照”，专门用来记录在发生异常或
+//       中断（Trap）之前，S-mode 的中断总开关（SIE位）是打开还是关闭的。
+// 行为：当 Trap 发生时，硬件会把 SIE 原来的值复制到 SPIE 中保存起来。
+// 恢复机制：当内核处理完异常，执行 sret（Supervisor Return）指令准备返回被中断的代码
+//          时，硬件会自动把 SPIE 的值复制回 SIE。这样，中断发生前如果中断是打开的，
+//          返回后中断依然是打开的。
 #define SSTATUS_SPIE (1L << 5) // Supervisor Previous Interrupt Enable
 #define SSTATUS_UPIE (1L << 4) // User Previous Interrupt Enable
+// 当前的中断总开关
+// - SIE = 1 时，CPU 允许响应被委托给 S-mode 的中断（例如定时器中断、外设中断等）。
+// - SIE = 0 时，CPU 会屏蔽（忽略）所有的 S-mode 中断。
 #define SSTATUS_SIE (1L << 1)  // Supervisor Interrupt Enable
 #define SSTATUS_UIE (1L << 0)  // User Interrupt Enable
 
@@ -70,6 +80,19 @@ static inline uint64 r_sstatus()
 static inline void w_sstatus(uint64 x)
 {
 	asm volatile("csrw sstatus, %0" : : "r" (x));
+}
+
+// Supervisor Interrupt Pending
+static inline uint64 r_sip()
+{
+	uint64 x;
+	asm volatile("csrr %0, sip" : "=r" (x) );
+	return x;
+}
+
+static inline void w_sip(uint64 x)
+{
+	asm volatile("csrw sip, %0" : : "r" (x));
 }
 
 // use riscv's sv39 page table scheme.
@@ -104,6 +127,8 @@ static inline void w_mscratch(uint64 x)
 }
 
 // Supervisor Trap Cause
+// scause 的全称是 Supervisor Cause Register
+// 当发生异常或中断（Trap）时，由硬件自动记录下导致本次陷入（Trap）的具体原因
 static inline uint64 r_scause()
 {
 	uint64 x;
@@ -159,6 +184,9 @@ static inline void w_sie(uint64 x)
 // machine exception program counter, holds the
 // instruction address to which a return from
 // exception will go.
+// sepc 的全称是 Supervisor Exception Program Counter
+// 当发生异常或中断（Trap）时，保存被中断程序的下一条指令的地址（即程序计数器 PC 的值），
+// 以便处理完毕后能够准确返回
 static inline void w_sepc(uint64 x)
 {
 	asm volatile("csrw sepc, %0" : : "r" (x));
@@ -211,7 +239,6 @@ static inline uint64 r_stvec()
 	return x;
 }
 
-
 // enable device interrupts
 static inline void intr_on()
 {
@@ -243,6 +270,7 @@ static inline uint64 r_sp()
 // Thread Pointer（线程指针）, 存储当前正在运行的线程/任务的局部存储区域的基地址
 // 硬件编号：x4
 /**
+ * 获取当前 CPU ID
  * 在进行任务切换时，为了保证当前线程的状态不丢失，操作系统会将 tp 寄存器的值保存到当前
  * 任务的上下文结构（Task Context）中；当调度器切换到下一个任务时，再从新任务的上下文中
  * 恢复 tp 的值
