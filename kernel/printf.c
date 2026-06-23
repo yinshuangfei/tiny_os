@@ -1,7 +1,16 @@
 #include <stdarg.h>
 
 #include "types.h"
+#include "spinlock.h"
 #include "defs.h"
+
+volatile int panicked = 0;
+
+// lock to avoid interleaving concurrent printf's.
+static struct {
+	struct spinlock lock;
+	int locking;
+} pr;
 
 static char digits[] = "0123456789abcdef";
 
@@ -10,6 +19,29 @@ static void printint(int xx, int base, int sign)
 	char buf[16];
 	int i;
 	uint x;
+
+	if(sign && (sign = xx < 0))
+		x = -xx;
+	else
+		x = xx;
+
+	i = 0;
+	do {
+		buf[i++] = digits[x % base];
+	} while((x /= base) != 0);
+
+	if(sign)
+		buf[i++] = '-';
+
+	while(--i >= 0)
+		consputc(buf[i]);
+}
+
+static void printlongint(long int xx, int base, int sign)
+{
+	char buf[32];
+	int i;
+	uint64 x;
 
 	if(sign && (sign = xx < 0))
 		x = -xx;
@@ -41,7 +73,7 @@ static void printptr(uint64 x)
 void printf(char *fmt, ...)
 {
 	va_list ap;
-	int i, c;
+	int i, c, c2;
 	char *s;
 
 	// todo: locking
@@ -71,6 +103,19 @@ void printf(char *fmt, ...)
 		case 'x':
 			printint(va_arg(ap, int), 16, 1);
 			break;
+		case 'l':
+			c2 = fmt[i+1] & 0xff;
+			if (c2 == 'd') {
+				printlongint(va_arg(ap, long int), 10, 1);
+				i++;
+			} else if (c2 == 'x') {
+				printlongint(va_arg(ap, long int), 16, 1);
+				i++;
+			} else {
+				consputc(c);
+			}
+
+			break;
 		case 'p':
 			printptr(va_arg(ap, uint64));
 			break;
@@ -90,4 +135,20 @@ void printf(char *fmt, ...)
 			break;
 		}
 	}
+}
+
+void panic(char *s)
+{
+	pr.locking = 0;
+	printf("panic: ");
+	printf(s);
+	printf("\n");
+	panicked = 1; // freeze uart output from other CPUs
+	for(;;) ;
+}
+
+void printfinit(void)
+{
+	initlock(&pr.lock, "pr");
+	pr.locking = 1;
 }

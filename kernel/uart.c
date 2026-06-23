@@ -1,4 +1,6 @@
 #include "memlayout.h"
+#include "spinlock.h"
+#include "defs.h"
 
 //
 // low-level driver routines for 16550a UART.
@@ -32,6 +34,8 @@
 #define ReadReg(reg) (*(Reg(reg)))
 #define WriteReg(reg, v) (*(Reg(reg)) = (v))
 
+// the transmit output buffer.
+struct spinlock uart_tx_lock;
 
 // add a character to the output buffer and tell the
 // UART to start sending if it isn't already.
@@ -83,4 +87,31 @@ void uartputc_sync(int c)
 	WriteReg(THR, c);
 
 //   pop_off();
+}
+
+void uartinit(void)
+{
+	// disable interrupts.
+	WriteReg(IER, 0x00);
+
+	// special mode to set baud rate.
+	WriteReg(LCR, LCR_BAUD_LATCH);
+
+	// LSB for baud rate of 38.4K.
+	WriteReg(0, 0x03);
+
+	// MSB for baud rate of 38.4K.
+	WriteReg(1, 0x00);
+
+	// leave set-baud mode,
+	// and set word length to 8 bits, no parity.
+	WriteReg(LCR, LCR_EIGHT_BITS);
+
+	// reset and enable FIFOs.
+	WriteReg(FCR, FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);
+
+	// enable transmit and receive interrupts.
+	WriteReg(IER, IER_TX_ENABLE | IER_RX_ENABLE);
+
+	initlock(&uart_tx_lock, "uart");
 }

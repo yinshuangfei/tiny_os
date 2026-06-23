@@ -7,7 +7,14 @@ OBJS = \
   $K/main.o \
   $K/printf.o \
   $K/console.o \
-  $K/uart.o
+  $K/uart.o \
+  $K/proc.o \
+  $K/spinlock.o \
+  $K/file.o \
+  $K/vm.o \
+  $K/string.o \
+  $K/kalloc.o \
+  $K/trampoline.o
 
 # Try to infer the correct TOOLPREFIX if not set
 ifndef TOOLPREFIX
@@ -72,7 +79,7 @@ clean:
 	$(UPROGS)
 
 ifndef CPUS
-CPUS := 1
+CPUS := 3
 endif
 
 QEMUOPTS = -machine virt -bios none -m 128M -smp $(CPUS) -nographic

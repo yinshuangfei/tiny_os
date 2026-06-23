@@ -11,6 +11,11 @@ SECTIONS
 
   .text : {
     *(.text .text.*)
+    . = ALIGN(0x1000);
+    _trampoline = .;
+    *(trampsec)
+    . = ALIGN(0x1000);
+    ASSERT(. - _trampoline == 0x1000, "error: trampoline larger than one page");
     PROVIDE(etext = .);
   }
 
@@ -35,5 +40,6 @@ SECTIONS
     *(.bss .bss.*)
   }
 
+  /* 将当前内存位置（即 BSS 段结束后的第一个字节）定义为符号 end */
   PROVIDE(end = .);
 }
