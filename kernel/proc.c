@@ -5,6 +5,7 @@
 #include "memlayout.h"
 #include "fs.h"
 
+// 每个核上的 scheduler 上下文
 struct cpu cpus[NCPU];
 
 // kernel 进程
@@ -91,6 +92,7 @@ static struct proc* allocproc(void)
 {
 	struct proc *p;
 
+	// 这里是从内核进程中找一个空闲的进程
 	for (p = proc; p < &proc[NPROC]; p++) {
 		acquire(&p->lock);
 		if (p->state == UNUSED) {
@@ -116,6 +118,8 @@ found:
 		release(&p->lock);
 		return 0;
 	}
+
+	printf("allocproc\n");
 
 	// Set up new context to start executing at forkret,
 	// which returns to user space.
@@ -192,24 +196,42 @@ void proc_freepagetable(pagetable_t pagetable, uint64 sz)
 
 // a user program that calls exec("/init")
 // od -t xC initcode
+// 通过系统调用 exec 加载并执行磁盘上的 /init 程序，从而完成从内核态到用户态应用程序的
+// 过渡.
 uchar initcode[] = {
-	0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x45, 0x02,
-	0x97, 0x05, 0x00, 0x00, 0x93, 0x85, 0x35, 0x02,
-	0x93, 0x08, 0x70, 0x00, 0x73, 0x00, 0x00, 0x00,
-	0x93, 0x08, 0x20, 0x00, 0x73, 0x00, 0x00, 0x00,
-	0xef, 0xf0, 0x9f, 0xff, 0x2f, 0x69, 0x6e, 0x69,
-	0x74, 0x00, 0x00, 0x24, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00
+	0x17, 0x05, 0x00, 0x00,  // auipc a0, 0x0      (a0 = 当前 PC)
+	0x13, 0x05, 0x45, 0x02,  // addi a0, a0, 36    (a0 = PC + 36，指向字符串 "/init")
+	0x97, 0x05, 0x00, 0x00,  // auipc a1, 0x0      (a1 = 当前 PC)
+	0x93, 0x85, 0x35, 0x02,  // addi a1, a1, 32    (a1 = PC + 32，指向参数数组)
+	0x93, 0x08, 0x70, 0x00,  // addi a7, zero, 112 (a7 = 112，即 SYS_exec 系统调用号)
+	0x73, 0x00, 0x00, 0x00,  // ecall              (触发陷入内核)
+	0x93, 0x08, 0x20, 0x00,  // addi a7, zero, 32  (a7 = 32，即 SYS_exit 系统调用号)
+	0x73, 0x00, 0x00, 0x00,  // ecall              (如果 exec 失败，调用 exit 退出)
+	0xef, 0xf0, 0x9f, 0xff,  // jal zero, -4       (如果 exit 也失败，跳转到当前指令死循环)
+	0x2f, 0x69, 0x6e, 0x69,  // ASCII: "/ini"
+	0x74, 0x00, 0x00, 0x00,  // ASCII: "t\0\0\0" (字符串 "/init" 及其对齐填充)
+	0x24, 0x00, 0x00, 0x00,  // 0x00000024 (即 36，这是字符串 "/init" 的相对偏移地址)
+	0x00, 0x00, 0x00, 0x00   // 0x00000000 (参数数组的结束标志 NULL)
 };
 
-// 用户态触发一次 ecall，由内核打印一行消息。
-// 这样不依赖用户态直接访问 UART MMIO。
-uchar printcode[] = {
-    // ecall
-    0x73, 0x00, 0x00, 0x00,
+// 用户态触发一次 ecall，然后进入死循环。
+uchar loop_code[] = {
+	// ecall
+	0x73, 0x00, 0x00, 0x00,
+	// j .
+	0x6f, 0x00, 0x00, 0x00,
+};
 
-    // j .
-    0x6f, 0x00, 0x00, 0x00,
+// 用户态触发一次 ecall，然后进入 exit。
+uchar exit_code[] = {
+	// 机器码: addi a0, zero, 0
+	0x13, 0x05, 0x00, 0x00,
+	// li a7, 02 (设置系统调用号为 02，即 exit)
+	// 机器码: addi a7, zero, 02
+	0x93, 0x08, 0x20, 0x00,
+	// ecall (触发系统调用，进入内核执行退出逻辑)
+	0x73, 0x00, 0x00, 0x00,
+	0x6f, 0x00, 0x00, 0x00,
 };
 
 // Set up first user process.
@@ -222,7 +244,7 @@ void userinit(void)
 
 	// allocate one user page and copy init's instructions
 	// and data into it.
-	uvminit(p->pagetable, printcode, sizeof(printcode));
+	uvminit(p->pagetable, initcode, sizeof(initcode));
 	p->sz = PGSIZE;
 
 	// prepare for the very first "return" from kernel to user.
@@ -230,11 +252,76 @@ void userinit(void)
 	p->trapframe->sp = PGSIZE;  // user stack pointer
 
 	safestrcpy(p->name, "initcode", sizeof(p->name));
-	// p->cwd = namei("/");
+	p->cwd = namei("/");
 
 	p->state = RUNNABLE;
 
 	release(&p->lock);
+}
+
+// Exit the current process.  Does not return.
+// An exited process remains in the zombie state
+// until its parent calls wait().
+void exit(int status)
+{
+	struct proc *p = myproc();
+
+	if (p == initproc)
+		panic("init exiting");
+
+	// Close all open files.
+	for (int fd = 0; fd < NOFILE; fd++) {
+		if (p->ofile[fd]) {
+			// struct file *f = p->ofile[fd];
+			// fileclose(f);
+			p->ofile[fd] = 0;
+		}
+	}
+
+	// begin_op();
+	// iput(p->cwd);
+	// end_op();
+	// p->cwd = 0;
+
+	// we might re-parent a child to init. we can't be precise about
+	// waking up init, since we can't acquire its lock once we've
+	// acquired any other proc lock. so wake up init whether that's
+	// necessary or not. init may miss this wakeup, but that seems
+	// harmless.
+	acquire(&initproc->lock);
+	// wakeup1(initproc);
+	release(&initproc->lock);
+
+	// grab a copy of p->parent, to ensure that we unlock the same
+	// parent we locked. in case our parent gives us away to init while
+	// we're waiting for the parent lock. we may then race with an
+	// exiting parent, but the result will be a harmless spurious wakeup
+	// to a dead or wrong process; proc structs are never re-allocated
+	// as anything else.
+	acquire(&p->lock);
+	struct proc *original_parent = p->parent;
+	release(&p->lock);
+
+	// we need the parent's lock in order to wake it up from wait().
+	// the parent-then-child rule says we have to lock it first.
+	acquire(&original_parent->lock);
+
+	acquire(&p->lock);
+
+	// Give any children to init.
+	// reparent(p);
+
+	// Parent might be sleeping in wait().
+	// wakeup1(original_parent);
+
+	p->xstate = status;
+	p->state = ZOMBIE;
+
+	release(&original_parent->lock);
+
+	// Jump into the scheduler, never to return.
+	sched();
+	panic("zombie exit");
 }
 
 // Per-CPU process scheduler.
@@ -262,6 +349,7 @@ void scheduler(void)
 
 		int found = 0;
 		for (p = proc; p < &proc[NPROC]; p++) {
+			printf("sche: iter proc\n");
 			acquire(&p->lock);
 			if (p->state == RUNNABLE) {
 				// Switch to chosen process.  It is the process's job
@@ -271,7 +359,11 @@ void scheduler(void)
 				c->proc = p;
 
 				printf("sche: cpu:%d, schedule into -> '%s'\n", cpuid(), p->name);
-				/** 完成进程切换, 调用汇编代码 swtch.S */
+				/**
+				 * 完成进程切换, 调用汇编代码 swtch.S
+				 * void swtch(struct context *old, struct context *new);
+				 * 执行 new->context->ra 指向的函数. 特权模式未变.
+				 **/
 				swtch(&c->context, &p->context);
 				/** 返回，表示切换会调度程序 */
 				printf("sche: cpu:%d, schedule back\n", cpuid());
@@ -335,12 +427,18 @@ void yield(void)
 
 // A fork child's very first scheduling by scheduler()
 // will swtch to forkret.
+// 第一次进入 forkret() 不是通过普通 call forkret，而是通过"把 ra 设成 forkret 然后
+// ret"进去的, 目前位于内核态.
 void forkret(void)
 {
 	printf("forkret\n");
+	printf("forkret: forkret: %p\n", forkret);
+	printf("forkret: ra: %p\n", r_ra());
+
 	static int first = 1;
 
 	// Still holding p->lock from scheduler.
+	// 调度器查找到该进程时，已经上锁
 	release(&myproc()->lock);
 
 	if (first) {
@@ -348,10 +446,45 @@ void forkret(void)
 		// regular process (e.g., because it calls sleep), and thus cannot
 		// be run from main().
 		first = 0;
-		fsinit(ROOTDEV);
+		// fsinit(ROOTDEV);
 	}
 
+	// forkret() 不应该像普通 C 函数那样返回, 它应该转到 usertrapret()，再进入
+	// trampoline.S 的 sret 回到用户态。那条路径不会再执行 forkret() 末尾的 ret。
 	usertrapret();
+}
+
+// Atomically release lock and sleep on chan.
+// Reacquires lock when awakened.
+void sleep(void *chan, struct spinlock *lk)
+{
+	struct proc *p = myproc();
+
+	// Must acquire p->lock in order to
+	// change p->state and then call sched.
+	// Once we hold p->lock, we can be
+	// guaranteed that we won't miss any wakeup
+	// (wakeup locks p->lock),
+	// so it's okay to release lk.
+	if (lk != &p->lock) {  //DOC: sleeplock0
+		acquire(&p->lock);  //DOC: sleeplock1
+		release(lk);
+	}
+
+	// Go to sleep.
+	p->chan = chan;
+	p->state = SLEEPING;
+
+	sched();
+
+	// Tidy up.
+	p->chan = 0;
+
+	// Reacquire original lock.
+	if (lk != &p->lock) {
+		release(&p->lock);
+		acquire(lk);
+	}
 }
 
 // Wake up all processes sleeping on chan.

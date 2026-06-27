@@ -3,12 +3,15 @@
 
 struct context;
 struct spinlock;
+struct sleeplock;
+struct stat;
 
 /** bio.c */
 void binit(void);
 struct buf* bread(uint dev, uint blockno);
 void bwrite(struct buf *b);
 void brelse(struct buf *b);
+void bpin(struct buf *b);
 
 /** console.c */
 void consputc(int c);
@@ -23,6 +26,21 @@ void fileinit(void);
 /** fs.c */
 void fsinit(int dev);
 void iinit();
+struct inode* ialloc(uint dev, short type);
+void iupdate(struct inode *ip);
+struct inode* idup(struct inode *ip);
+void ilock(struct inode *ip);
+void iunlock(struct inode *ip);
+void iput(struct inode *ip);
+void iunlockput(struct inode *ip);
+void itrunc(struct inode *ip);
+void stati(struct inode *ip, struct stat *st);
+int writei(struct inode *ip, int user_src, uint64 src, uint off, uint n);
+int namecmp(const char *s, const char *t);
+struct inode* dirlookup(struct inode *dp, char *name, uint *poff);
+int dirlink(struct inode *dp, char *name, uint inum);
+struct inode* namei(char *path);
+struct inode* nameiparent(char *path, char *name);
 
 /** kalloc.c */
 void kinit();
@@ -52,13 +70,21 @@ int allocpid();
 pagetable_t proc_pagetable(struct proc *p);
 void proc_freepagetable(pagetable_t pagetable, uint64 sz);
 void userinit(void);
+void exit(int status);
 void scheduler(void) __attribute__((noreturn));
 void sched(void);
 void yield(void);
 void forkret(void);
+void sleep(void *chan, struct spinlock *lk);
 void wakeup(void *chan);
 int either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int either_copyin(void *dst, int user_src, uint64 src, uint64 len);
+
+/** sleeplock.h */
+void initsleeplock(struct sleeplock *lk, char *name);
+void acquiresleep(struct sleeplock *lk);
+void releasesleep(struct sleeplock *lk);
+int holdingsleep(struct sleeplock *lk);
 
 /** swtch.S */
 void swtch(struct context*, struct context*);
@@ -73,9 +99,21 @@ void pop_off(void);
 
 /** string.c */
 void *memset(void *dst, int c, uint n);
+int memcmp(const void *v1, const void *v2, uint n);
 void *memmove(void *dst, const void *src, uint n);
+void* memcpy(void *dst, const void *src, uint n);
+int strncmp(const char *p, const char *q, uint n);
+char* strncpy(char *s, const char *t, int n);
 char* safestrcpy(char *s, const char *t, int n);
 int strlen(const char *s);
+
+/** syscall.c */
+int fetchaddr(uint64, uint64*);
+int fetchstr(uint64, char*, int);
+int argint(int, int*);
+int argaddr(int, uint64 *);
+int argstr(int, char*, int);
+void syscall(void);
 
 /** trap.c */
 void trapinit(void);
@@ -111,4 +149,8 @@ int uvmcopy(pagetable_t old, pagetable_t new, uint64 sz);
 void uvmclear(pagetable_t pagetable, uint64 va);
 int copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len);
 int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len);
+int copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max);
 void dump_pagetable(void);
+
+// number of elements in fixed-size array
+#define NELEM(x) (sizeof(x)/sizeof((x)[0]))

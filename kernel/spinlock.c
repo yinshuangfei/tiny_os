@@ -43,7 +43,7 @@ void acquire(struct spinlock *lk)
 void release(struct spinlock *lk)
 {
 	if (!holding(lk))
-		panic("release");
+		panic("release a spinlock which not hold");
 
 	lk->cpu = 0;
 

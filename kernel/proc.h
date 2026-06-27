@@ -25,6 +25,7 @@ struct context {
 };
 
 // Per-CPU state.
+// 每个核上的 cpu 状态
 struct cpu {
 	struct proc *proc;          // The process running on this cpu, or null.
 	struct context context;     // swtch() here to enter scheduler().
@@ -51,7 +52,7 @@ struct trapframe {
 	/*   0 */ uint64 kernel_satp;   // kernel page table
 	/*   8 */ uint64 kernel_sp;     // top of process's kernel stack
 	/*  16 */ uint64 kernel_trap;   // usertrap()
-	/*  24 */ uint64 epc;           // saved user program counter
+	/*  24 */ uint64 epc;           // saved user program counter (pc)
 	/*  32 */ uint64 kernel_hartid; // saved kernel tp
 	/*  40 */ uint64 ra;
 	/*  48 */ uint64 sp;
@@ -109,7 +110,7 @@ struct proc {
 	// these are private to the process, so p->lock need not be held.
 	uint64 kstack;               // Virtual address of kernel stack
 	uint64 sz;                   // Size of process memory (bytes)
-	pagetable_t pagetable;       // User page table
+	pagetable_t pagetable;       // User page table，用户页表
 	struct trapframe *trapframe; // data page for trampoline.S
 	// 当前 proc 的上下文
 	struct context context;      // swtch() here to run process

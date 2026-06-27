@@ -21,7 +21,12 @@ OBJS = \
   $K/bio.o \
   $K/fs.o \
   $K/virtio_disk.o \
-  $K/swtch.o
+  $K/swtch.o \
+  $K/sleeplock.o \
+  $K/syscall.o \
+  $K/sysproc.o \
+  $K/log.o
+
 
 # Try to infer the correct TOOLPREFIX if not set
 ifndef TOOLPREFIX
@@ -50,6 +55,8 @@ LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
+# -fomit-frame-pointer: 编译器不保留序言
+# -fno-omit-frame-pointer: 强制编译器保留完整的序言
 CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb
 
 # CFLAGS += -MD
@@ -75,7 +82,8 @@ all: qemu
 
 $K/kernel: $(OBJS) $K/kernel.ld
 	$(LD) $(LDFLAGS) -T $K/kernel.ld -o $K/kernel $(OBJS)
-
+	$(OBJDUMP) -S $K/kernel > $K/kernel.asm
+	$(OBJDUMP) -t $K/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $K/kernel.sym
 
 clean:
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \

@@ -1,5 +1,6 @@
 #include "types.h"
 #include "fs.h"
+#include "sleeplock.h"
 
 struct file {
 	enum { FD_NONE, FD_PIPE, FD_INODE, FD_DEVICE } type;
@@ -21,7 +22,7 @@ struct inode {
 	uint dev;           // Device number
 	uint inum;          // Inode number
 	int ref;            // Reference count
-	// struct sleeplock lock; // protects everything below here
+	struct sleeplock lock; // protects everything below here
 	int valid;          // inode has been read from disk?
 
 	short type;         // copy of disk inode

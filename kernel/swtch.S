@@ -41,4 +41,13 @@ swtch:
         ld s10, 96(a1)
         ld s11, 104(a1)
 
+        # ret 指令执行完后，CPU 的特权模式（Mode）不会发生任何变化
+        # CPU 在返回时改变特权模式（例如从内核态返回用户态），必须使用专门的特权返回指令：
+        # - mret：从 M-mode 返回。硬件会读取 mstatus 寄存器中的 MPP（Machine
+        #         Previous Privilege）字段，将 CPU 切换到该字段记录的特权级，并从
+        #         mepc 恢复 PC。
+        # - sret：从 S-mode 返回。硬件会读取 sstatus 寄存器中的 SPP（Supervisor
+        #         Previous Privilege）字段，将 CPU 切换到该字段记录的特权级，并从
+        #         sepc 恢复 PC。
+        # - uret：从 U-mode 返回（如果硬件支持）。
         ret

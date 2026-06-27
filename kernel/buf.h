@@ -3,6 +3,7 @@
 
 #include "types.h"
 #include "spinlock.h"
+#include "sleeplock.h"
 #include "fs.h"
 
 struct buf {
@@ -10,7 +11,7 @@ struct buf {
 	int disk;    // does disk "own" buf?
 	uint dev;
 	uint blockno;
-	// struct sleeplock lock;
+	struct sleeplock lock;
 	uint refcnt;
 	struct buf *prev; // LRU cache list
 	struct buf *next;

@@ -2,6 +2,14 @@
 
 volatile static int started = 0;
 
+void one_loop_while_intr()
+{
+	printf("status:0x%x\n", r_sstatus());
+	intr_on();
+	while (1) ;
+	printf("never get here\n");
+}
+
 void main()
 {
 	if (cpuid() == 0) {
@@ -17,6 +25,8 @@ void main()
 		trapinithart();  // install kernel trap vector
 		plicinit();      // set up interrupt controller
 		plicinithart();  // ask PLIC for device interrupts
+		/** plicinithart() 设置后，中断开始起作用 */
+
 		binit();         // buffer cache
 		iinit();         // inode cache
 		fileinit();      // file table
@@ -30,7 +40,7 @@ void main()
 		while (started == 0)
 			;
 		__sync_synchronize();
-		// printf("hart %d starting\n", cpuid());
+		printf("hart %d starting\n", cpuid());
 		kvminithart();    // turn on paging
 		trapinithart();   // install kernel trap vector
 		plicinithart();   // ask PLIC for device interrupts

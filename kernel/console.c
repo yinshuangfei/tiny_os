@@ -130,7 +130,7 @@ int consoleread(int user_dst, uint64 dst, int n)
 //
 void consoleintr(int c)
 {
-	printf("%d\n", c);
+	// printf("console get: %d\n", c);
 	acquire(&cons.lock);
 
 	switch (c) {
@@ -151,18 +151,20 @@ void consoleintr(int c)
 			consputc(BACKSPACE);
 		}
 		break;
+	// 普通字符
 	default:
 		if (c != 0 && cons.e-cons.r < INPUT_BUF) {
 			c = (c == '\r') ? '\n' : c;
 
 			// echo back to the user.
+			// 作用到串口寄存器
 			consputc(c);
 
 			// store for consumption by consoleread().
 			cons.buf[cons.e++ % INPUT_BUF] = c;
 
 			if (c == '\n' || c == C('D') ||
-			    cons.e == cons.r+INPUT_BUF){
+			    cons.e == cons.r+INPUT_BUF) {
 				// wake up consoleread() if a whole line (or end-of-file)
 				// has arrived.
 				cons.w = cons.e;

@@ -10,9 +10,19 @@
         #
 .section trampsec
 .globl trampoline
+# trampoline 是这页代码的起始符号
 trampoline:
 .align 4
 .globl uservec
+# 重点！！！uservec 是"用户态 trap 进内核时"的入口点，模式为 supervisor (内核态),
+# 使用用户页表, 因此, 进入 kernel_trap 指向的 usertrap() 函数时，已经为内核模式.
+# 总结：从用户态进入内核态，uservec -> usertrap()
+# 触发源见 usertrapret() 函数
+
+# 用户态进入内核态(此时已经是内核态), uservec -> usertrap()
+#  - 用户态程序触发 trap 的那一刻，CPU 硬件会自动把特权级从 U-mode 切到 S-mode
+#  - 然后才跳到 stvec 指向的入口，也就是 uservec
+#  - 所以 uservec 运行时，已经是在 supervisor mode，也就是内核态
 uservec:
         #
         # trap.c sets stvec to point here, so
@@ -29,6 +39,7 @@ uservec:
         csrrw a0, sscratch, a0
 
         # save the user registers in TRAPFRAME
+        # 将 ra 中的 64 位数据，存储到 a0 + 40 的内存地址中
         sd ra, 40(a0)
         sd sp, 48(a0)
         sd gp, 56(a0)
@@ -65,6 +76,7 @@ uservec:
         sd t0, 112(a0)
 
         # restore kernel stack pointer from p->trapframe->kernel_sp
+        # 从 a0 + 8 的内存地址中，读取一个 64 位的数据加载到栈指针寄存器 sp 中
         ld sp, 8(a0)
 
         # make tp hold the current hartid, from p->trapframe->kernel_hartid
@@ -84,13 +96,19 @@ uservec:
         # jump to usertrap(), which does not return
         jr t0
 
+# 从内核态返回到用户态
 .globl userret
 userret:
         # userret(TRAPFRAME, pagetable)
         # switch from kernel to user.
-        # usertrapret() calls here.
+        # usertrapret() calls here. usertrapret() 函数里调用这里.
         # a0: TRAPFRAME, in user page table.
         # a1: user page table, for satp.
+
+        # userret 的语义也不是“正常返回”：
+        #   - 它先切到用户页表
+        #   - 恢复用户寄存器
+        #   - 最后执行 sret 回到用户态
 
         # switch to the user page table.
         csrw satp, a1
@@ -99,6 +117,7 @@ userret:
         # put the saved user a0 in sscratch, so we
         # can swap it with our a0 (TRAPFRAME) in the last step.
         ld t0, 112(a0)
+        # 将通用寄存器 t0 的值，写入到 sscratch 控制与状态寄存器中
         csrw sscratch, t0
 
         # restore all but a0 from TRAPFRAME
@@ -138,4 +157,5 @@ userret:
 
         # return to user mode and user pc.
         # usertrapret() set up sstatus and sepc.
+        # 返回到 epc 指向的用户态程序地址执行
         sret

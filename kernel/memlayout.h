@@ -49,6 +49,7 @@
 
 // map the trampoline page to the highest address,
 // in both user and kernel space.
+// 最高内存地址（逻辑地址）
 #define TRAMPOLINE (MAXVA - PGSIZE)
 
 // map kernel stacks beneath the trampoline,

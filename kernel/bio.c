@@ -108,10 +108,10 @@ void bwrite(struct buf *b)
 // Move to the head of the most-recently-used list.
 void brelse(struct buf *b)
 {
-	// if (!holdingsleep(&b->lock))
-	// 	panic("brelse");
+	if (!holdingsleep(&b->lock))
+		panic("brelse");
 
-	// releasesleep(&b->lock);
+	releasesleep(&b->lock);
 
 	acquire(&bcache.lock);
 	b->refcnt--;
@@ -125,5 +125,12 @@ void brelse(struct buf *b)
 		bcache.head.next = b;
 	}
 
+	release(&bcache.lock);
+}
+
+void bpin(struct buf *b)
+{
+	acquire(&bcache.lock);
+	b->refcnt++;
 	release(&bcache.lock);
 }

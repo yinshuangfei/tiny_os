@@ -82,8 +82,9 @@ kernelvec:
 
         addi sp, sp, 256
 
-        // return to whatever we were doing in the kernel.
+        // return to whatever we were doing in the kernel. 返回内核原始位置.
         // sret（Supervisor Return）
+        // sret 指令不仅能返回到用户态（U 模式），也能返回到监管者模式（S 模式，即内核态自身）
         sret
 
         #

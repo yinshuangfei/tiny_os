@@ -145,6 +145,7 @@ void uartstart()
 		uart_tx_r = (uart_tx_r + 1) % UART_TX_BUF_SIZE;
 
 		// maybe uartputc() is waiting for space in the buffer.
+		// 唤醒等待进程
 		wakeup(&uart_tx_r);
 
 		// 输出到串口

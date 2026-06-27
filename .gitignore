@@ -26,3 +26,5 @@ compile_commands.json
 *.o
 *.d
 kernel/kernel
+kernel.asm
+kernel.sym
