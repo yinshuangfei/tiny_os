@@ -26,6 +26,7 @@
 #include "memlayout.h"
 
 struct spinlock tickslock;
+uint ticks;
 
 extern char trampoline[], uservec[], userret[];
 
@@ -151,7 +152,7 @@ void usertrap(void)
 	if ((r_sstatus() & SSTATUS_SPP) != 0)
 		panic("usertrap: not from user mode");
 
-	pr_trap("User-into");
+	// pr_trap("User-into");
 
 	// send interrupts and exceptions to kerneltrap(),
 	// since we're now in the kernel.
@@ -317,6 +318,15 @@ void kerneltrap()
 	w_sstatus(sstatus);
 }
 
+void clockintr()
+{
+	acquire(&tickslock);
+	ticks++;
+	wakeup(&ticks);
+	release(&tickslock);
+}
+
+
 // check if it's an external interrupt or software interrupt,
 // and handle it.
 // returns 2 if timer interrupt,
@@ -340,7 +350,7 @@ int devintr()
 			uartintr();
 			// printf("cpu:%d, uartintr interrupt irq=%d\n", cpuid(), irq);
 		} else if (irq == VIRTIO0_IRQ) {
-			printf("virtio_disk_intr interrupt irq=%d\n", irq);
+			// printf("virtio_disk_intr interrupt irq=%d\n", irq);
 			virtio_disk_intr();
 		} else if (irq) {
 			printf("unexpected interrupt irq=%d\n", irq);
@@ -369,11 +379,8 @@ int devintr()
 		// forwarded by timervec in kernelvec.S.
 
 		if (cpuid() == 0) {
-			// clockintr();
-			printf("clockintr interrupt\n");
+			clockintr();
 		}
-
-		printf("timer interrupt come ...\n");
 
 		// acknowledge the software interrupt by clearing
 		// the SSIP bit in sip.

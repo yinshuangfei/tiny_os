@@ -89,7 +89,7 @@ int consoleread(int user_dst, uint64 dst, int n)
 				release(&cons.lock);
 				return -1;
 			}
-			// sleep(&cons.r, &cons.lock);
+			sleep(&cons.r, &cons.lock);
 		}
 
 		c = cons.buf[cons.r++ % INPUT_BUF];

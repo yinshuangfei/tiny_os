@@ -28,10 +28,8 @@ OBJS = \
   $K/log.o \
   $K/sysfile.o \
   $K/exec.o \
+  $K/pipe.o \
   $K/debug.o
-
-UPROGS = \
-  $U/_ls.o
 
 # Try to infer the correct TOOLPREFIX if not set
 ifndef TOOLPREFIX
@@ -90,19 +88,40 @@ $K/kernel: $(OBJS) $K/kernel.ld
 	$(OBJDUMP) -S $K/kernel > $K/kernel.asm
 	$(OBJDUMP) -t $K/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $K/kernel.sym
 
-# fs.img: mkfs/mkfs README $(UEXTRA) $(UPROGS)
-# 	mkfs/mkfs fs.img README $(UEXTRA) $(UPROGS)
-fs.img:
-	echo @touch fs.img
+mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
+	gcc -Werror -Wall -I. -o mkfs/mkfs mkfs/mkfs.c
+
+ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
+
+# 用户态程序链接规则 (隐式规则)
+# 将各个用户程序的 .o 与用户态基础库 (ULIB) 链接
+_%: %.o $(ULIB)
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
+	$(OBJDUMP) -S $@ > $*.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
+
+# Prevent deletion of intermediate files, e.g. cat.o, after first build, so
+# that disk image changes after first build are persistent until clean.  More
+# details:
+# http://www.gnu.org/software/make/manual/html_node/Chained-Rules.html
+.PRECIOUS: %.o
+
+UPROGS = \
+  $U/_ls
+
+fs.img: mkfs/mkfs README.md $(UEXTRA) $(UPROGS)
+	mkfs/mkfs fs.img README.md $(UEXTRA) $(UPROGS)
+
+-include kernel/*.d user/*.d
 
 clean:
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
 	*/*.o */*.d */*.asm */*.sym \
-	$K/kernel \
+	$K/kernel fs.img \
 	mkfs/mkfs .gdbinit \
 	$U/usys.S \
 	$(UPROGS)
-# 	$K/kernel fs.img \
+
 
 ifndef CPUS
 CPUS := 1

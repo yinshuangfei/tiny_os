@@ -14,13 +14,13 @@ struct elfhdr {
 	ushort type;
 	ushort machine;
 	uint version;
-	uint64 entry;
-	uint64 phoff;
+	uint64 entry;		// 入口地址
+	uint64 phoff;		// Program section header 偏移
 	uint64 shoff;
 	uint flags;
 	ushort ehsize;
 	ushort phentsize;
-	ushort phnum;
+	ushort phnum;		// Program section header 数量
 	ushort shentsize;
 	ushort shnum;
 	ushort shstrndx;
@@ -30,13 +30,13 @@ struct elfhdr {
 struct proghdr {
 	uint32 type;
 	uint32 flags;
-	uint64 off;
-	uint64 vaddr;
-	uint64 paddr;
-	uint64 filesz;
-	uint64 memsz;
+	uint64 off;		// offset
+	uint64 vaddr;		// 虚拟地址, PGSIZE 对齐
+	uint64 paddr;		// 物理地址
+	uint64 filesz;		// file size
+	uint64 memsz;		// mem size
 	uint64 align;
-};
+}; /** 56 bytes */
 
 // Values for Proghdr type
 #define ELF_PROG_LOAD           1

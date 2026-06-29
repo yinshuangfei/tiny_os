@@ -260,5 +260,5 @@ void virtio_disk_intr()
 	*R(VIRTIO_MMIO_INTERRUPT_ACK) = *R(VIRTIO_MMIO_INTERRUPT_STATUS) & 0x3;
 
 	release(&disk.vdisk_lock);
-	printf("finish virtio_disk_intrrupt handle\n");
+	// printf("finish virtio_disk_intrrupt handle\n");
 }

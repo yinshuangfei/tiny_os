@@ -6,6 +6,7 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct pipe;
 
 /** bio.c */
 void binit(void);
@@ -27,6 +28,12 @@ int exec(char *path, char **argv);
 
 /** file.c */
 void fileinit(void);
+struct file* filealloc(void);
+struct file* filedup(struct file *f);
+void fileclose(struct file *f);
+int filestat(struct file *f, uint64 addr);
+int fileread(struct file *f, uint64 addr, int n);
+int filewrite(struct file *f, uint64 addr, int n);
 
 /** fs.c */
 void fsinit(int dev);
@@ -62,6 +69,12 @@ void log_write(struct buf *b);
 /** main.c */
 void main();
 
+/** pipe.c */
+int pipealloc(struct file **f0, struct file **f1);
+void pipeclose(struct pipe *pi, int writable);
+int pipewrite(struct pipe *pi, uint64 addr, int n);
+int piperead(struct pipe *pi, uint64 addr, int n);
+
 /** plic.c */
 void plicinit(void);
 void plicinithart(void);
@@ -82,7 +95,11 @@ int allocpid();
 pagetable_t proc_pagetable(struct proc *p);
 void proc_freepagetable(pagetable_t pagetable, uint64 sz);
 void userinit(void);
+int growproc(int n);
+int fork(void);
+void reparent(struct proc *p);
 void exit(int status);
+int wait(uint64 addr);
 void scheduler(void) __attribute__((noreturn));
 void sched(void);
 void yield(void);
@@ -133,6 +150,7 @@ void trapinithart(void);
 void usertrap(void);
 void usertrapret(void);
 void kerneltrap();
+extern struct spinlock tickslock;
 
 /** uart.c */
 void uartinit(void);

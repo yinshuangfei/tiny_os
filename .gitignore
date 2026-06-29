@@ -29,3 +29,4 @@ kernel/kernel
 kernel.asm
 kernel.sym
 fs.img
+mkfs/mkfs

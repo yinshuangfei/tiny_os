@@ -22,8 +22,6 @@ int exec(char *path, char **argv)
 
 	begin_op();
 
-
-
 	// 找到最后一个路径分片对应文件名的 inode
 	if ((ip = namei(path)) == 0) {
 		end_op();
