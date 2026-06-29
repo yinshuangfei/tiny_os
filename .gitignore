@@ -30,3 +30,5 @@ kernel.asm
 kernel.sym
 fs.img
 mkfs/mkfs
+*.sym
+*.asm

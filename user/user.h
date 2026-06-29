@@ -1,6 +1,5 @@
-#define SBRK_ERROR ((char *)-1)
-
 struct stat;
+struct rtcdate;
 
 // system calls
 int fork(void);
@@ -11,7 +10,7 @@ int write(int, const void*, int);
 int read(int, void*, int);
 int close(int);
 int kill(int);
-int exec(const char*, char**);
+int exec(char*, char**);
 int open(const char*, int);
 int mknod(const char*, short, short);
 int unlink(const char*);
@@ -21,8 +20,8 @@ int mkdir(const char*);
 int chdir(const char*);
 int dup(int);
 int getpid(void);
-char* sys_sbrk(int,int);
-int pause(int);
+char* sbrk(int);
+int sleep(int);
 int uptime(void);
 
 // ulib.c
@@ -31,19 +30,13 @@ char* strcpy(char*, const char*);
 void *memmove(void*, const void*, int);
 char* strchr(const char*, char c);
 int strcmp(const char*, const char*);
+void fprintf(int, const char*, ...);
+void printf(const char*, ...);
 char* gets(char*, int max);
 uint strlen(const char*);
 void* memset(void*, int, uint);
+void* malloc(uint);
+void free(void*);
 int atoi(const char*);
 int memcmp(const void *, const void *, uint);
 void *memcpy(void *, const void *, uint);
-char* sbrk(int);
-char* sbrklazy(int);
-
-// printf.c
-void fprintf(int, const char*, ...) __attribute__ ((format (printf, 2, 3)));
-void printf(const char*, ...) __attribute__ ((format (printf, 1, 2)));
-
-// umalloc.c
-void* malloc(uint);
-void free(void*);
