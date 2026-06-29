@@ -456,21 +456,63 @@ static inline void sfence_vma()
 #define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
 
 #define PTE_V (1L << 0) // valid
-#define PTE_R (1L << 1)
-#define PTE_W (1L << 2)
-#define PTE_X (1L << 3)
+#define PTE_R (1L << 1)	// read
+#define PTE_W (1L << 2) // write
+#define PTE_X (1L << 3) // exec
 #define PTE_U (1L << 4) // 1 -> user can access
 
 /**
+ * https://docs.riscv.org/reference/isa/v20260120/priv/supervisor.html#addressing-and-memory-protection
  * 在 RISC-V 的 Sv39 方案中，一个 64 位的 PTE 内部结构如下：
- * - 高 44 位（位 53~10）：物理页号（PPN, Physical Page Number）
- * - 低 10 位（位 9~0）：标志位（Flags），包含有效位（V）、读写执行权限（R/W/X）等
+ * (1) va: Sv39 virtual address(39 bit)：
+ * ---------------------------------------------------
+ * vpn[2],9b | vpn[1],9b | vpn[0],9b | page offset,12b
+ * ---------------------------------------------------
+ * - 0-11(12 bit): page offset
+ * - 12-20(9 bit): vpn[0]
+ * - 21-29(9 bit): vpn[1]
+ * - 30-38(9 bit): vpn[2]
+ *
+ * (2) pte: page table entry
+ * --------------------------------------
+ * |  高 10  |        中 44      | 低 10 |
+ * --------------------------------------
+ *    保留        物理页号         标志位
+ * - 低 10 位（位 9~0）：
+ * 	0: V, 有效位
+ * 	1: R, 读
+ * 	2: W, 写
+ * 	3: X, 执行
+ * 	4: U
+ * 	5: G
+ * 	6: A
+ * 	7: D
+ * 	8-9: 保留
+ * - 中 44 位（位 53~10）：物理页号（PPN, Physical Page Number）
+ * 	10-18(9 bit)：PPN[0]
+ * 	19-27(9 bit)：PPN[1]
+ * 	28-53(26 bit)：PPN[2]
+ * - 高 10 位：
+ * 	54-60(7 bit)：保留
+ * 	61-62(2 bit)：PBMT
+ * 	63:: N
+ *
+ * (3) pa: physical address
+ * ---------------------------------------------------
+ * ppn[2],26b | ppn[1],9b | ppn[0],9b | page offset,12b
+ * ---------------------------------------------------
+ * - 0-11(12 bit): page offset
+ * - 12-20(9 bit): ppn[0]
+ * - 21-29(9 bit): ppn[1]
+ * - 30-55(26 bit): ppn[2]
  */
 // shift a physical address to the right place for a PTE.
+// 物理地址 -> pte
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)
 // (pte) >> 10, 清除低 10 位的标志位（Flags）
 // << 12, 将物理页号还原为真实的物理内存基地址
 // 这意味着任何一个物理页的起始地址，其最低的 12 位必然全是 0（即 4KB 对齐）
+// pte -> 物理地址
 #define PTE2PA(pte) (((pte) >> 10) << 12)
 // 10 位标志位
 #define PTE_FLAGS(pte) ((pte) & 0x3FF)
@@ -478,6 +520,7 @@ static inline void sfence_vma()
 // extract the three 9-bit page table indices from a virtual address.
 #define PXMASK          0x1FF // 9 bits
 #define PXSHIFT(level)  (PGSHIFT+(9*(level)))
+// 返回 level-x 的 9bit 值
 #define PX(level, va) ((((uint64) (va)) >> PXSHIFT(level)) & PXMASK)
 
 // one beyond the highest possible virtual address.

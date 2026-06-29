@@ -63,12 +63,12 @@ struct trapframe {
 	/*  88 */ uint64 t2;
 	/*  96 */ uint64 s0;
 	/* 104 */ uint64 s1;
-	/* 112 */ uint64 a0;
-	/* 120 */ uint64 a1;
-	/* 128 */ uint64 a2;
-	/* 136 */ uint64 a3;
-	/* 144 */ uint64 a4;
-	/* 152 */ uint64 a5;
+	/* 112 */ uint64 a0;	// argv[0]
+	/* 120 */ uint64 a1;	// argv[1]
+	/* 128 */ uint64 a2;	// argv[2]
+	/* 136 */ uint64 a3;	// argv[3]
+	/* 144 */ uint64 a4;	// argv[4]
+	/* 152 */ uint64 a5;	// argv[5]
 	/* 160 */ uint64 a6;
 	/* 168 */ uint64 a7;
 	/* 176 */ uint64 s2;
@@ -102,7 +102,7 @@ struct proc {
 	// p->lock must be held when using these:
 	enum procstate state;        // Process state
 	struct proc *parent;         // Parent process
-	void *chan;                  // If non-zero, sleeping on chan
+	void *chan;                  // If non-zero, sleeping on chan, 唤醒指针地址
 	int killed;                  // If non-zero, have been killed
 	int xstate;                  // Exit status to be returned to parent's wait
 	int pid;                     // Process ID

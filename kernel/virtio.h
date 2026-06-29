@@ -50,10 +50,10 @@
 #define NUM 8
 
 struct VRingDesc {
-	uint64 addr;
-	uint32 len;
+	uint64 addr;		// buf0 映射地址
+	uint32 len;		// buf0 大小
 	uint16 flags;
-	uint16 next;
+	uint16 next;		// 下一个 idx
 };
 #define VRING_DESC_F_NEXT  1 // chained with another descriptor
 #define VRING_DESC_F_WRITE 2 // device writes (vs read)

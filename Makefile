@@ -25,8 +25,13 @@ OBJS = \
   $K/sleeplock.o \
   $K/syscall.o \
   $K/sysproc.o \
-  $K/log.o
+  $K/log.o \
+  $K/sysfile.o \
+  $K/exec.o \
+  $K/debug.o
 
+UPROGS = \
+  $U/_ls.o
 
 # Try to infer the correct TOOLPREFIX if not set
 ifndef TOOLPREFIX
@@ -85,13 +90,19 @@ $K/kernel: $(OBJS) $K/kernel.ld
 	$(OBJDUMP) -S $K/kernel > $K/kernel.asm
 	$(OBJDUMP) -t $K/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $K/kernel.sym
 
+# fs.img: mkfs/mkfs README $(UEXTRA) $(UPROGS)
+# 	mkfs/mkfs fs.img README $(UEXTRA) $(UPROGS)
+fs.img:
+	echo @touch fs.img
+
 clean:
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
 	*/*.o */*.d */*.asm */*.sym \
-	$K/kernel fs.img \
+	$K/kernel \
 	mkfs/mkfs .gdbinit \
 	$U/usys.S \
 	$(UPROGS)
+# 	$K/kernel fs.img \
 
 ifndef CPUS
 CPUS := 1
@@ -99,11 +110,11 @@ endif
 
 QEMUOPTS = -machine virt -bios none -m 128M -smp $(CPUS) -nographic
 QEMUOPTS += -kernel $K/kernel
-# QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0
-# QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0
+QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 
 .PHONY:
-qemu: $K/kernel
+qemu: $K/kernel fs.img
 	@$(QEMU) $(QEMUOPTS)
 
 ## compile_commands.json 生成工具 start

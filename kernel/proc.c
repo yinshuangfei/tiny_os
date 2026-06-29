@@ -119,8 +119,6 @@ found:
 		return 0;
 	}
 
-	printf("allocproc\n");
-
 	// Set up new context to start executing at forkret,
 	// which returns to user space.
 	memset(&p->context, 0, sizeof(p->context));
@@ -202,16 +200,16 @@ uchar initcode[] = {
 	0x17, 0x05, 0x00, 0x00,  // auipc a0, 0x0      (a0 = 当前 PC)
 	0x13, 0x05, 0x45, 0x02,  // addi a0, a0, 36    (a0 = PC + 36，指向字符串 "/init")
 	0x97, 0x05, 0x00, 0x00,  // auipc a1, 0x0      (a1 = 当前 PC)
-	0x93, 0x85, 0x35, 0x02,  // addi a1, a1, 32    (a1 = PC + 32，指向参数数组)
-	0x93, 0x08, 0x70, 0x00,  // addi a7, zero, 112 (a7 = 112，即 SYS_exec 系统调用号)
+	0x93, 0x85, 0x45, 0x02,  // addi a1, a1, 36    (a1 = PC + 36，指向 argv[] 指针数组)
+	0x93, 0x08, 0x70, 0x00,  // addi a7, zero, 7   (a7 = 7，即 SYS_exec 系统调用号)
 	0x73, 0x00, 0x00, 0x00,  // ecall              (触发陷入内核)
-	0x93, 0x08, 0x20, 0x00,  // addi a7, zero, 32  (a7 = 32，即 SYS_exit 系统调用号)
+	0x93, 0x08, 0x20, 0x00,  // addi a7, zero, 2   (a7 = 2，即 SYS_exit 系统调用号)
 	0x73, 0x00, 0x00, 0x00,  // ecall              (如果 exec 失败，调用 exit 退出)
 	0xef, 0xf0, 0x9f, 0xff,  // jal zero, -4       (如果 exit 也失败，跳转到当前指令死循环)
 	0x2f, 0x69, 0x6e, 0x69,  // ASCII: "/ini"
-	0x74, 0x00, 0x00, 0x00,  // ASCII: "t\0\0\0" (字符串 "/init" 及其对齐填充)
-	0x24, 0x00, 0x00, 0x00,  // 0x00000024 (即 36，这是字符串 "/init" 的相对偏移地址)
-	0x00, 0x00, 0x00, 0x00   // 0x00000000 (参数数组的结束标志 NULL)
+	0x74, 0x00, 0x00, 0x24,  // ASCII: "t\0\0$" (字符串 "/init" 及其对齐填充)
+	0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00
 };
 
 // 用户态触发一次 ecall，然后进入死循环。
@@ -339,17 +337,17 @@ void scheduler(void)
 	c->proc = 0;
 	for (;;) {
 		// Avoid deadlock by ensuring that devices can interrupt.
-		printf("sche: cpu:%d, noff:%d, intena:%d, sstatus:0x%x\n",
+		printf("sche before intr_on, cpu:%d, noff:%d, intena:%d, sstatus:0x%x\n",
 			cpuid(), mycpu()->noff, mycpu()->intena, r_sstatus());
 		// 开启中断后，触发的中断会进入 kernelvec.S 的 kernelvec 函数
 		// 跳转入口在 trapinithart 函数中确定
 		intr_on();
-		printf("sche: cpu:%d, noff:%d, intena:%d, sstatus:0x%x\n",
+		printf("sche after intr_on, cpu:%d, noff:%d, intena:%d, sstatus:0x%x\n",
 			cpuid(), mycpu()->noff, mycpu()->intena, r_sstatus());
 
 		int found = 0;
 		for (p = proc; p < &proc[NPROC]; p++) {
-			printf("sche: iter proc\n");
+			// printf("sche: iter proc\n");
 			acquire(&p->lock);
 			if (p->state == RUNNABLE) {
 				// Switch to chosen process.  It is the process's job
@@ -432,8 +430,6 @@ void yield(void)
 void forkret(void)
 {
 	printf("forkret\n");
-	printf("forkret: forkret: %p\n", forkret);
-	printf("forkret: ra: %p\n", r_ra());
 
 	static int first = 1;
 
@@ -446,7 +442,7 @@ void forkret(void)
 		// regular process (e.g., because it calls sleep), and thus cannot
 		// be run from main().
 		first = 0;
-		// fsinit(ROOTDEV);
+		fsinit(ROOTDEV);
 	}
 
 	// forkret() 不应该像普通 C 函数那样返回, 它应该转到 usertrapret()，再进入

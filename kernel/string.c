@@ -34,11 +34,13 @@ void *memmove(void *dst, const void *src, uint n)
 	d = dst;
 
 	if (s < d && s + n > d) {
+		// src 和 dst 有重叠部分，从末尾开始倒序复制
 		s += n;
 		d += n;
 		while (n-- > 0)
 			*--d = *--s;
 	} else {
+		// 正常复制
 		while (n-- > 0)
 			*d++ = *s++;
 	}

@@ -15,6 +15,7 @@ int fetchaddr(uint64 addr, uint64 *ip)
 
 // Fetch the nul-terminated string at addr from the current process.
 // Returns length of string, not including nul, or -1 for error.
+// addr 为用户态地址
 int fetchstr(uint64 addr, char *buf, int max)
 {
 	struct proc *p = myproc();
@@ -24,6 +25,7 @@ int fetchstr(uint64 addr, char *buf, int max)
 	return strlen(buf);
 }
 
+// 获取第 n 个 arg raw 的值
 static uint64 argraw(int n)
 {
 	struct proc *p = myproc();
@@ -55,9 +57,11 @@ int argint(int n, int *ip)
 // Retrieve an argument as a pointer.
 // Doesn't check for legality, since
 // copyin/copyout will do that.
+// 获取 argv[n] 存储到 ip 中
 int argaddr(int n, uint64 *ip)
 {
 	*ip = argraw(n);
+	// TODO:错误处理返回 -1
 	return 0;
 }
 
@@ -75,7 +79,7 @@ int argstr(int n, char *buf, int max)
 // extern uint64 sys_chdir(void);
 // extern uint64 sys_close(void);
 // extern uint64 sys_dup(void);
-// extern uint64 sys_exec(void);
+extern uint64 sys_exec(void);
 extern uint64 sys_exit(void);
 // extern uint64 sys_fork(void);
 // extern uint64 sys_fstat(void);
@@ -112,7 +116,7 @@ static uint64 (*syscalls[])(void) = {
 // [SYS_pipe]    sys_pipe,
 // [SYS_read]    sys_read,
 // [SYS_kill]    sys_kill,
-// [SYS_exec]    sys_exec,
+[SYS_exec]    sys_exec,
 // [SYS_fstat]   sys_fstat,
 // [SYS_chdir]   sys_chdir,
 // [SYS_dup]     sys_dup,

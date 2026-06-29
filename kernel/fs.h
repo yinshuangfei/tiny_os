@@ -7,11 +7,10 @@
 // Both the kernel and user programs use this header file.
 
 #define ROOTINO  1   // root i-number
-#define BSIZE 1024  // block size
+#define BSIZE 1024   // block size
 
 // Disk layout:
-// [ boot block | super block | log | inode blocks |
-//                                          free bit map | data blocks]
+// [ boot block | super block | log | inode blocks | free bit map | data blocks]
 //
 // mkfs computes the super block and builds an initial file system. The
 // super block describes the disk layout:
@@ -24,12 +23,12 @@ struct superblock {
 	uint logstart;     // Block number of first log block
 	uint inodestart;   // Block number of first inode block
 	uint bmapstart;    // Block number of first free map block
-};
+}; /** 32 Bytes */
 
 #define FSMAGIC 0x10203040
 
 #define NDIRECT 12
-#define NINDIRECT (BSIZE / sizeof(uint))
+#define NINDIRECT (BSIZE / sizeof(uint))	// 256
 #define MAXFILE (NDIRECT + NINDIRECT)
 
 // On-disk inode structure
@@ -49,17 +48,19 @@ struct dinode {
 #define IBLOCK(i, sb)     ((i) / IPB + sb.inodestart)
 
 // Bitmap bits per block
+// 每个位图块管理的位数
 #define BPB           (BSIZE*8)
 
 // Block of free map containing bit for block b
+// 根据块号 b 计算出该块所属的位图块在磁盘上的绝对位置
 #define BBLOCK(b, sb) ((b)/BPB + sb.bmapstart)
 
 // Directory is a file containing a sequence of dirent structures.
 #define DIRSIZ 14
 
 struct dirent {
-	ushort inum;
-	char name[DIRSIZ];
+	ushort inum;		//  2 bytes
+	char name[DIRSIZ];	// 14 bytes
 };
 
 #endif /** __fs_h__ */

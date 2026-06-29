@@ -7,15 +7,15 @@
 #include "fs.h"
 
 struct buf {
-	int valid;   // has data been read from disk?
-	int disk;    // does disk "own" buf?
-	uint dev;
-	uint blockno;
-	struct sleeplock lock;
-	uint refcnt;
-	struct buf *prev; // LRU cache list
-	struct buf *next;
-	uchar data[BSIZE];
+	int valid;		// has data been read from disk?
+	int disk;		// does disk "own" buf?
+	uint dev;		// 设备号
+	uint blockno;		// block 号
+	struct sleeplock lock;	// 块锁
+	uint refcnt;		// 引用计数
+	struct buf *prev;	// LRU cache list
+	struct buf *next;	// LRU cache list
+	uchar data[BSIZE];	// data
 };
 
 #endif /** _buf_h_ */

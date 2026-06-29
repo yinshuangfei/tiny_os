@@ -116,6 +116,25 @@ void kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
 		panic("kvmmap");
 }
 
+// translate a kernel virtual address to
+// a physical address. only needed for
+// addresses on the stack.
+// assumes va is page aligned.
+uint64 kvmpa(uint64 va)
+{
+	uint64 off = va % PGSIZE;
+	pte_t *pte;
+	uint64 pa;
+
+	pte = walk(kernel_pagetable, va, 0);
+	if (pte == 0)
+		panic("kvmpa");
+	if ((*pte & PTE_V) == 0)
+		panic("kvmpa");
+	pa = PTE2PA(*pte);
+	return pa + off;
+}
+
 // Create PTEs for virtual addresses starting at va that refer to
 // physical addresses starting at pa. va and size might not
 // be page-aligned. Returns 0 on success, -1 if walk() couldn't
@@ -194,6 +213,50 @@ void uvminit(pagetable_t pagetable, uchar *src, uint sz)
 	memset(mem, 0, PGSIZE);
 	mappages(pagetable, 0, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U);
 	memmove(mem, src, sz);
+}
+
+// Allocate PTEs and physical memory to grow process from oldsz to
+// newsz, which need not be page aligned.  Returns new size or 0 on error.
+uint64 uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
+{
+	char *mem;
+	uint64 a;
+
+	if (newsz < oldsz)
+		return oldsz;
+
+	oldsz = PGROUNDUP(oldsz);
+	for (a = oldsz; a < newsz; a += PGSIZE) {
+		mem = kalloc();
+		if (mem == 0) {
+			uvmdealloc(pagetable, a, oldsz);
+			return 0;
+		}
+		memset(mem, 0, PGSIZE);
+		if (mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0) {
+			kfree(mem);
+			uvmdealloc(pagetable, a, oldsz);
+			return 0;
+		}
+	}
+	return newsz;
+}
+
+// Deallocate user pages to bring the process size from oldsz to
+// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
+// need to be less than oldsz.  oldsz can be larger than the actual
+// process size.  Returns the new process size.
+uint64 uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
+{
+	if (newsz >= oldsz)
+		return oldsz;
+
+	if (PGROUNDUP(newsz) < PGROUNDUP(oldsz)) {
+		int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
+		uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
+	}
+
+	return newsz;
 }
 
 // Recursively free page-table pages.
@@ -305,6 +368,7 @@ int copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 // Copy from user to kernel.
 // Copy len bytes to dst from virtual address srcva in a given page table.
 // Return 0 on success, -1 on error.
+// 从用户态地址 srcva 往内核态地址 dst 拷贝数据
 int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
 	uint64 n, va0, pa0;
@@ -332,6 +396,7 @@ int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 // Copy bytes to dst from virtual address srcva in a given page table,
 // until a '\0', or max.
 // Return 0 on success, -1 on error.
+// 从用户态地址 srcva 往内核态地址 dst 拷贝字符串
 int copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
 	uint64 n, va0, pa0;
@@ -368,9 +433,4 @@ int copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 	} else {
 		return -1;
 	}
-}
-
-void dump_pagetable(void)
-{
-	// printf("mmap: va:0x%lx, pa:0x%lx, size:%ld\n", va, pa, size);
 }

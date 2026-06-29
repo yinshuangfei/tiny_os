@@ -340,8 +340,8 @@ int devintr()
 			uartintr();
 			// printf("cpu:%d, uartintr interrupt irq=%d\n", cpuid(), irq);
 		} else if (irq == VIRTIO0_IRQ) {
-			// virtio_disk_intr();
 			printf("virtio_disk_intr interrupt irq=%d\n", irq);
+			virtio_disk_intr();
 		} else if (irq) {
 			printf("unexpected interrupt irq=%d\n", irq);
 		}

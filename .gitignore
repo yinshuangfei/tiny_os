@@ -28,3 +28,4 @@ compile_commands.json
 kernel/kernel
 kernel.asm
 kernel.sym
+fs.img

@@ -19,10 +19,10 @@ void main()
 		printf("Tiny-OS kernel is booting\n");
 		kinit();         // physical page allocator
 		kvminit();       // create kernel page table
-		kvminithart();   // turn on paging
+		kvminithart();   // turn on paging, 开启分页机制
 		procinit();      // process table
 		trapinit();      // trap vectors
-		trapinithart();  // install kernel trap vector
+		trapinithart();  // install kernel trap vector, 安装内核 trap 向量
 		plicinit();      // set up interrupt controller
 		plicinithart();  // ask PLIC for device interrupts
 		/** plicinithart() 设置后，中断开始起作用 */
@@ -30,12 +30,11 @@ void main()
 		binit();         // buffer cache
 		iinit();         // inode cache
 		fileinit();      // file table
-		// virtio_disk_init(); // emulated hard disk
+		virtio_disk_init(); // emulated hard disk
 		userinit();      // first user process
 		__sync_synchronize();
 		started = 1;
 		printf("Tiny-OS kernel init finished 😃\n");
-		dump_pagetable();
 	} else {
 		while (started == 0)
 			;

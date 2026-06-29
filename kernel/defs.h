@@ -5,6 +5,7 @@ struct context;
 struct spinlock;
 struct sleeplock;
 struct stat;
+struct superblock;
 
 /** bio.c */
 void binit(void);
@@ -12,6 +13,7 @@ struct buf* bread(uint dev, uint blockno);
 void bwrite(struct buf *b);
 void brelse(struct buf *b);
 void bpin(struct buf *b);
+void bunpin(struct buf *b);
 
 /** console.c */
 void consputc(int c);
@@ -19,6 +21,9 @@ int consolewrite(int user_src, uint64 src, int n);
 int consoleread(int user_dst, uint64 dst, int n);
 void consoleintr(int c);
 void consoleinit(void);
+
+/** exec.c */
+int exec(char *path, char **argv);
 
 /** file.c */
 void fileinit(void);
@@ -35,6 +40,7 @@ void iput(struct inode *ip);
 void iunlockput(struct inode *ip);
 void itrunc(struct inode *ip);
 void stati(struct inode *ip, struct stat *st);
+int readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n);
 int writei(struct inode *ip, int user_src, uint64 src, uint off, uint n);
 int namecmp(const char *s, const char *t);
 struct inode* dirlookup(struct inode *dp, char *name, uint *poff);
@@ -46,6 +52,12 @@ struct inode* nameiparent(char *path, char *name);
 void kinit();
 void *kalloc(void);
 void kfree(void *pa);
+
+/** log.c */
+void initlog(int dev, struct superblock *sb);
+void begin_op(void);
+void end_op(void);
+void log_write(struct buf *b);
 
 /** main.c */
 void main();
@@ -132,17 +144,22 @@ void uartintr(void);
 
 /** virtio_disk.c */
 void virtio_disk_init(void);
+void virtio_disk_rw(struct buf *b, int write);
+void virtio_disk_intr();
 
 /** vm.c */
 void kvminit();
 pte_t *walk(pagetable_t pagetable, uint64 va, int alloc);
 uint64 walkaddr(pagetable_t pagetable, uint64 va);
 void kvmmap(uint64 va, uint64 pa, uint64 sz, int perm);
+uint64 kvmpa(uint64 va);
 void kvminithart();
 int mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm);
 void uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free);
 pagetable_t uvmcreate();
 void uvminit(pagetable_t pagetable, uchar *src, uint sz);
+uint64 uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz);
+uint64 uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz);
 void freewalk(pagetable_t pagetable);
 void uvmfree(pagetable_t pagetable, uint64 sz);
 int uvmcopy(pagetable_t old, pagetable_t new, uint64 sz);
@@ -150,7 +167,6 @@ void uvmclear(pagetable_t pagetable, uint64 va);
 int copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len);
 int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len);
 int copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max);
-void dump_pagetable(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
