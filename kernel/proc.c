@@ -195,6 +195,7 @@ void proc_freepagetable(pagetable_t pagetable, uint64 sz)
 
 // a user program that calls exec("/init")
 // od -t xC initcode
+// initcode 为链接后的目标文件，非 ELF 文件
 // 通过系统调用 exec 加载并执行磁盘上的 /init 程序，从而完成从内核态到用户态应用程序的
 // 过渡.
 uchar initcode[] = {
