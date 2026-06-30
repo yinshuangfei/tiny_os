@@ -1,35 +1,36 @@
 K=kernel
 U=user
+LIB=lib
 
 OBJS = \
-  $K/entry.o \
-  $K/start.o \
-  $K/main.o \
-  $K/printf.o \
-  $K/console.o \
-  $K/uart.o \
-  $K/proc.o \
-  $K/spinlock.o \
-  $K/file.o \
-  $K/vm.o \
-  $K/string.o \
-  $K/kalloc.o \
-  $K/trampoline.o \
-  $K/trap.o \
-  $K/kernelvec.o \
-  $K/plic.o \
-  $K/bio.o \
-  $K/fs.o \
-  $K/virtio_disk.o \
-  $K/swtch.o \
-  $K/sleeplock.o \
-  $K/syscall.o \
-  $K/sysproc.o \
-  $K/log.o \
-  $K/sysfile.o \
-  $K/exec.o \
-  $K/pipe.o \
-  $K/debug.o
+	$K/entry.o \
+	$K/start.o \
+	$K/main.o \
+	$K/printf.o \
+	$K/console.o \
+	$K/uart.o \
+	$K/proc.o \
+	$K/spinlock.o \
+	$K/file.o \
+	$K/vm.o \
+	$K/string.o \
+	$K/kalloc.o \
+	$K/trampoline.o \
+	$K/trap.o \
+	$K/kernelvec.o \
+	$K/plic.o \
+	$K/bio.o \
+	$K/fs.o \
+	$K/virtio_disk.o \
+	$K/swtch.o \
+	$K/sleeplock.o \
+	$K/syscall.o \
+	$K/sysproc.o \
+	$K/log.o \
+	$K/sysfile.o \
+	$K/exec.o \
+	$K/pipe.o \
+	$K/debug.o
 
 # Try to infer the correct TOOLPREFIX if not set
 ifndef TOOLPREFIX
@@ -100,12 +101,12 @@ $U/initcode: $U/initcode.S
 
 # 因为当前 OS 没有标准 C 库，用户程序必须链接这些自己实现的基础库才能调用系统调用和
 # 打印输出
-ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
+ULIB = $(LIB)/ulib.o $(LIB)/usys.o $(LIB)/printf.o $(LIB)/umalloc.o
 
-$U/usys.S: $U/usys.pl
+$(LIB)/usys.S: $(LIB)/usys.pl
 	perl $< > $@
 
-$U/usys.o: $U/usys.S
+$(LIB)/usys.o: $(LIB)/usys.S
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # 用户态程序链接规则 (隐式规则)
@@ -135,26 +136,25 @@ mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 .PRECIOUS: %.o $U/%.o
 
 UPROGS = \
-    $U/_init \
-    $U/_sh \
-    $U/_ls \
-    $U/_print_a \
-    $U/_print_b \
-    $U/_print_ab
-
-#   $U/_cat \
-#   $U/_echo \
-#   $U/_forktest \
-#   $U/_grep \
-#   $U/_kill \
-#   $U/_ln \
-#   $U/_mkdir \
-#   $U/_rm \
-#   $U/_stressfs \
-#   $U/_usertests \
-#   $U/_grind \
-#   $U/_wc \
-#   $U/_zombie
+	$U/_init \
+	$U/_sh \
+	$U/_ls \
+	$U/_print_a \
+	$U/_print_b \
+	$U/_print_ab
+# 	$U/_cat \
+# 	$U/_echo \
+# 	$U/_forktest \
+# 	$U/_grep \
+# 	$U/_kill \
+# 	$U/_ln \
+# 	$U/_mkdir \
+# 	$U/_rm \
+# 	$U/_stressfs \
+# 	$U/_usertests \
+# 	$U/_grind \
+# 	$U/_wc \
+# 	$U/_zombie
 
 fs.img: mkfs/mkfs $(UPROGS)
 	mkfs/mkfs fs.img $(UPROGS)
@@ -166,7 +166,7 @@ clean:
 	*/*.o */*.d */*.asm */*.sym \
 	$K/kernel fs.img \
 	mkfs/mkfs .gdbinit \
-	$U/usys.S $U/initcode $U/initcode.out \
+	$(LIB)/usys.S $U/initcode $U/initcode.out \
 	$(UPROGS)
 
 

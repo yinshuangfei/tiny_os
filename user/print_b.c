@@ -4,7 +4,7 @@
 #include "kernel/sleeplock.h"
 #include "kernel/fs.h"
 #include "kernel/file.h"
-#include "user/user.h"
+#include "lib/user.h"
 #include "kernel/fcntl.h"
 
 int main(void)
