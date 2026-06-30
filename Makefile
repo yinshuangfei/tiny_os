@@ -137,7 +137,11 @@ mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 UPROGS = \
     $U/_init \
     $U/_sh \
-    $U/_ls
+    $U/_ls \
+    $U/_print_a \
+    $U/_print_b \
+    $U/_print_ab
+
 #   $U/_cat \
 #   $U/_echo \
 #   $U/_forktest \

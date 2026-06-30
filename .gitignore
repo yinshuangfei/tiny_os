@@ -32,3 +32,5 @@ fs.img
 mkfs/mkfs
 *.sym
 *.asm
+_*
+user/usys.S

@@ -14,39 +14,39 @@
 #define MAXARGS 10
 
 struct cmd {
-  int type;
+	int type;
 };
 
 struct execcmd {
-  int type;
-  char *argv[MAXARGS];
-  char *eargv[MAXARGS];
+	int type;
+	char *argv[MAXARGS];
+	char *eargv[MAXARGS];
 };
 
 struct redircmd {
-  int type;
-  struct cmd *cmd;
-  char *file;
-  char *efile;
-  int mode;
-  int fd;
+	int type;
+	struct cmd *cmd;
+	char *file;
+	char *efile;
+	int mode;
+	int fd;
 };
 
 struct pipecmd {
-  int type;
-  struct cmd *left;
-  struct cmd *right;
+	int type;
+	struct cmd *left;
+	struct cmd *right;
 };
 
 struct listcmd {
-  int type;
-  struct cmd *left;
-  struct cmd *right;
+	int type;
+	struct cmd *left;
+	struct cmd *right;
 };
 
 struct backcmd {
-  int type;
-  struct cmd *cmd;
+	int type;
+	struct cmd *cmd;
 };
 
 int fork1(void);  // Fork but panics on failure.
@@ -141,19 +141,18 @@ getcmd(char *buf, int nbuf)
   return 0;
 }
 
-int
-main(void)
+int main(void)
 {
-  static char buf[100];
-  int fd;
+	static char buf[100];
+	int fd;
 
-  // Ensure that three file descriptors are open.
-  while((fd = open("console", O_RDWR)) >= 0){
-    if(fd >= 3){
-      close(fd);
-      break;
-    }
-  }
+	// Ensure that three file descriptors are open.
+	while ((fd = open("console", O_RDWR)) >= 0) {
+		if (fd >= 3) {
+			close(fd);
+			break;
+		}
+	}
 
   // Read and run input commands.
   while(getcmd(buf, sizeof(buf)) >= 0){

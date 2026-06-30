@@ -198,6 +198,16 @@ void proc_freepagetable(pagetable_t pagetable, uint64 sz)
 // initcode 为链接后的目标文件，非 ELF 文件
 // 通过系统调用 exec 加载并执行磁盘上的 /init 程序，从而完成从内核态到用户态应用程序的
 // 过渡.
+/**
+ * initcode 是内核启动后在用户空间运行的第一个程序, 使用机器码是为了避免：
+ * - 运行一个普通的 ELF 可执行文件（比如 _init），内核必须拥有完整的文件系统（VFS）和
+ *   可执行文件加载器（exec）;
+ * - 普通的用户程序（如 ls）都是标准的 ELF 格式, 要运行它们，内核的 exec 系统调用需要：
+ * 	- 读取并解析 ELF 头部（Header）和程序头表（Program Header）；
+ * 	- 根据段（Segment）信息分配内存；
+ * 	- 建立用户页表并映射物理内存；
+ * 	- 设置栈和环境变量；
+ */
 uchar initcode[] = {
 	0x17, 0x05, 0x00, 0x00,  // auipc a0, 0x0      (a0 = 当前 PC)
 	0x13, 0x05, 0x45, 0x02,  // addi a0, a0, 36    (a0 = PC + 36，指向字符串 "/init")
