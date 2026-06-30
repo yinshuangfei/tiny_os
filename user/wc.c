@@ -29,6 +29,7 @@ wc(int fd, char *name)
     printf("wc: read error\n");
     exit(1);
   }
+  printf("line words chars name\n");
   printf("%d %d %d %s\n", l, w, c, name);
 }
 

@@ -151,23 +151,23 @@ UPROGS = \
 	$U/_mkdir \
 	$U/_print_a \
 	$U/_print_b \
-	$U/_print_ab
-# 	$U/_cat \
-# 	$U/_echo \
-# 	$U/_forktest \
-# 	$U/_grep \
-# 	$U/_kill \
-# 	$U/_ln \
+	$U/_print_ab \
+	$U/_grep \
+	$U/_echo \
+	$U/_kill \
+	$U/_rm \
+	$U/_ln \
+	$U/_wc \
+	$U/_cat \
+	$U/_uptime \
+	$U/_grind \
+	$U/_stressfs \
+	$U/_forktest \
+	$U/_usertests \
+	$U/_zombie
 
-# 	$U/_rm \
-# 	$U/_stressfs \
-# 	$U/_usertests \
-# 	$U/_grind \
-# 	$U/_wc \
-# 	$U/_zombie
-
-fs.img: mkfs/mkfs $(UPROGS)
-	mkfs/mkfs fs.img $(UPROGS)
+fs.img: mkfs/mkfs $(UPROGS) README.md
+	mkfs/mkfs fs.img $(UPROGS) README.md
 
 -include kernel/*.d user/*.d
 

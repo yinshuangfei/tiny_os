@@ -67,25 +67,23 @@ uint64 sys_sleep(void)
 	return 0;
 }
 
-// uint64
-// sys_kill(void)
-// {
-//   int pid;
+uint64 sys_kill(void)
+{
+	int pid;
 
-//   if(argint(0, &pid) < 0)
-//     return -1;
-//   return kill(pid);
-// }
+	if (argint(0, &pid) < 0)
+		return -1;
+	return kill(pid);
+}
 
-// // return how many clock tick interrupts have occurred
-// // since start.
-// uint64
-// sys_uptime(void)
-// {
-//   uint xticks;
+// return how many clock tick interrupts have occurred
+// since start.
+uint64 sys_uptime(void)
+{
+	uint xticks;
 
-//   acquire(&tickslock);
-//   xticks = ticks;
-//   release(&tickslock);
-//   return xticks;
-// }
+	acquire(&tickslock);
+	xticks = ticks;
+	release(&tickslock);
+	return xticks;
+}

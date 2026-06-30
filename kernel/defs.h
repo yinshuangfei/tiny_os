@@ -108,6 +108,7 @@ void yield(void);
 void forkret(void);
 void sleep(void *chan, struct spinlock *lk);
 void wakeup(void *chan);
+int kill(int pid);
 int either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 

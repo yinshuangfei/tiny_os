@@ -2,22 +2,21 @@
 #include "kernel/stat.h"
 #include "lib/user.h"
 
-int
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
-  int i;
+	int i;
 
-  if(argc < 2){
-    fprintf(2, "Usage: rm files...\n");
-    exit(1);
-  }
+	if (argc < 2) {
+		fprintf(2, "Usage: rm files...\n");
+		exit(1);
+	}
 
-  for(i = 1; i < argc; i++){
-    if(unlink(argv[i]) < 0){
-      fprintf(2, "rm: %s failed to delete\n", argv[i]);
-      break;
-    }
-  }
+	for (i = 1; i < argc; i++) {
+		if (unlink(argv[i]) < 0) {
+			fprintf(2, "rm: %s failed to delete\n", argv[i]);
+			break;
+		}
+	}
 
-  exit(0);
+	exit(0);
 }

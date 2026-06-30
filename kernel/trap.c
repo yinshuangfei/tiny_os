@@ -143,6 +143,7 @@ void pr_trap(char *tag)
 // 用户态发生 trap 后进入：此时使用内核态权限执行
 // 让 CPU 从用户态切到内核态的是 trap 机制, 进入 uservec 后变为内核态. 这是纯硬件机制.
 // 进入函数前，中断已经关闭
+// 退出时，从 spie 中恢复中断
 void usertrap(void)
 {
 	int which_dev = 0;

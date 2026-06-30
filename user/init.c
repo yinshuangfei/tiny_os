@@ -16,6 +16,7 @@ int main(void)
 	int pid, wpid;
 
 	if (open("console", O_RDWR) < 0) {
+		// console is a T_DEVICE
 		mknod("console", CONSOLE, 0);
 		/** fd 0, stdin */
 		open("console", O_RDWR);

@@ -296,7 +296,7 @@ int fork(void)
 	struct proc *np;
 	struct proc *p = myproc();
 
-	// Allocate process.
+	// Allocate new process.
 	if ((np = allocproc()) == 0){
 		return -1;
 	}
@@ -312,9 +312,11 @@ int fork(void)
 	np->parent = p;
 
 	// copy saved user registers.
+	// trapframe->epc 的值也被复制，所以父子进程的运行点一致
 	*(np->trapframe) = *(p->trapframe);
 
 	// Cause fork to return 0 in the child.
+	// 子进程返回 0
 	np->trapframe->a0 = 0;
 	// increment reference counts on open file descriptors.
 	for (i = 0; i < NOFILE; i++)
@@ -331,6 +333,7 @@ int fork(void)
 
 	release(&np->lock);
 
+	// 父进程直接返回，子进程等待调度运行
 	return pid;
 }
 
@@ -666,6 +669,30 @@ static void wakeup1(struct proc *p)
 		p->state = RUNNABLE;
 	}
 }
+
+// Kill the process with the given pid.
+// The victim won't exit until it tries to return
+// to user space (see usertrap() in trap.c).
+int kill(int pid)
+{
+	struct proc *p;
+
+	for (p = proc; p < &proc[NPROC]; p++) {
+		acquire(&p->lock);
+		if (p->pid == pid) {
+			p->killed = 1;
+			if (p->state == SLEEPING) {
+				// Wake process from sleep().
+				p->state = RUNNABLE;
+			}
+			release(&p->lock);
+			return 0;
+		}
+		release(&p->lock);
+	}
+	return -1;
+}
+
 
 // Copy to either a user address, or kernel address,
 // depending on usr_dst.

@@ -203,7 +203,7 @@ struct inode* ialloc(uint dev, short type)
     if(dip->type == 0){  // a free inode
       memset(dip, 0, sizeof(*dip));
       dip->type = type;
-//       log_write(bp);   // mark it allocated on the disk
+      log_write(bp);   // mark it allocated on the disk
       brelse(bp);
       return iget(dev, inum);
     }
@@ -488,7 +488,7 @@ int writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
       brelse(bp);
       break;
     }
-//     log_write(bp);
+    log_write(bp);
     brelse(bp);
   }
 
@@ -541,30 +541,30 @@ struct inode* dirlookup(struct inode *dp, char *name, uint *poff)
 // Write a new directory entry (name, inum) into the directory dp.
 int dirlink(struct inode *dp, char *name, uint inum)
 {
-  int off;
-  struct dirent de;
-  struct inode *ip;
+	int off;
+	struct dirent de;
+	struct inode *ip;
 
-  // Check that name is not present.
-  if((ip = dirlookup(dp, name, 0)) != 0){
-    iput(ip);
-    return -1;
-  }
+	// Check that name is not present.
+	if ((ip = dirlookup(dp, name, 0)) != 0) {
+		iput(ip);
+		return -1;
+	}
 
-  // Look for an empty dirent.
-  for(off = 0; off < dp->size; off += sizeof(de)){
-    if(readi(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
-      panic("dirlink read");
-    if(de.inum == 0)
-      break;
-  }
+	// Look for an empty dirent.
+	for (off = 0; off < dp->size; off += sizeof(de)) {
+		if (readi(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
+			panic("dirlink read");
+		if (de.inum == 0)
+			break;
+	}
 
-  strncpy(de.name, name, DIRSIZ);
-  de.inum = inum;
-  if(writei(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
-    panic("dirlink");
+	strncpy(de.name, name, DIRSIZ);
+	de.inum = inum;
+	if (writei(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
+		panic("dirlink");
 
-  return 0;
+	return 0;
 }
 
 // Paths
