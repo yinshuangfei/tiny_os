@@ -101,7 +101,15 @@ $U/initcode: $U/initcode.S
 
 # 因为当前 OS 没有标准 C 库，用户程序必须链接这些自己实现的基础库才能调用系统调用和
 # 打印输出
-ULIB = $(LIB)/ulib.o $(LIB)/usys.o $(LIB)/printf.o $(LIB)/umalloc.o
+ULIB = \
+	$(LIB)/ulib.o \
+	$(LIB)/usys.o \
+	$(LIB)/printf.o \
+	$(LIB)/umalloc.o \
+	$(LIB)/start.o
+
+$(LIB)/start.o: $(LIB)/start.S
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(LIB)/usys.S: $(LIB)/usys.pl
 	perl $< > $@
@@ -113,10 +121,11 @@ $(LIB)/usys.o: $(LIB)/usys.S
 # 将各个用户程序的 .o 与用户态基础库 (ULIB) 链接
 # _%：表示所有以 _ 开头的文件。当 make 需要生成 user/_ls 时，% 就匹配到了 user/ls
 # -N：将代码段和数据段设置为可读、可写、可执行。这在现代操作系统中是不安全的，但在 xv6 这种教学系统中是为了简化内存管理。
-# -e main：指定程序的入口点（Entry Point）为 main 函数。这意味着当 xv6 加载这个程序时，会直接跳转到 main 开始执行。
+# -e _start：指定程序的入口点为用户态启动代码。启动代码负责调用 main，
+# 再把 main 的返回值交给 exit()，这样用户程序里写 return 0; 就是安全的。
 # -Ttext 0：指定代码段（Text segment）在用户空间的起始虚拟地址为 0x0。xv6 的用户程序都是从地址 0 开始加载的。
 _%: %.o $(ULIB)
-	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
+	$(LD) $(LDFLAGS) -N -e _start -Ttext 0 -o $@ $^
 	$(OBJDUMP) -S $@ > $*.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
 
@@ -139,6 +148,7 @@ UPROGS = \
 	$U/_init \
 	$U/_sh \
 	$U/_ls \
+	$U/_mkdir \
 	$U/_print_a \
 	$U/_print_b \
 	$U/_print_ab
@@ -148,7 +158,7 @@ UPROGS = \
 # 	$U/_grep \
 # 	$U/_kill \
 # 	$U/_ln \
-# 	$U/_mkdir \
+
 # 	$U/_rm \
 # 	$U/_stressfs \
 # 	$U/_usertests \

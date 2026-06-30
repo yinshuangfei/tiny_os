@@ -7,10 +7,11 @@
 #include "lib/user.h"
 #include "kernel/fcntl.h"
 
-int main(void)
+int main(int argc, char *argv[])
 {
 	for (;;) {
 		printf("B");
+		sleep(1);
 	}
 	return 0;
 }

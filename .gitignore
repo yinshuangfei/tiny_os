@@ -33,4 +33,4 @@ mkfs/mkfs
 *.sym
 *.asm
 _*
-user/usys.S
+lib/usys.S

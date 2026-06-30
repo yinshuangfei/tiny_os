@@ -89,7 +89,8 @@ kernelvec:
 
         #
         # machine-mode timer interrupt.
-        #
+        # 把"机器模式下的时钟中断"转成"内核能处理的中断"，并顺便安排下一次定时中断.
+        # 时钟中断强制在机器模式（M-mode）处理.
 .globl timervec
 .align 4
 timervec:
@@ -105,6 +106,7 @@ timervec:
 
         # schedule the next timer interrupt
         # by adding interval to mtimecmp.
+        # 安排下一次定时中断
         ld a1, 32(a0) # CLINT_MTIMECMP(hart)
         ld a2, 40(a0) # interval
         ld a3, 0(a1)
@@ -112,6 +114,7 @@ timervec:
         sd a3, 0(a1)
 
         # raise a supervisor software interrupt.
+        # 手动触发一个 Supervisor 级别的软件中断(注意，不是定时器中断)
         li a1, 2
         csrw sip, a1
 

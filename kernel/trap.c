@@ -71,7 +71,7 @@ void pr_trap(char *tag)
 		printf("\n");
 
 	}
-	// 同步异常
+	// 同步异常(异常|系统调用)
 	else {
 		printf("[%s] Trap: Exception, Code: ", tag);
 		switch (scause & 0xff) {
@@ -142,6 +142,7 @@ void pr_trap(char *tag)
 // called from trampoline.S
 // 用户态发生 trap 后进入：此时使用内核态权限执行
 // 让 CPU 从用户态切到内核态的是 trap 机制, 进入 uservec 后变为内核态. 这是纯硬件机制.
+// 进入函数前，中断已经关闭
 void usertrap(void)
 {
 	int which_dev = 0;
@@ -168,6 +169,9 @@ void usertrap(void)
 	struct proc *p = myproc();
 
 	// save user program counter.
+	// CPU 发生异常或执行 ecall 陷入内核时，硬件会自动把当前的 PC（程序计数器）保存
+	// 到 sepc 寄存器中。执行 sret 时，硬件直接将 sepc 的值赋给 PC。
+	// 这里先保存 sepc。
 	p->trapframe->epc = r_sepc();
 
 	if (r_scause() == 8) {
@@ -204,6 +208,7 @@ void usertrap(void)
 		exit(-1);
 
 	// give up the CPU if this is a timer interrupt.
+	// 如果是定时器中断，则让出 CPU
 	if (which_dev == 2)
 		yield();
 
@@ -256,7 +261,10 @@ void usertrapret(void)
 	w_sstatus(x);
 
 	// set S Exception Program Counter to the saved user pc.
-	// 切换用户程序指针，准备用户态程序
+	// CPU 发生异常或执行 ecall 陷入内核时，硬件会自动把当前的 PC（程序计数器）保存
+	// 到 sepc 寄存器中。执行 sret 时，硬件直接将 sepc 的值赋给 PC
+	// 复制 sepc 为 epc，为切换回用户程序做准备
+	// 对第一个程序 initcode 特别重要
 	w_sepc(p->trapframe->epc);
 
 	// tell trampoline.S the user page table to switch to.
@@ -278,7 +286,6 @@ void usertrapret(void)
 	 * 页在高地址上的运行时位置。
 	*/
 	// !!!调用 userret(), 内核态切换到用户态代码执行!!!
-	// printf("usertrapret: user process epc:%p\n", p->trapframe->epc);
 	((void (*)(uint64,uint64))fn)(TRAPFRAME, satp);
 }
 

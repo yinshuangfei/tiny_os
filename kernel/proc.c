@@ -5,10 +5,10 @@
 #include "memlayout.h"
 #include "fs.h"
 
-// 每个核上的 scheduler 上下文
+// 每个核上的 CPU 状态数组
 struct cpu cpus[NCPU];
 
-// kernel 进程
+// 进程数组
 struct proc proc[NPROC];
 
 struct proc *initproc;
@@ -513,12 +513,17 @@ void scheduler(void)
 
 				// printf("sche: cpu:%d, schedule into -> '%s'\n", cpuid(), p->name);
 				/**
-				 * 完成进程切换, 调用汇编代码 swtch.S
-				 * void swtch(struct context *old, struct context *new);
-				 * 执行 new->context->ra 指向的函数. 特权模式未变.
+				 * 完成进程切换, 调用汇编代码 swtch.S 中的函数 swtch,
+				 * 函数原型为:
+				 * - void swtch(struct context *old, struct context *new);
+				 * 执行 new->context->ra 指向的函数 forkret().
+				 * 特权模式未变.
+				 *
+				 * 执行了 swtch(*old, *new)；
+				 * 当前内核进程的状态保存至 old->context, 摇身一变新进程，
 				 **/
 				swtch(&c->context, &p->context);
-				/** 返回，表示切换会调度程序 */
+				/** 返回，表示切换回调度程序 */
 				// printf("sche: cpu:%d, schedule back\n", cpuid());
 
 				// Process is done running for now.
@@ -563,6 +568,7 @@ void sched(void)
 		panic("sched interruptible");
 
 	intena = mycpu()->intena;
+	/** 切换回调度程序，下次切换回来从该函数返回 */
 	swtch(&p->context, &mycpu()->context);
 	mycpu()->intena = intena;
 }
@@ -583,8 +589,6 @@ void yield(void)
 // ret"进去的, 目前位于内核态.
 void forkret(void)
 {
-	// printf("forkret\n");
-
 	static int first = 1;
 
 	// Still holding p->lock from scheduler.

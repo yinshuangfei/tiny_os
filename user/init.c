@@ -17,10 +17,15 @@ int main(void)
 
 	if (open("console", O_RDWR) < 0) {
 		mknod("console", CONSOLE, 0);
+		/** fd 0, stdin */
 		open("console", O_RDWR);
 	}
-	dup(0);  // stdout
-	dup(0);  // stderr
+
+	/** fd 1, stdout */
+	dup(0);
+	/** fd 2, stderr */
+	dup(0);
+	/** 后续的所有程序都继承这些文件描述符 */
 
 	for (;;) {
 		printf("init: starting sh\n");

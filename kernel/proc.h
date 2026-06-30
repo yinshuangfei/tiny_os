@@ -27,7 +27,9 @@ struct context {
 // Per-CPU state.
 // 每个核上的 cpu 状态
 struct cpu {
+	// 当前 cpu 上运行的进程
 	struct proc *proc;          // The process running on this cpu, or null.
+	// 当前 cpu 上 scheduler 上下文
 	struct context context;     // swtch() here to enter scheduler().
 	int noff;                   // Depth of push_off() nesting.
 	int intena;                 // Were interrupts enabled before push_off()?

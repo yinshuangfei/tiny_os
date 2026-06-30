@@ -78,11 +78,11 @@ static inline uint64 r_mhartid()
 }
 
 // Machine Status Register, mstatus
-#define MSTATUS_MPP_MASK (3L << 11) // previous mode.
-#define MSTATUS_MPP_M (3L << 11)
-#define MSTATUS_MPP_S (1L << 11)
-#define MSTATUS_MPP_U (0L << 11)
-#define MSTATUS_MIE (1L << 3)    // machine-mode interrupt enable.
+#define MSTATUS_MPP_MASK (3L << 11)	// previous mode.
+#define MSTATUS_MPP_M (3L << 11)	// M-mode
+#define MSTATUS_MPP_S (1L << 11)	// S-mode
+#define MSTATUS_MPP_U (0L << 11)	// U-mode
+#define MSTATUS_MIE (1L << 3)		// machine-mode interrupt enable.
 
 // mstatus（Machine Status Register，机器状态寄存器）是 RISC-V 中最核心的 CSR 之一，
 // 它控制着处理器的全局状态。修改它的值会直接影响 CPU 的行为。

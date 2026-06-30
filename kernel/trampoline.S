@@ -23,6 +23,12 @@ trampoline:
 #  - 用户态程序触发 trap 的那一刻，CPU 硬件会自动把特权级从 U-mode 切到 S-mode
 #  - 然后才跳到 stvec 指向的入口，也就是 uservec
 #  - 所以 uservec 运行时，已经是在 supervisor mode，也就是内核态
+
+# 当 CPU 从用户态（U-mode）发生陷阱（如系统调用、异常或中断）并跳转到 uservec 时，
+# RISC-V 硬件会自动执行以下操作：
+#  - 自动关闭全局中断: 硬件会自动清除 sstatus 寄存器中的 SIE
+#  - 保存中断状态: 硬件会将陷阱发生前 SIE 的原始状态保存在 sstatus 寄存器的 SPIE
+#  - 保存现场信息: 同时，硬件还会将当前的程序计数器（PC）保存到 sepc
 uservec:
         #
         # trap.c sets stvec to point here, so
@@ -158,4 +164,8 @@ userret:
         # return to user mode and user pc.
         # usertrapret() set up sstatus and sepc.
         # 返回到 epc 指向的用户态程序地址执行
+
+        # 跳转目标是由硬件自动管理
+        # CPU 发生异常或执行 ecall 陷入内核时，硬件会自动把当前的 PC（程序计数器）保存
+        # 到 sepc 寄存器中。执行 sret 时，硬件直接将 sepc 的值赋给 PC
         sret

@@ -57,7 +57,7 @@ uint64 sys_dup(void)
 
 	if (argfd(0, 0, &f) < 0)
 		return -1;
-	if ((fd=fdalloc(f)) < 0)
+	if ((fd = fdalloc(f)) < 0)
 		return -1;
 	filedup(f);
 	return fd;

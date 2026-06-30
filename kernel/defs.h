@@ -8,6 +8,8 @@ struct stat;
 struct superblock;
 struct pipe;
 
+extern uint ticks;
+
 /** bio.c */
 void binit(void);
 struct buf* bread(uint dev, uint blockno);
