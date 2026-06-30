@@ -164,7 +164,9 @@ UPROGS = \
 	$U/_stressfs \
 	$U/_forktest \
 	$U/_usertests \
-	$U/_zombie
+	$U/_zombie \
+	$U/_sleep \
+	$U/_find \
 
 fs.img: mkfs/mkfs $(UPROGS) README.md
 	mkfs/mkfs fs.img $(UPROGS) README.md

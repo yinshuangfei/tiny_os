@@ -14,7 +14,7 @@ struct file {
 	char writable;		// 可写
 	struct pipe *pipe;	// FD_PIPE
 	struct inode *ip;	// FD_INODE and FD_DEVICE
-	uint off;		// FD_INODE
+	uint off;		// FD_INODE, offset
 	short major;		// FD_DEVICE
 };
 
