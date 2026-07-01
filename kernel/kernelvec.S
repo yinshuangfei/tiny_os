@@ -1,6 +1,7 @@
         #
         # interrupts and exceptions while in supervisor
         # mode come here.
+        # 内核态的“专属陷阱入口”
         #
         # push all registers, call kerneltrap(), restore, return.
         #

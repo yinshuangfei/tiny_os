@@ -5,6 +5,7 @@
 
 // Mutual exclusion lock.
 struct spinlock {
+	// 该值为原子操作值，值为1，表示锁定
 	uint locked;       // Is the lock held?
 
 	// For debugging:

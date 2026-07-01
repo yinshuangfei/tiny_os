@@ -12,6 +12,7 @@
 .globl trampoline
 # trampoline 是这页代码的起始符号
 trampoline:
+# 对齐到 16 字节边界
 .align 4
 .globl uservec
 # 重点！！！uservec 是"用户态 trap 进内核时"的入口点，模式为 supervisor (内核态),
@@ -29,6 +30,7 @@ trampoline:
 #  - 自动关闭全局中断: 硬件会自动清除 sstatus 寄存器中的 SIE
 #  - 保存中断状态: 硬件会将陷阱发生前 SIE 的原始状态保存在 sstatus 寄存器的 SPIE
 #  - 保存现场信息: 同时，硬件还会将当前的程序计数器（PC）保存到 sepc
+#  - sp 保持不变
 uservec:
         #
         # trap.c sets stvec to point here, so
@@ -39,6 +41,7 @@ uservec:
         # sscratch points to where the process's p->trapframe is
         # mapped into user space, at TRAPFRAME.
         #
+        # sscratch 作为临时寄存器，通常用来存放 Trapframe 的内存基地址
 
         # swap a0 and sscratch
         # so that a0 is TRAPFRAME
@@ -46,8 +49,9 @@ uservec:
 
         # save the user registers in TRAPFRAME
         # 将 ra 中的 64 位数据，存储到 a0 + 40 的内存地址中
+        # 将用户态运行的'热乎状态'保存起来
         sd ra, 40(a0)
-        sd sp, 48(a0)
+        sd sp, 48(a0)       # 保存用户栈地址
         sd gp, 56(a0)
         sd tp, 64(a0)
         sd t0, 72(a0)
@@ -83,6 +87,7 @@ uservec:
 
         # restore kernel stack pointer from p->trapframe->kernel_sp
         # 从 a0 + 8 的内存地址中，读取一个 64 位的数据加载到栈指针寄存器 sp 中
+        # 用户栈切换到内核栈
         ld sp, 8(a0)
 
         # make tp hold the current hartid, from p->trapframe->kernel_hartid
@@ -127,8 +132,9 @@ userret:
         csrw sscratch, t0
 
         # restore all but a0 from TRAPFRAME
+        # 将 p->trapframe 中的值加载到对应的寄存器中，恢复用户进程
         ld ra, 40(a0)
-        ld sp, 48(a0)
+        ld sp, 48(a0)       # 还原用户栈地址
         ld gp, 56(a0)
         ld tp, 64(a0)
         ld t0, 72(a0)
@@ -159,6 +165,7 @@ userret:
         ld t6, 280(a0)
 
         # restore user a0, and save TRAPFRAME in sscratch
+        # 原子交换（Swap）, 交换 a0 和 sscratch
         csrrw a0, sscratch, a0
 
         # return to user mode and user pc.

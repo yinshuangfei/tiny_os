@@ -41,11 +41,12 @@ void kvminit()
 
 	// map the trampoline for trap entry/exit to
 	// the highest virtual address in the kernel.
-	// 将 trampoline 映射到 TRAMPOLINE
+	// 将 trampoline 映射到逻辑地址 TRAMPOLINE
+	// trampoline 和 uservec 的地址一样, trampoline 即 uservec
 	kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 }
 
-// Switch h/w page table register to the kernel's page table,
+// Switch h/w (hardware) page table register to the kernel's page table,
 // and enable paging.
 void kvminithart()
 {

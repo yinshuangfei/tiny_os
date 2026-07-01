@@ -6,6 +6,8 @@ SECTIONS
   /*
    * ensure that entry.S / _entry is at 0x80000000,
    * where qemu's -kernel jumps.
+
+   * ALIGN(0x1000): 对齐到 4KB（0x1000）边界
    */
   . = 0x80000000;
 

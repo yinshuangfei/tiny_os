@@ -23,6 +23,7 @@ static void wakeup1(struct proc *chan);
 static void freeproc(struct proc *p);
 
 // initialize the proc table at boot time.
+// 设置内核进程栈，设置内核页表
 void procinit(void)
 {
 	struct proc *p;
@@ -38,7 +39,10 @@ void procinit(void)
 		if (pa == 0)
 			panic("kalloc");
 
-		/** 内核进程栈 */
+		/** 进程内核栈
+		 * (int) (p - proc) 的值为: 0 ~ NPROC
+		 * 映射到内核页表上
+		 */
 		uint64 va = KSTACK((int) (p - proc));
 		kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
 		p->kstack = va;
@@ -108,6 +112,7 @@ found:
 	p->pid = allocpid();
 
 	// Allocate a trapframe page.
+	// p->trapframe 在 proc_pagetable() 中进行了映射
 	if ((p->trapframe = (struct trapframe *)kalloc()) == 0) {
 		release(&p->lock);
 		return 0;
@@ -125,6 +130,7 @@ found:
 	memset(&p->context, 0, sizeof(p->context));
 	// 指定了运行地址为 forkret
 	p->context.ra = (uint64)forkret;
+	// 指向内核栈地址
 	p->context.sp = p->kstack + PGSIZE;
 
 	return p;
@@ -423,6 +429,7 @@ void exit(int status)
 	release(&original_parent->lock);
 
 	// Jump into the scheduler, never to return.
+	// 父进程释放其资源后，释放 p->lock
 	sched();
 	panic("zombie exit");
 }

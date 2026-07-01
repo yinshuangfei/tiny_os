@@ -34,6 +34,15 @@ uint64 sys_wait(void)
 	return wait(p);
 }
 
+/**
+ * sbrk: Set Break (设置边界)
+ * - sbrk(0)：查询当前堆的边界指针在哪里。
+ * - sbrk(n)：将堆的边界指针向上（高地址）移动 n 字节，从而为程序分配更多的堆内存。
+ * - sbrk(-n)：将堆的边界指针向下（低地址）移动 n 字节，从而释放堆内存。
+ *
+ * brk 是直接将边界指针设置为一个绝对地址。
+ * sbrk 则是基于当前的边界指针，进行相对增量的调整（Set Break）。
+ */
 uint64 sys_sbrk(void)
 {
 	int addr;

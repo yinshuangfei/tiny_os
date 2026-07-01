@@ -73,13 +73,15 @@ static void printptr(uint64 x)
 void printf(char *fmt, ...)
 {
 	va_list ap;
-	int i, c, c2;
+	int i, c, c2, locking;
 	char *s;
 
-	// todo: locking
-	if (fmt == 0) {
-		/** panic */
-	}
+	locking = pr.locking;
+	if (locking)
+		acquire(&pr.lock);
+
+	if (fmt == 0)
+		panic("null fmt");
 
 	va_start(ap, fmt);
 
@@ -138,6 +140,8 @@ void printf(char *fmt, ...)
 			break;
 		}
 	}
+	if (locking)
+		release(&pr.lock);
 }
 
 void panic(char *s)

@@ -183,7 +183,7 @@ clean:
 
 
 ifndef CPUS
-CPUS := 1
+CPUS := 3
 endif
 
 QEMUOPTS = -machine virt -bios none -m 128M -smp $(CPUS) -nographic

@@ -196,7 +196,8 @@ void usertrap(void)
 
 		syscall();
 	}
-	// 刚从用户态 trap 进入内核态时，进行一次中断处理，因为可能由于外部中断而 trap
+	// 刚从用户态 trap 进入内核态时，进行一次中断处理，以免遗漏
+	// 因为可能由于外部中断而 trap
 	else if ((which_dev = devintr()) != 0) {
 		// ok
 	} else {
@@ -293,11 +294,9 @@ void usertrapret(void)
 // interrupts and exceptions from kernel code go here via kernelvec,
 // on whatever the current kernel stack is.
 // 内核发生中断时，在 kernel/kernelvec.S 中会调用 kerneltrap()
-// 这个函数里不能放 printf, 否则会循环出发 UART 中断
+// 这个函数里不能放 printf, 否则会循环触发 UART 中断
 void kerneltrap()
 {
-	// pr_trap("Kernel-into");
-
 	int which_dev = 0;
 	uint64 sepc = r_sepc();
 	uint64 sstatus = r_sstatus();
@@ -386,6 +385,7 @@ int devintr()
 		// software interrupt from a machine-mode timer interrupt,
 		// forwarded by timervec in kernelvec.S.
 
+		// 每个核心都触发硬件时钟中断，但只有 cpu0 处理对应的软中断
 		if (cpuid() == 0) {
 			clockintr();
 		}

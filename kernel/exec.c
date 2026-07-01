@@ -9,6 +9,32 @@
 
 static int loadseg(pde_t *pgdir, uint64 addr, struct inode *ip, uint offset, uint sz);
 
+/**
+ * 传参的布局
+ * ** 低地址 **
+ * ---------------- 0x000000
+ * | xxxx
+ * | xxxx
+ * ---------------- end of user code
+ * |
+ * | 1*PGSIZE for guard
+ * |
+ * ---------------- sp stackbase (1*PGSIZE to bottom)
+ * |
+ * |
+ * | xxx
+ * | xxxx
+ * | -------------- sp
+ * | argv_array
+ * |   - ptr-0
+ * |   - ...
+ * |   - ptr-n
+ * | argv[n]  - ptr-n
+ * | ...
+ * | argv[0]  - ptr-0
+ * ---------------- sp init line bottom
+ * ** 高地址 **
+ */
 int exec(char *path, char **argv)
 {
 	char *s, *last;
@@ -114,7 +140,7 @@ int exec(char *path, char **argv)
 	p->sz = sz;
 	/** 重点, epc 指向 entry */
 	p->trapframe->epc = elf.entry;  // initial program counter = main
-	p->trapframe->sp = sp; // initial stack pointer
+	p->trapframe->sp = sp;		// initial stack pointer, 参数变量后
 	proc_freepagetable(oldpagetable, oldsz);
 
 	return argc; // this ends up in a0, the first argument to main(argc, argv)

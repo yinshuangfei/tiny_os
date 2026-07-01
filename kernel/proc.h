@@ -7,7 +7,7 @@
 // TODO: 为什么是这 14 个寄存器
 struct context {
 	uint64 ra;	// 返回地址（Return Address）, 寄存器编号：x1
-	uint64 sp;	// 栈指针（Stack Pointer）, 寄存器编号：x2
+	uint64 sp;	// 内核栈指针（Stack Pointer）, 寄存器编号：x2
 
 	// callee-saved
 	uint64 s0;
@@ -32,6 +32,7 @@ struct cpu {
 	// 当前 cpu 上 scheduler 上下文
 	struct context context;     // swtch() here to enter scheduler().
 	int noff;                   // Depth of push_off() nesting.
+	// interrupt enabled
 	int intena;                 // Were interrupts enabled before push_off()?
 };
 
@@ -57,10 +58,10 @@ struct trapframe {
 	/*  24 */ uint64 epc;           // saved user program counter (pc)
 	/*  32 */ uint64 kernel_hartid; // saved kernel tp
 	/*  40 */ uint64 ra;
-	/*  48 */ uint64 sp;	// 栈指针
+	/*  48 */ uint64 sp;		// 用户栈指针
 	/*  56 */ uint64 gp;
 	/*  64 */ uint64 tp;
-	/*  72 */ uint64 t0;
+	/*  72 */ uint64 t0;	// temp
 	/*  80 */ uint64 t1;
 	/*  88 */ uint64 t2;
 	/*  96 */ uint64 s0;
@@ -110,11 +111,11 @@ struct proc {
 	int pid;                     // Process ID
 
 	// these are private to the process, so p->lock need not be held.
-	uint64 kstack;               // Virtual address of kernel stack
+	uint64 kstack;               // Virtual address of kernel stack, 切换到内核后使用
 	uint64 sz;                   // Size of process memory (bytes)
 	pagetable_t pagetable;       // User page table，用户页表
 	struct trapframe *trapframe; // data page for trampoline.S
-	// 当前 proc 的上下文
+	// 当前 proc 的内核上下文
 	struct context context;      // swtch() here to run process
 	struct file *ofile[NOFILE];  // Open files
 	struct inode *cwd;           // Current directory
