@@ -34,6 +34,7 @@ $ tar xf qemu-5.1.0.tar.xz
 
 $ cd qemu-5.1.0
 $ ./configure --disable-kvm --disable-werror --prefix=/usr/local --target-list="riscv64-softmmu"
+
 $ make
 $ sudo make install
 $ cd ..
@@ -41,6 +42,13 @@ $ cd ..
 $ qemu-system-riscv64 --version
 QEMU emulator version 5.1.0
 ```
+For x86, use
+```
+$ ./configure --target-list=x86_64-softmmu --disable-werror --disable-linux-io-uring
+$ make -j"$(nproc)" x86_64-softmmu/all"
+$ cp x86_64-softmmu/qemu-system-x86_64 /usr/local/bin/
+```
+
 
 ## Run the OS
 ```

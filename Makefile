@@ -2,6 +2,10 @@ K=kernel
 U=user
 LIB=lib
 
+X86    = arch/x86
+RISC-V = arch/riscv
+ARM64  = arch/arm64
+
 OBJS = \
 	$K/entry.o \
 	$K/start.o \
@@ -209,3 +213,6 @@ print-cflags:
 compile_commands.json: Makefile gen_compile_commands.py
 	python3 gen_compile_commands.py
 ## compile_commands.json 生成工具 end
+
+x86:
+	$(MAKE) -C $(X86);
