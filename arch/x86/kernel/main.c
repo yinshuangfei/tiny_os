@@ -3,6 +3,7 @@
 void main(void)
 {
 	serial_init();
+	// timer_init();
 
 	uart_puts("Hello Tiny-OS\n");
 }

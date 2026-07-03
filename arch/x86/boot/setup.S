@@ -1,14 +1,13 @@
 .code16
 .set STAGE2_TMP, 0x7e00
 .set STAGE2_LOAD, 0x100000
+.set BOOT_PARAMS, 0x7DF0
 .set CODE_SEL, 0x08
 .set DATA_SEL, 0x10
-.set STAGE2_SECTORS, 2
 
 .section .text
-.globl loader_start
-.type loader_start, @function	# 告诉调试器 _start 是函数
-
+.globl setup_start
+.type setup_start, @function	# 告诉调试器 _start 是函数
 
 # 进入保护模式的标准三步（都在实模式里完成前两步）：
 # 实模式                          保护模式
@@ -18,7 +17,7 @@
 # 3. ljmp $0x08, ...   ──→  用 GDT 里的代码段描述符刷新 CS，真正跑 32 位代码
 
 # 目前的地址是 boot.S 加载至的 0x7e00
-loader_start:
+setup_start:
 	# 使用 Fast A20 Gate 打开 A20，确保 0x100000 不会回绕到 0x00000。
 	inb $0x92, %al			# 从 I/O 端口 0x92（Fast A20 Gate）读状态到 AL
 	orb $0x02, %al			# 设置 AL 的第 2 位（A20 线使能位）为 1
@@ -46,14 +45,17 @@ protected_mode:
 	movw %ax, %gs
 	movl $0x90000, %esp		# 栈指针设置
 
-	# 把刚才读到 0x7e00 的二级代码搬到 0x100000。
-	movl $STAGE2_TMP, %esi		# 源地址
-	movl $STAGE2_LOAD, %edi		# 目标地址
-	movl $(STAGE2_SECTORS * 512 / 4), %ecx	# 复制次数, 双字对齐
-	rep movsl				# 复制内存, move string long
+	# 复制长度来自 MBR boot_params（boot.S 在汇编期写入，物理地址 0x7DF0）
+	movl $BOOT_PARAMS, %ebp
+	movzwl (%ebp), %eax
+	shll $7, %eax			# sectors * 512 / 4
+	movl %eax, %ecx
+	movl $STAGE2_TMP, %esi
+	movl $STAGE2_LOAD, %edi
+	rep movsl
 
 	movl $STAGE2_LOAD, %eax
-	addl $(_start - loader_start), %eax
+	addl $(_start - setup_start), %eax
 	jmp *%eax
 
 	.align 8			# GDT 表是 8 字节对齐的

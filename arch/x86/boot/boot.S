@@ -1,8 +1,7 @@
 .code16			# 告诉编译器接下来的代码是 16 位模式（BIOS 启动时的 CPU 状态）
 
 .set STAGE2_TMP, 0x7e00
-.set STAGE2_SECTORS, 2
-.set CODE_SEL, 0x08
+.set STAGE2_SECTORS, KERNEL_SECTORS
 
 .section .text
 .globl _boot
@@ -23,13 +22,14 @@ _boot:
 	#（跳转到 0x7C00）时，启动盘号约定放在 DL 里
 	movb %dl, boot_drive		# 保存 BIOS 传入的启动盘号（boot_drive 为内存地址，加 $表示值）
 
-	# 这个最小 demo 的二级代码只有一个扇区，因此直接读取 sector 2。
-	movw $STAGE2_TMP, %bx		# BX=0x7e00 (二级代码临时缓冲区)。
-	movw $(0x0200 | STAGE2_SECTORS), %ax	# AH=0x02 (读扇区)，AL=扇区数
-	movw $0x0002, %cx		# CH=0x00 (柱面号)，CL=0x02 (扇区号)。第 1 扇区是 MBR 自己
+	# 从第 2 扇区起连续读取 STAGE2_SECTORS 个扇区到 0x7e00
+	movw $STAGE2_TMP, %bx
+	movw $0x0200, %ax
+	movb $STAGE2_SECTORS, %al
+	movw $0x0002, %cx
+	movb $0, %dh
 	movb boot_drive, %dl
-	int $0x13			# 磁盘 I/O 服务, 0x13 中断返回至下一条指令，CF=0 表示成功，CF=1 表示失败。
-	# Jump if Carry
+	int $0x13
 	jc disk_error
 
 	# loader 仍在实模式运行，需用实模式远跳转到 0x7e00
@@ -41,6 +41,11 @@ disk_error:
 
 boot_drive:
 	.byte 0				# 保存启动盘号的 1 字节变量，初始为 0
+
+# boot_params.sector_count 由 Makefile 通过 -defsym KERNEL_SECTORS= 注入
+.org 0x1F0
+boot_params:
+	.word KERNEL_SECTORS
 
 .org 510				# 强制当前位置到偏移 510 字节处
 	.word 0xaa55			# MBR 结束标志，0xaa55
