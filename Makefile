@@ -199,6 +199,9 @@ QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 qemu: $K/kernel fs.img
 	@$(QEMU) $(QEMUOPTS)
 
+x86:
+	$(MAKE) -C $(X86);
+
 ## compile_commands.json 生成工具 start
 ## 若以后改了 CFLAGS / 换了工具链，在项目根执行：
 ## make compile_commands.json 来更新 compile_commands.json
@@ -213,6 +216,3 @@ print-cflags:
 compile_commands.json: Makefile gen_compile_commands.py
 	python3 gen_compile_commands.py
 ## compile_commands.json 生成工具 end
-
-x86:
-	$(MAKE) -C $(X86);

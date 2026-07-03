@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit compile_commands.json for clangd (kernel + user RISC-V translation units)."""
+"""Emit compile_commands.json for clangd (kernel, user, and arch translation units)."""
 import glob
 import json
 import os
@@ -10,20 +10,16 @@ import sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
-def make_var(name: str) -> str:
+def make_var(cwd: str, name: str) -> str:
     out = subprocess.check_output(
         ["make", "-s", f"print-{name}"],
         text=True,
-        cwd=ROOT,
+        cwd=cwd,
     )
     return out.strip()
 
 
-def main() -> int:
-    os.chdir(ROOT)
-    cc = make_var("cc")
-    # Absolute compiler path so clangd QueryDriver works when the IDE's PATH
-    # differs from the shell where `make` was run.
+def resolve_cc(cc: str) -> str:
     cc_abs = shutil.which(cc) or cc
     if cc_abs == cc and os.path.basename(cc) == cc:
         print(
@@ -31,20 +27,66 @@ def main() -> int:
             f"path ({cc!r}); clangd may fail until this binary is on PATH.",
             file=sys.stderr,
         )
-    cflags = make_var("cflags").split()
-    files = sorted(glob.glob("kernel/*.c") + glob.glob("user/*.c"))
-    db = []
-    for src in files:
-        obj = src[:-2] + ".o"
-        src_abs = os.path.join(ROOT, src)
-        obj_abs = os.path.join(ROOT, obj)
+    return cc_abs
+
+
+def add_entries(
+    db: list,
+    *,
+    directory: str,
+    cc: str,
+    cflags: list[str],
+    sources: list[str],
+) -> None:
+    cc_abs = resolve_cc(cc)
+    for src in sources:
+        src_abs = src if os.path.isabs(src) else os.path.join(ROOT, src)
+        rel = os.path.relpath(src_abs, directory)
+        obj_abs = os.path.join(directory, rel[:-2] + ".o")
         arguments = [cc_abs] + cflags + ["-c", "-o", obj_abs, src_abs]
         db.append(
             {
-                "directory": ROOT,
+                "directory": directory,
                 "arguments": arguments,
                 "file": src_abs,
             }
+        )
+
+
+def arch_make_dirs() -> list[str]:
+    arch_root = os.path.join(ROOT, "arch")
+    if not os.path.isdir(arch_root):
+        return []
+    dirs = []
+    for name in sorted(os.listdir(arch_root)):
+        sub = os.path.join(arch_root, name)
+        if os.path.isdir(sub) and os.path.isfile(os.path.join(sub, "Makefile")):
+            dirs.append(sub)
+    return dirs
+
+
+def main() -> int:
+    os.chdir(ROOT)
+    db: list = []
+
+    cc = make_var(ROOT, "cc")
+    cflags = make_var(ROOT, "cflags").split()
+    riscv_sources = sorted(glob.glob("kernel/*.c") + glob.glob("user/*.c"))
+    add_entries(db, directory=ROOT, cc=cc, cflags=cflags, sources=riscv_sources)
+
+    for arch_dir in arch_make_dirs():
+        arch_cc = make_var(arch_dir, "cc")
+        arch_cflags = make_var(arch_dir, "cflags").split()
+        arch_sources = sorted(
+            glob.glob(os.path.join(arch_dir, "*.c"))
+            + glob.glob(os.path.join(arch_dir, "*.S"))
+        )
+        add_entries(
+            db,
+            directory=arch_dir,
+            cc=arch_cc,
+            cflags=arch_cflags,
+            sources=arch_sources,
         )
     path = os.path.join(ROOT, "compile_commands.json")
     with open(path, "w", encoding="utf-8") as f:

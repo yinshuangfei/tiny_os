@@ -2,3 +2,6 @@
 *.img
 *.map
 *.elf
+*.iso
+*.vmdk
+*.tmp
