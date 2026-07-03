@@ -23,9 +23,22 @@ SERIAL_PUTC
 .globl _start
 .type _start, @function
 
+.extern main
+.extern edata
+.extern end
+
 _start:
 	cld
 	movl $0x80000, %esp
+
+	/* clear .bss */
+	movl $edata, %edi
+	movl $end, %ecx
+	subl %edi, %ecx
+	jz 1f			# 跳转到下面的 1: 处, f：代表 forward
+	xorl %eax, %eax
+	rep stosb
+1:
 	call main
 
 hang:

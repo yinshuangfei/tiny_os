@@ -49,33 +49,39 @@ $(BOOTDIR)/boot.bin: $(BOOTDIR)/boot.o
 	@$(LD) -m elf_i386 -Ttext 0x7c00 -e _boot -o boot.elf $^
 	@$(OBJCOPY) -O binary -j .text boot.elf $@
 
-COBJS = \
+C_OBJS = \
 	$(KDIR)/main.o \
 	$(KDIR)/serial.o \
 	$(KDIR)/timer.o \
 	$(KDIR)/interrupt.o \
 	$(KDIR)/printf.o \
+	$(KDIR)/vm.o \
+	$(KDIR)/debug.o \
+	$(KDIR)/exception.o \
 
-OBJS = $(COBJS) $(KDIR)/timervec.o
+AS_OBJS = \
+	$(KDIR)/trap.o \
 
-$(KDIR)/timervec.o: $(KDIR)/timervec.S
+OBJS = $(C_OBJS) $(AS_OBJS)
+
+$(AS_OBJS): %.o: %.S
 	$(AS) --32 $< -o $@
 
 # 语法: 目标列表: 目标模式: 依赖模式
-$(COBJS): %.o: %.c
+$(C_OBJS): %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# 直接通过链接脚本放至 0x100000 处
+# K=1: QEMU -kernel loads ELF at 0x100000 (KERNEL=1 in linker script)
 kernel.elf: $(BOOTDIR)/entry_kernel.o $(KDIR)/kernel.ld $(OBJS)
-	@$(LD) -m elf_i386 -T $(KDIR)/kernel.ld -e _start -o kernel32.elf $(BOOTDIR)/entry_kernel.o $(OBJS)
+	@$(LD) -m elf_i386 -defsym KERNEL=1 -T $(KDIR)/kernel.ld -e _start -o kernel32.elf $(BOOTDIR)/entry_kernel.o $(OBJS)
 	@$(OBJCOPY) -I elf32-i386 -O elf64-x86-64 kernel32.elf $@
 
-# 通过 setup 加载器放至 0x7e00 处, 再移动至 0x100000 处
-# 这里为什么不直接用 kernel.elf 呢？因为 kernel.elf 包含了 .bss 段，而 .bss 段需要被清零
+# K=0: MBR loads raw image to 0x7e00; setup moves it to 0x100000
+# 不直接用 kernel.elf: 因为 kernel.elf 包含了 .bss 段，而 .bss 段需要被清零
 # -j 会按各段的 VMA（虚拟地址）排布输出：最低地址从 0 偏移开始，中间按地址留空洞（填 0）。
 # 所以你现在的 kernel.bin 大小是 8721 字节 = 从 0x7e00 到 .data 末尾 0xa011，和链接布局一致。
-kernel.bin: $(BOOTDIR)/setup.o $(BOOTDIR)/entry_bin.o $(OBJS)
-	@$(LD) -m elf_i386 -Ttext 0x7e00 -e setup_start -o kernel.tmp $^
+kernel.bin: $(BOOTDIR)/setup.o $(BOOTDIR)/entry_bin.o $(OBJS) $(KDIR)/kernel.ld
+	@$(LD) -m elf_i386 -T $(KDIR)/kernel.ld -e setup_start -o kernel.tmp $(BOOTDIR)/setup.o $(BOOTDIR)/entry_bin.o $(OBJS)
 	@$(OBJCOPY) -O binary -j .text -j .rodata -j .data kernel.tmp $@
 
 boot.img: $(BOOTDIR)/boot.bin kernel.bin

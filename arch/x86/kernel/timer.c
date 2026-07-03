@@ -18,8 +18,6 @@
 #define PIT_FREQ  1193182	// 1193182 Hz (1.193182 MHz)
 #define TIMER_HZ  100		// 100 Hz (100 ticks per second)
 
-extern void timervec(void);
-
 static volatile unsigned int ticks;
 
 /**
@@ -77,8 +75,7 @@ unsigned int timer_ticks(void)
 
 void timer_init(void)
 {
-	idt_set_gate(IRQ_TIMER, timervec);
-	idt_load();
+	/** 初始化定时器，需在 IDT 初始化之后 */
 	pic_init();
 	pit_init();
 	sti();
