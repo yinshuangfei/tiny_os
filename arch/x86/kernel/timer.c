@@ -1,22 +1,31 @@
 #include "defs.h"
 #include "x86.h"
+#include "interrupt.h"
 
-#define PIC1_CMD  0x20
-#define PIC1_DATA 0x21
+/** PIC: Programmable Interrupt Controller (可编程中断控制器)  */
+/** 8259 主中断控制器 */
+#define PIC1_CMD  0x20		// 命令端口
+#define PIC1_DATA 0x21		// 数据端口
+/** 8259 从中断控制器 */
 #define PIC2_CMD  0xa0
 #define PIC2_DATA 0xa1
 
-#define PIT_CMD   0x43
-#define PIT_CH0   0x40
+/** PIT: Programmable Interval Timer (可编程间隔定时器) */
+/** 产生定时器中断 IRQ0 (Timer Tick) */
+#define PIT_CMD   0x43		// 命令端口
+#define PIT_CH0   0x40		// 通道 0 端口
 
-#define PIT_FREQ  1193182
-#define TIMER_HZ  100
-#define IRQ_TIMER 0x20
+#define PIT_FREQ  1193182	// 1193182 Hz (1.193182 MHz)
+#define TIMER_HZ  100		// 100 Hz (100 ticks per second)
 
 extern void timervec(void);
 
 static volatile unsigned int ticks;
 
+/**
+ * 配置 8259 中断控制器
+ * 8259 是主从级联两片：主片管 IRQ0–7，从片管 IRQ8–15
+*/
 static void pic_init(void)
 {
 	// ICW1: 级联、边沿触发、需要 ICW4
@@ -36,10 +45,20 @@ static void pic_init(void)
 	outb(PIC2_DATA, 0xff);
 }
 
+/** 配置 8254 可编程间隔定时器 */
 static void pit_init(void)
 {
 	unsigned short divisor = PIT_FREQ / TIMER_HZ;
 
+	/**
+	 * bit 7–6: 通道选择：00 通道 0，01 通道 1，10 通道 2，11 读回波特率
+	 * bit 5–4: 存取模式：00 方式 0，01 方式 1，10 方式 2，11 方式 3 (方波发生器)
+	 * bit 3–0: 存取频率：二进制计数，BCD 计数
+	 * 0x36 = 0011 0110
+	 * 00: 通道 0
+	 * 11: 方式 3
+	 * 0110: 二进制计数（非 BCD）
+	 */
 	outb(PIT_CMD, 0x36);
 	outb(PIT_CH0, divisor & 0xff);
 	outb(PIT_CH0, (divisor >> 8) & 0xff);

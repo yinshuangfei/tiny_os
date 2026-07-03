@@ -1,4 +1,5 @@
 #include "types.h"
+#include "interrupt.h"
 
 struct idt_entry {
 	ushort offset_low;	/* 偏移量低 16 位 */
@@ -32,5 +33,7 @@ void idt_load(void)
 
 	ptr.limit = sizeof(idt) - 1;
 	ptr.base = (uint)idt;
+
+	// 加载 IDT 寄存器, 告诉 CPU 中断描述符表（IDT）在内存中的具体位置和大小
 	__asm__ volatile ("lidt %0" : : "m"(ptr));
 }
