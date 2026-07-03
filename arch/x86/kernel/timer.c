@@ -48,6 +48,7 @@ static void pit_init(void)
 void timer_handler(void)
 {
 	ticks++;
+	printf("ticks: %d\n", ticks);
 }
 
 unsigned int timer_ticks(void)

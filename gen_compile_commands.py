@@ -30,6 +30,12 @@ def resolve_cc(cc: str) -> str:
     return cc_abs
 
 
+def source_cflags(src_abs: str, cflags: list[str]) -> list[str]:
+    if src_abs.endswith(".S"):
+        return ["-x", "assembler-with-cpp"] + cflags
+    return cflags
+
+
 def add_entries(
     db: list,
     *,
@@ -43,7 +49,11 @@ def add_entries(
         src_abs = src if os.path.isabs(src) else os.path.join(ROOT, src)
         rel = os.path.relpath(src_abs, directory)
         obj_abs = os.path.join(directory, rel[:-2] + ".o")
-        arguments = [cc_abs] + cflags + ["-c", "-o", obj_abs, src_abs]
+        arguments = (
+            [cc_abs]
+            + source_cflags(src_abs, cflags)
+            + ["-c", "-o", obj_abs, src_abs]
+        )
         db.append(
             {
                 "directory": directory,
@@ -65,6 +75,15 @@ def arch_make_dirs() -> list[str]:
     return dirs
 
 
+def arch_sources(arch_dir: str) -> list[str]:
+    sources: list[str] = []
+    for dirpath, _, filenames in os.walk(arch_dir):
+        for name in filenames:
+            if name.endswith((".c", ".S")):
+                sources.append(os.path.join(dirpath, name))
+    return sorted(sources)
+
+
 def main() -> int:
     os.chdir(ROOT)
     db: list = []
@@ -77,16 +96,13 @@ def main() -> int:
     for arch_dir in arch_make_dirs():
         arch_cc = make_var(arch_dir, "cc")
         arch_cflags = make_var(arch_dir, "cflags").split()
-        arch_sources = sorted(
-            glob.glob(os.path.join(arch_dir, "*.c"))
-            + glob.glob(os.path.join(arch_dir, "*.S"))
-        )
+        arch_srcs = arch_sources(arch_dir)
         add_entries(
             db,
             directory=arch_dir,
             cc=arch_cc,
             cflags=arch_cflags,
-            sources=arch_sources,
+            sources=arch_srcs,
         )
     path = os.path.join(ROOT, "compile_commands.json")
     with open(path, "w", encoding="utf-8") as f:

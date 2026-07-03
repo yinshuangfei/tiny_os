@@ -1,4 +1,5 @@
 #include "defs.h"
+#include "x86.h"
 
 /** 串口寄存器地址 */
 #define SERIAL_COM1 0x3f8
@@ -17,11 +18,6 @@
 #define SERIAL_COM1_SCR (SERIAL_COM1 + 7) // Scratch Register
 
 extern void serial_putc(char c);
-
-static inline void outb(unsigned short port, unsigned char val)
-{
-	__asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
-}
 
 void serial_init(void)
 {

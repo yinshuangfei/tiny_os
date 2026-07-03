@@ -54,6 +54,7 @@ COBJS = \
 	$(KDIR)/serial.o \
 	$(KDIR)/timer.o \
 	$(KDIR)/interrupt.o \
+	$(KDIR)/printf.o \
 
 OBJS = $(COBJS) $(KDIR)/timervec.o
 
