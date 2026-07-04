@@ -21,6 +21,8 @@ void main(void)
 	idt_init();
 	// 初始化 PIC/APIC
 	pic_init();
+	// 初始化物理页分配器（须在 kvm_init 之前）
+	pmm_init();
 	// 初始化页表并开启分页
 	kvm_init();
 	// 初始化时钟

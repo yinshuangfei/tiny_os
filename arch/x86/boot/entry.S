@@ -28,8 +28,9 @@ SERIAL_PUTC
 .extern end
 
 _start:
+	cli
 	cld
-	movl $0x80000, %esp
+	movl $0x90000, %esp
 
 	/* clear .bss */
 	movl $edata, %edi

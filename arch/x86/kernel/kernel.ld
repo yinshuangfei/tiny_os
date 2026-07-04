@@ -1,6 +1,5 @@
-/* Unified linker script for K=0 (MBR @ 0x7e00) and K=1 (QEMU -kernel @ 0x100000).
- * Pass -defsym KERNEL=1 when linking the K=1 ELF; omit it for the MBR kernel.bin. */
-LOAD_BASE = DEFINED(KERNEL) ? 0x100000 : 0x7e00;
+/* QEMU -kernel 直接加载（K=1），内核链接并运行在 0x100000 */
+LOAD_BASE = 0x100000;
 
 SECTIONS
 {
@@ -29,5 +28,5 @@ SECTIONS
 		*(.note*)
 	}
 
-	. = DEFINED(KERNEL) ? ALIGN(4096) : .;
+	. = ALIGN(4096);
 }

@@ -28,7 +28,7 @@ static pte_t *walk(pagetable_t pgdir, uint va, int alloc)
 	} else {
 		if (!alloc)
 			return 0;
-		pt = alloc_pt();
+		pt = (pagetable_t)alloc_page();
 		if (pt == 0)
 			return 0;
 		*pde = PA2PTE((uint)pt) | PTE_P | PTE_W;
@@ -88,12 +88,16 @@ static void kvminit_map(void)
 
 	kernel_pgdir = boot_pgdir;
 	memset(kernel_pgdir, 0, PGSIZE);
-	alloc_pt_reset();
 
 	/** 分页机制开启，所有物理地址都映射到内核虚拟地址空间 */
 	kvmmap(0, 0, PHYSTOP, PTE_W);
 }
 
+/**
+ * 内存页有没有映射和内存有没有分配是两回事：
+ * - alloc_page 分配的是物理页；
+ * - mappages 映射的是虚拟页；
+ */
 void kvm_init(void)
 {
 	kvminit_map();

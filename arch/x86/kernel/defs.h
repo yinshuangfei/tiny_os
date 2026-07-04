@@ -3,10 +3,14 @@
 
 #include "types.h"
 
-/** alloc.c */
+/** alloc.c — Linux-style buddy page allocator */
 void *memset(void *dst, int c, uint n);
-void alloc_pt_reset(void);
-pagetable_t alloc_pt(void);
+void pmm_init(void);
+void *alloc_pages(unsigned int order);
+void free_pages(void *addr, unsigned int order);
+void *alloc_page(void);
+void free_page(void *addr);
+unsigned int pmm_nr_free_pages(void);
 
 /** interrupt.c */
 void idt_set_gate(int vec, void (*handler)(void), uint16 selector, uint8 type_attr);
