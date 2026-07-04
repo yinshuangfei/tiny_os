@@ -1,6 +1,5 @@
 #include "defs.h"
 #include "x86.h"
-#include "interrupt.h"
 
 /** PIC: Programmable Interrupt Controller (可编程中断控制器)  */
 /** 8259 主中断控制器 */
@@ -24,7 +23,7 @@ static volatile unsigned int ticks;
  * 配置 8259 中断控制器
  * 8259 是主从级联两片：主片管 IRQ0–7，从片管 IRQ8–15
 */
-static void pic_init(void)
+void pic_init(void)
 {
 	// ICW1: 级联、边沿触发、需要 ICW4
 	outb(PIC1_CMD, 0x11);
@@ -41,10 +40,13 @@ static void pic_init(void)
 	// 仅打开定时器 IRQ0
 	outb(PIC1_DATA, 0xfe);
 	outb(PIC2_DATA, 0xff);
+
+	// TODO: 选择性配置 IOAPIC/LAPIC
+	printf("system pic(8259) initialized\n");
 }
 
 /** 配置 8254 可编程间隔定时器 */
-static void pit_init(void)
+void pit_init(void)
 {
 	unsigned short divisor = PIT_FREQ / TIMER_HZ;
 
@@ -60,23 +62,17 @@ static void pit_init(void)
 	outb(PIT_CMD, 0x36);
 	outb(PIT_CH0, divisor & 0xff);
 	outb(PIT_CH0, (divisor >> 8) & 0xff);
+
+	printf("system pit(8254) initialized, timer frequency: %d Hz\n", TIMER_HZ);
 }
 
 void timer_handler(void)
 {
 	ticks++;
-	printf("ticks: %d\n", ticks);
+	// printf("ticks: %d\n", ticks);
 }
 
 unsigned int timer_ticks(void)
 {
 	return ticks;
-}
-
-void timer_init(void)
-{
-	/** 初始化定时器，需在 IDT 初始化之后 */
-	pic_init();
-	pit_init();
-	sti();
 }

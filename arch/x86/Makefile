@@ -1,5 +1,6 @@
 KDIR=kernel
 BOOTDIR=boot
+TESTDIR=test
 
 TOOLPREFIX :=
 
@@ -55,9 +56,11 @@ C_OBJS = \
 	$(KDIR)/timer.o \
 	$(KDIR)/interrupt.o \
 	$(KDIR)/printf.o \
+	$(KDIR)/alloc.o \
 	$(KDIR)/vm.o \
 	$(KDIR)/debug.o \
 	$(KDIR)/exception.o \
+	$(TESTDIR)/kernel_test.o \
 
 AS_OBJS = \
 	$(KDIR)/trap.o \

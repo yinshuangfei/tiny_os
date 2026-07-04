@@ -3,21 +3,9 @@
 #include "interrupt.h"
 #include "x86.h"
 
-struct idt_entry {
-	uint16 offset_low;	/* 偏移量低 16 位 */
-	uint16 selector;	/* 选择子 */
-	uint8 zero;		/* 总是 0 */
-	uint8 type_attr;	/* 类型和属性 */
-	uint16 offset_high;	/* 偏移量高 16 位 */
-} __attribute__((packed));
-
-struct idt_ptr {
-	uint16 limit;		/* 限长 */
-	uint32 base;		/* 基址 */
-} __attribute__((packed));
-
-#define IDT_ENTRIES 256
 struct idt_entry idt[IDT_ENTRIES];
+
+static struct gdt_entry gdt[GDT_ENTRIES] __attribute__((aligned(8)));
 
 extern void isr_timer(void);
 extern void isr_divide_error(void);
@@ -45,7 +33,7 @@ void idt_set_gate(int vec, void (*handler)(void), uint16 selector, uint8 type_at
 	idt[vec].offset_high = (addr >> 16) & 0xffff;
 }
 
-void idt_load(void)
+static void idt_load(void)
 {
 	struct idt_ptr ptr;
 
@@ -60,10 +48,111 @@ void idt_load(void)
 void idt_init(void)
 {
 	// ISR 是 Interrupt Service Routine
-	idt_set_gate(EXC_DIVIDE_ERROR, isr_divide_error, 0x08, 0x8e);
-	idt_set_gate(EXC_PAGE_FAULT, isr_page_fault, 0x08, 0x8e);
-	idt_set_gate(IRQ_TIMER, isr_timer, 0x08, 0x8e);
-	idt_set_gate(INT_SYSCALL, isr_syscall, 0x08, 0xee);	// DPL=3，用户态可 int 0x80
+	idt_set_gate(EXC_DIVIDE_ERROR, isr_divide_error, SEG_KCODE, IDT_ATTR_KERNEL);
+	idt_set_gate(EXC_PAGE_FAULT, isr_page_fault, SEG_KCODE, IDT_ATTR_KERNEL);
+	idt_set_gate(IRQ_TIMER, isr_timer, SEG_KCODE, IDT_ATTR_KERNEL);
+	idt_set_gate(INT_SYSCALL, isr_syscall, SEG_KCODE, IDT_ATTR_USER);	// DPL=3，用户态可 int 0x80
 
 	idt_load();
+	printf("system idt loaded\n");
+}
+
+static void gdt_set_entry(int idx, uint32 base, uint32 limit,
+			  uint8 access, uint8 gran)
+{
+	gdt[idx].limit_low = limit & 0xffff;
+	gdt[idx].base_low = base & 0xffff;
+	gdt[idx].base_middle = (base >> 16) & 0xff;
+	gdt[idx].access = access;
+	gdt[idx].granularity = gran;
+	gdt[idx].base_high = (base >> 24) & 0xff;
+}
+
+static void gdt_load(void)
+{
+	struct gdt_ptr ptr;
+
+	ptr.limit = sizeof(gdt) - 1;
+	ptr.base = (uint32)gdt;
+
+	/*
+	 * lgdt 只更新 GDTR, 不会自动改 CS、DS、SS 等段寄存器里缓存的选择子；
+	 * 段寄存器仍缓存旧值，必须显式重载。
+	 * CS 需 ljmp 远跳转，其余段寄存器 mov 即可。
+	 */
+	__asm__ volatile (
+		"lgdt %0\n"
+		"movw %1, %%ax\n"
+		"movw %%ax, %%ds\n"
+		"movw %%ax, %%es\n"
+		"movw %%ax, %%fs\n"
+		"movw %%ax, %%gs\n"
+		"movw %%ax, %%ss\n"
+		"ljmp %2, $1f\n"
+		"1:\n"
+		:
+		: "m"(ptr), "i"(SEG_KDATA), "i"(SEG_KCODE)
+		: "ax", "memory");
+}
+
+void gdt_init(void)
+{
+	/* 0: 空描述符 */
+	gdt_set_entry(0, 0, 0, 0, 0);
+	/* 1: 内核代码段 */
+	gdt_set_entry(1, 0, 0xffff, GDT_KERNEL_CODE, GDT_GRAN_4GB);
+	/* 2: 内核数据段 */
+	gdt_set_entry(2, 0, 0xffff, GDT_KERNEL_DATA, GDT_GRAN_4GB);
+	/* 3: 用户代码段 */
+	gdt_set_entry(3, 0, 0xffff, GDT_USER_CODE, GDT_GRAN_4GB);
+	/* 4: 用户数据段 */
+	gdt_set_entry(4, 0, 0xffff, GDT_USER_DATA, GDT_GRAN_4GB);
+
+	gdt_load();
+	printf("system gdt loaded\n");
+}
+
+uint32 gdt_table_addr(void)
+{
+	return (uint32)gdt;
+}
+
+uint16 gdt_table_limit(void)
+{
+	return sizeof(gdt) - 1;
+}
+
+uint8 gdt_get_access(int idx)
+{
+	return gdt[idx].access;
+}
+
+uint8 gdt_get_granularity(int idx)
+{
+	return gdt[idx].granularity;
+}
+
+uint32 idt_table_addr(void)
+{
+	return (uint32)idt;
+}
+
+uint16 idt_table_limit(void)
+{
+	return sizeof(idt) - 1;
+}
+
+uint32 idt_get_handler(int vec)
+{
+	return idt[vec].offset_low | ((uint32)idt[vec].offset_high << 16);
+}
+
+uint16 idt_get_selector(int vec)
+{
+	return idt[vec].selector;
+}
+
+uint8 idt_get_type_attr(int vec)
+{
+	return idt[vec].type_attr;
 }

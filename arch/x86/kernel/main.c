@@ -1,16 +1,32 @@
 #include "defs.h"
 #include "debug.h"
+#include "x86.h"
+
+#define MAJOR_VERSION 0
+#define MINOR_VERSION 0
+#define PATCH_VERSION 1
+
+void kernel_test(void);
 
 void main(void)
 {
-	idt_init();
-
-	kvminit();
-	kvminithart();
-
+	// 初始化串口
 	serial_init();
-	timer_init();
+	printf("\n\rTiny-OS (%d.%d.%d) booting ...\n\r",
+		MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION);
 
-	printf("Hello Tiny-OS\n");
-	printf("paging enabled, cr3=0x%x\n", (unsigned int)kernel_pgdir);
+	// 初始化 GDT
+	gdt_init();
+	// 初始化 IDT
+	idt_init();
+	// 初始化 PIC/APIC
+	pic_init();
+	// 初始化页表并开启分页
+	kvm_init();
+	// 初始化时钟
+	pit_init();
+	// 开启中断
+	sti();
+
+	kernel_test();
 }
