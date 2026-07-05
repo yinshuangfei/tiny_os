@@ -5,6 +5,7 @@
 
 #define IRQ_TIMER		0x20	// Timer Interrupt
 #define EXC_DIVIDE_ERROR	0x00	// Divide Error
+#define EXC_INVALID_OPCODE	0x06	// #UD Invalid Opcode
 #define EXC_PAGE_FAULT		0x0e	// Page Fault
 #define INT_SYSCALL		0x80	// System Call
 

@@ -9,6 +9,7 @@ static struct gdt_entry gdt[GDT_ENTRIES] __attribute__((aligned(8)));
 
 extern void isr_timer(void);
 extern void isr_divide_error(void);
+extern void isr_invalid_opcode(void);
 extern void isr_page_fault(void);
 extern void isr_syscall(void);
 
@@ -49,6 +50,7 @@ void idt_init(void)
 {
 	// ISR 是 Interrupt Service Routine
 	idt_set_gate(EXC_DIVIDE_ERROR, isr_divide_error, SEG_KCODE, IDT_ATTR_KERNEL);
+	idt_set_gate(EXC_INVALID_OPCODE, isr_invalid_opcode, SEG_KCODE, IDT_ATTR_KERNEL);
 	idt_set_gate(EXC_PAGE_FAULT, isr_page_fault, SEG_KCODE, IDT_ATTR_KERNEL);
 	idt_set_gate(IRQ_TIMER, isr_timer, SEG_KCODE, IDT_ATTR_KERNEL);
 	idt_set_gate(INT_SYSCALL, isr_syscall, SEG_KCODE, IDT_ATTR_USER);	// DPL=3，用户态可 int 0x80

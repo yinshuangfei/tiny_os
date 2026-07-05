@@ -17,6 +17,7 @@
 #include "defs.h"
 #include "memlayout.h"
 #include "list.h"
+#include "utils.h"
 
 extern char end[];	/* kernel.ld: .bss 结束后的第一个地址 */
 
@@ -83,6 +84,7 @@ static void *page_to_addr(struct page *page)
 static struct page *page_buddy(struct page *page, unsigned int order)
 {
 	unsigned long idx = page - mem_map;
+	// 快速找到“能和我拼成更大块”的唯一邻居
 	unsigned long buddy = idx ^ (1UL << order);
 
 	if (buddy >= nr_pages)
@@ -171,6 +173,7 @@ void pmm_init(void)
 {
 	unsigned int i;
 	uint addr;
+	char total_size[HUMAN_SIZE_MAX];
 
 	mem_start = PGROUNDUP((uint)end);
 	mem_end = PHYSTOP;
@@ -191,8 +194,11 @@ void pmm_init(void)
 	for (addr = mem_start; addr < mem_end; addr += PGSIZE)
 		__free_one_page(addr_to_page((void *)addr), 0);
 
-	printf("pmm: buddy init, pages=%d free=%d (0x%x-0x%x)\n",
-	       nr_pages, nr_free, mem_start, mem_end);
+
+	bytes_to_human(mem_end, total_size, sizeof(total_size));
+
+	printf("pmm: buddy init, pages=%d free=%d (0x%x-0x%x), total: %s\n",
+	       nr_pages, nr_free, mem_start, mem_end, total_size);
 }
 
 /* 分配 2^order 个连续物理页，返回首页物理地址；失败返回 0 */

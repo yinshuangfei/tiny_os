@@ -57,6 +57,7 @@ C_OBJS = \
 	$(KDIR)/timer.o \
 	$(KDIR)/interrupt.o \
 	$(KDIR)/printf.o \
+	$(KDIR)/utils.o \
 	$(KDIR)/alloc.o \
 	$(KDIR)/vm.o \
 	$(KDIR)/debug.o \

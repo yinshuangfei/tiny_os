@@ -3,6 +3,7 @@
 .globl isr_page_fault
 .globl isr_timer
 .globl isr_divide_error
+.globl isr_invalid_opcode
 .globl isr_syscall
 
 isr_page_fault:
@@ -27,7 +28,7 @@ isr_timer:
 	iret
 
 isr_divide_error:
-	pushl $0		# 压入一个错误码（除零异常没有自带 error code）
+	pushl $0		# 除零异常无 CPU 压入的 error code
 	pushl %ds
 	pushal
 	movw $0x10, %ax
@@ -37,6 +38,21 @@ isr_divide_error:
 	addl $4, %esp
 	popal
 	popl %ds
+	addl $4, %esp		# pop 占位 error code
+	iret
+
+isr_invalid_opcode:
+	pushl $0		# #UD 无 error code
+	pushl %ds
+	pushal
+	movw $0x10, %ax
+	movw %ax, %ds
+	pushl %esp
+	call invalid_opcode_handler
+	addl $4, %esp
+	popal
+	popl %ds
+	addl $4, %esp
 	iret
 
 isr_syscall:

@@ -29,6 +29,12 @@ void divide_error_handler(struct trapframe *tf)
 	panic("divide error");
 }
 
+void invalid_opcode_handler(struct trapframe *tf)
+{
+	printf("invalid opcode (#UD) at eip=0x%x\n", tf->eip);
+	panic("invalid opcode");
+}
+
 void syscall_handler(struct trapframe *tf)
 {
 	printf("syscall: eax=0x%x\n", tf->eax);

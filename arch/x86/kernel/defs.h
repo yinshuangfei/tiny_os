@@ -2,6 +2,7 @@
 #define __DEFS_H__
 
 #include "types.h"
+#include "utils.h"
 
 /** alloc.c — Linux-style buddy page allocator */
 void *memset(void *dst, int c, uint n);
