@@ -26,11 +26,14 @@ SERIAL_PUTC
 .extern main
 .extern edata
 .extern end
+.extern kernel_stack
+
+.set KSTACKSIZE, 4096
 
 _start:
 	cli
 	cld
-	movl $0x90000, %esp
+	movl $(kernel_stack + KSTACKSIZE), %esp
 
 	/* clear .bss */
 	movl $edata, %edi

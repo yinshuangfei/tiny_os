@@ -1,69 +1,88 @@
 .code32
 
-.globl isr_page_fault
-.globl isr_timer
+.set KSTACKSIZE, 4096
+
+.globl interrupt_stack
 .globl isr_divide_error
 .globl isr_invalid_opcode
+.globl isr_page_fault
 .globl isr_syscall
+.globl isr_timer
 
-isr_page_fault:
+.extern divide_error_handler
+.extern invalid_opcode_handler
+.extern page_fault_handler
+.extern syscall_handler
+.extern timer_handler
+
+/*
+ * 切换到 interrupt_stack，栈顶保存原 ESP（指向 trapframe）。
+ * C 处理在中断栈上执行；返回前用 IRQSTACK_RESTORE 回到被中断上下文。
+ */
+.macro IRQSTACK_SWITCH
+	movl %esp, %eax
+	movl $(interrupt_stack + KSTACKSIZE), %esp
+	pushl %eax
+.endm
+
+.macro IRQSTACK_RESTORE
+	popl %esp
+.endm
+
+/*
+ * 统一 trapframe 布局（esp 指向 edi）：
+ *   pushal → ds → err → eip → cs → eflags
+ * 无硬件 error code 的向量在 TRAP_FRAME_ENTER 前先 pushl $0 占位。
+ */
+.macro TRAP_FRAME_ENTER
 	pushl %ds
 	pushal
 	movw $0x10, %ax
 	movw %ax, %ds
-	pushl %esp
-	call page_fault_handler
+	movl %esp, %eax
+	IRQSTACK_SWITCH
+	pushl %eax
+.endm
+
+.macro TRAP_FRAME_LEAVE
 	addl $4, %esp
+	IRQSTACK_RESTORE
 	popal
 	popl %ds
-	addl $4, %esp		# pop CPU-pushed error code
+	addl $4, %esp
 	iret
-
-isr_timer:
-	pusha			# 保存全部 8 个通用寄存器
-	call timer_handler
-	popa
-	movb $0x20, %al		# 0x20 是主 PIC 的 EOI 信号, 0x20 = End of Interrupt
-	outb %al, $0x20		# 写到主 PIC 命令口（0x20），通知 8259「这条 IRQ 已处理完」
-	iret
+.endm
 
 isr_divide_error:
-	pushl $0		# 除零异常无 CPU 压入的 error code
-	pushl %ds
-	pushal
-	movw $0x10, %ax
-	movw %ax, %ds
-	pushl %esp
+	pushl $0
+	TRAP_FRAME_ENTER
 	call divide_error_handler
-	addl $4, %esp
-	popal
-	popl %ds
-	addl $4, %esp		# pop 占位 error code
-	iret
+	TRAP_FRAME_LEAVE
 
 isr_invalid_opcode:
-	pushl $0		# #UD 无 error code
-	pushl %ds
-	pushal
-	movw $0x10, %ax
-	movw %ax, %ds
-	pushl %esp
+	pushl $0
+	TRAP_FRAME_ENTER
 	call invalid_opcode_handler
-	addl $4, %esp
-	popal
-	popl %ds
-	addl $4, %esp
-	iret
+	TRAP_FRAME_LEAVE
 
 isr_syscall:
-	pushl $0		# int 0x80 不压 error code，占位以匹配 struct trapframe
-	pushl %ds
-	pushal			# 保存寄存器
-	movw $0x10, %ax
-	movw %ax, %ds
-	pushl %esp
+	pushl $0
+	TRAP_FRAME_ENTER
 	call syscall_handler
-	addl $4, %esp
-	popal
-	popl %ds
+	TRAP_FRAME_LEAVE
+
+isr_page_fault:
+	TRAP_FRAME_ENTER
+	call page_fault_handler
+	TRAP_FRAME_LEAVE
+
+/*
+ * 定时器 IRQ：硬件 IRQ 无 trapframe，仅切换栈后调用 C，再 EOI。
+ */
+isr_timer:
+	IRQSTACK_SWITCH
+	call timer_handler
+	IRQSTACK_RESTORE
+	movb $0x20, %al
+	outb %al, $0x20
 	iret
