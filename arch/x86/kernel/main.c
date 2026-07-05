@@ -21,9 +21,11 @@ void main(void)
 	idt_init();
 	// 检测并开启 SSE（须在可能生成 SSE 指令的代码之前）
 	cpu_init();
+	// 探测物理内存大小（须在 pmm_init / kvm_init 之前）
+	mem_init();
 	// 初始化 PIC/APIC
 	pic_init();
-	// 初始化物理页分配器（须在 kvm_init 之前）
+	// 初始化物理页分配器
 	pmm_init();
 	// 初始化页表并开启分页
 	kvm_init();

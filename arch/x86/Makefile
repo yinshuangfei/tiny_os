@@ -14,8 +14,10 @@ ifndef CPUS
 CPUS := 1
 endif
 
+MEM ?= 128M
+
 QEMU = qemu-system-x86_64
-QEMUOPTS = -machine q35 -m 128M -smp $(CPUS) -display none
+QEMUOPTS = -machine q35 -m $(MEM) -smp $(CPUS) -display none
 QEMUOPTS += -serial stdio -monitor none
 
 CFLAGS := -m32 -ffreestanding -fno-pic -fno-stack-protector -nostdlib -Wall
@@ -53,6 +55,7 @@ $(BOOTDIR)/boot.bin: $(BOOTDIR)/boot.o
 
 C_OBJS = \
 	$(KDIR)/main.o \
+	$(KDIR)/mem.o \
 	$(KDIR)/serial.o \
 	$(KDIR)/timer.o \
 	$(KDIR)/interrupt.o \

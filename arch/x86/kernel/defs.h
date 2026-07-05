@@ -7,6 +7,7 @@
 /** alloc.c — Linux-style buddy page allocator */
 void *memset(void *dst, int c, uint n);
 void pmm_init(void);
+void mem_init(void);
 void *alloc_pages(unsigned int order);
 void free_pages(void *addr, unsigned int order);
 void *alloc_page(void);

@@ -5,6 +5,64 @@
 .set CODE_SEL, 0x08
 .set DATA_SEL, 0x10
 .set ENTRY_OFFSET, 0x17	/* _start - KERNBASE，与 kernel_body.elf 一致 */
+.set BOOT_INFO, 0x5000
+.set BOOT_INFO_MAGIC, 0x544f4d53	/* 'TOMS' */
+.set E820_BUF, 0x5100
+
+/*
+ * BIOS E820：遍历可用 RAM 条目，把最大 region end 写入 BOOT_INFO+4，
+ * 最后写入 BOOT_INFO_MAGIC。仅处理 base/len 在 32 位地址空间内的区域。
+ */
+.macro E820_PROBE
+	xorw %ax, %ax
+	movw %ax, %ds
+	movw %ax, %es
+	movl $0, (BOOT_INFO + 4)
+	xorl %ebx, %ebx
+
+.Le820_loop:
+	movl $E820_BUF, %edi
+	movl $0x534D4150, %edx		/* 'SMAP' */
+	movl $24, %ecx
+	movl $0xE820, %eax
+	int $0x15
+	jc .Le820_done
+	cmpl $0x534D4150, %eax
+	jne .Le820_done
+
+	cmpl $1, (E820_BUF + 16)	/* type 1 = usable RAM */
+	jne .Le820_next
+	cmpl $0, (E820_BUF + 4)		/* base 高 32 位须为 0 */
+	jne .Le820_next
+
+	movl (E820_BUF + 12), %ecx	/* length 高 32 位 */
+	jnz .Le820_4g
+
+	movl (E820_BUF + 8), %eax	/* base_lo + length_lo */
+	addl (E820_BUF + 0), %eax
+	jmp .Le820_store
+
+.Le820_4g:				/* len_hi==1 且 base/len_lo==0 → 4 GiB */
+	cmpl $1, %ecx
+	jne .Le820_next
+	cmpl $0, (E820_BUF + 0)
+	jne .Le820_next
+	cmpl $0, (E820_BUF + 8)
+	jne .Le820_next
+	movl $0xFFFFF000, %eax		/* 32 位页对齐上界 */
+
+.Le820_store:
+	cmpl (BOOT_INFO + 4), %eax
+	jbe .Le820_next
+	movl %eax, (BOOT_INFO + 4)
+
+.Le820_next:
+	testl %ebx, %ebx
+	jnz .Le820_loop
+
+.Le820_done:
+	movl $BOOT_INFO_MAGIC, (BOOT_INFO)
+.endm
 
 .section .text
 .globl setup_start
@@ -31,6 +89,9 @@ setup_start:
 	inb $0x92, %al			# 从 I/O 端口 0x92（Fast A20 Gate）读状态到 AL
 	orb $0x02, %al			# 设置 AL 的第 2 位（A20 线使能位）为 1
 	outb %al, $0x92			# 使 CPU 能访问 1MB 以上物理内存
+
+	# BIOS E820：探测可用物理内存上界，写入 BOOT_INFO
+	E820_PROBE
 
 	# lgdt 必须在进入保护模式之前执行，不能放到 protected_mode 之后
 	lgdt gdt_desc			# 加载 GDT 描述符

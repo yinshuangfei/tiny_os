@@ -1,15 +1,10 @@
 /**
- * x86 physical memory layout (QEMU -m 128M)
+ * x86 物理内存布局
  *
- * 0x00000000 - 0x000fffff : low memory (BIOS, I/O APIC, legacy I/O)
- * 0x00080000              : kernel boot stack (entry.S)
- * 0x00100000              : kernel load address (KERNBASE)
- * 0x00800000              : end of RAM (PHYSTOP, 128 MiB)
-
-   0x00000000 ─┬─ 低端内存、MMIO（也在映射里）
-   0x00080000  │  内核栈（SS=0x10 + 页表）
-   0x00100000  │  内核代码/数据（CS=0x08 取指，DS=0x10 读写）
-   0x00800000 ─┴─ PHYSTOP（映射到此为止）
+ * 0x00000000 - 0x000fffff : 低端内存（BIOS、MMIO）
+ * 0x00080000              : 内核启动栈（entry.S）
+ * 0x00100000              : 内核加载地址（KERNBASE）
+ * physmem_top             : 运行时探测的 RAM 上界（<= MAX_PHYSMEM）
  */
 
 #define PGSIZE     4096
@@ -19,11 +14,22 @@
 // 向下取整，将地址向下对齐到 PGSIZE 的倍数
 #define PGROUNDDOWN(a)  ((a) & ~(PGSIZE - 1))
 
-#define MAX_KERNEL_PT  1024 	// 内核页表最大数量
+#define MAX_KERNEL_PT  1024
 
-#define KERNBASE   0x00100000	// 1 MB
-#define PHYSTOP    0x00800000	// 8 MB
+#define KERNBASE   0x00100000
 
-/** legacy I/O (identity-mapped for MMIO, Memory-Mapped I/O) */
+/*
+ * page_storage 等元数据数组上限；实际 RAM 由 mem_init() 探测，
+ * 结果存入 physmem_top，且 physmem_top <= MAX_PHYSMEM。
+ */
+#define MAX_PHYSMEM  0x08000000	/* 128 MiB */
+
+/** setup.S（E820）与内核共享的引导信息块 */
+#define BOOT_INFO        0x5000
+#define BOOT_INFO_MAGIC  0x544f4d53	/* 'TOMS' */
+
+/** legacy I/O（恒等映射供 MMIO 使用） */
 #define IOBASE     0x00000000
 #define IOEND      0x00100000
+
+extern uint physmem_top;

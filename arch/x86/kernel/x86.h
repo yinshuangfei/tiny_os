@@ -30,6 +30,21 @@ static inline void outb(unsigned short port, unsigned char val)
 	__asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
 }
 
+/** inb */
+static inline unsigned char inb(unsigned short port)
+{
+	unsigned char val;
+
+	__asm__ volatile ("inb %1, %0" : "=a"(val) : "Nd"(port));
+	return val;
+}
+
+/** outw */
+static inline void outw(unsigned short val, unsigned short port)
+{
+	__asm__ volatile ("outw %0, %1" : : "a"(val), "Nd"(port));
+}
+
 /** 读取当前指令指针（EIP 不可直接 mov，用 call/pop 取返回地址） */
 static inline uint r_pc(void)
 {

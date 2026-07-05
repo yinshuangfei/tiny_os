@@ -45,12 +45,12 @@ struct free_area {
 static struct free_area free_area[MAX_ORDER];
 static struct page *mem_map;	/* 指向 page_storage，按页号索引 */
 static uint mem_start;		/* 可分配区起始物理地址（页对齐） */
-static uint mem_end;		/* 可分配区结束物理地址（= PHYSTOP） */
+static uint mem_end;		/* 可分配区结束物理地址（= physmem_top） */
 static unsigned int nr_pages;	/* 可分配页总数 */
 static unsigned int nr_free;	/* 当前空闲页总数（所有 order 之和） */
 
-/* 最坏按 [0, PHYSTOP) 每页一条元数据预留 */
-static struct page page_storage[PHYSTOP / PGSIZE];
+/* 按 MAX_PHYSMEM 预留 mem_map 上限，实际只用 [mem_start, physmem_top) */
+static struct page page_storage[MAX_PHYSMEM / PGSIZE];
 
 void *memset(void *dst, int c, uint n)
 {
@@ -165,7 +165,7 @@ static struct page *__alloc_pages(unsigned int order)
 }
 
 /*
- * 初始化：把 [end, PHYSTOP) 全部以 order=0 逐页释放，
+ * 初始化：把 [end, physmem_top) 全部以 order=0 逐页释放，
  * buddy 合并会自动拼出更大的连续空闲块。
  * 须在 kvm_init 之前调用（此时尚未开分页，物理地址 == 线性地址）。
  */
@@ -173,10 +173,10 @@ void pmm_init(void)
 {
 	unsigned int i;
 	uint addr;
-	char total_size[HUMAN_SIZE_MAX] = {0};
+	char total_size[HUMAN_SIZE_MAX];
 
 	mem_start = PGROUNDUP((uint)end);
-	mem_end = PHYSTOP;
+	mem_end = physmem_top;
 	nr_pages = (mem_end - mem_start) / PGSIZE;
 	mem_map = page_storage;
 	nr_free = 0;
@@ -195,7 +195,7 @@ void pmm_init(void)
 		__free_one_page(addr_to_page((void *)addr), 0);
 
 
-	bytes_to_human(mem_end, total_size, sizeof(total_size));
+	bytes_to_human(physmem_top, total_size, sizeof(total_size));
 
 	printf("pmm: buddy init, pages=%d free=%d (0x%x-0x%x), total: %s\n",
 	       nr_pages, nr_free, mem_start, mem_end, total_size);

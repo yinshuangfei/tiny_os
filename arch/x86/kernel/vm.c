@@ -79,7 +79,7 @@ static void kvmmap(uint va, uint pa, uint size, int perm)
 
 /*
  * Build a two-level page table (page directory + page tables)
- * with a 1:1 map of [0, PHYSTOP).
+ * with a 1:1 map of [0, physmem_top).
  */
 static void kvminit_map(void)
 {
@@ -90,7 +90,7 @@ static void kvminit_map(void)
 	memset(kernel_pgdir, 0, PGSIZE);
 
 	/** 分页机制开启，所有物理地址都映射到内核虚拟地址空间 */
-	kvmmap(0, 0, PHYSTOP, PTE_W);
+	kvmmap(0, 0, physmem_top, PTE_W);
 }
 
 /**
