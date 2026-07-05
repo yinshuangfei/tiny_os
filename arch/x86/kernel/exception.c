@@ -22,6 +22,7 @@
 */
 #include "defs.h"
 #include "interrupt.h"
+#include "x86.h"
 
 void divide_error_handler(struct trapframe *tf)
 {
@@ -29,10 +30,32 @@ void divide_error_handler(struct trapframe *tf)
 	panic("divide error");
 }
 
+void device_not_available_handler(struct trapframe *tf)
+{
+	uint32 cr0;
+
+	/* lazy FPU：清 TS 后返回，让当前上下文继续执行 SSE/FP 指令 */
+	cr0 = r_cr0();
+	cr0 &= ~CR0_TS;
+	w_cr0(cr0);
+}
+
 void invalid_opcode_handler(struct trapframe *tf)
 {
 	printf("invalid opcode (#UD) at eip=0x%x\n", tf->eip);
 	panic("invalid opcode");
+}
+
+void general_protection_handler(struct trapframe *tf)
+{
+	printf("general protection (#GP) err=0x%x eip=0x%x\n", tf->err, tf->eip);
+	panic("general protection");
+}
+
+void simd_fp_handler(struct trapframe *tf)
+{
+	printf("simd fp exception (#XM) at eip=0x%x\n", tf->eip);
+	panic("simd fp exception");
 }
 
 void syscall_handler(struct trapframe *tf)

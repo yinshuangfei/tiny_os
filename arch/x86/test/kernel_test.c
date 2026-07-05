@@ -106,7 +106,10 @@ void idt_test(void)
 	int pass = 1;
 
 	extern void isr_divide_error(void);
+	extern void isr_device_not_available(void);
+	extern void isr_general_protection(void);
 	extern void isr_page_fault(void);
+	extern void isr_simd_fp(void);
 	extern void isr_timer(void);
 	extern void isr_syscall(void);
 
@@ -121,7 +124,13 @@ void idt_test(void)
 	/* 2. 已注册的中断/异常门 */
 	pass &= idt_gate_check("divide", EXC_DIVIDE_ERROR, isr_divide_error,
 			       SEG_KCODE, IDT_ATTR_KERNEL);
+	pass &= idt_gate_check("#NM", EXC_DEVICE_NOT_AVAILABLE, isr_device_not_available,
+			       SEG_KCODE, IDT_ATTR_KERNEL);
 	pass &= idt_gate_check("page fault", EXC_PAGE_FAULT, isr_page_fault,
+			       SEG_KCODE, IDT_ATTR_KERNEL);
+	pass &= idt_gate_check("#GP", EXC_GENERAL_PROTECTION, isr_general_protection,
+			       SEG_KCODE, IDT_ATTR_KERNEL);
+	pass &= idt_gate_check("#XM", EXC_SIMD_FP, isr_simd_fp,
 			       SEG_KCODE, IDT_ATTR_KERNEL);
 	pass &= idt_gate_check("timer", IRQ_TIMER, isr_timer,
 			       SEG_KCODE, IDT_ATTR_KERNEL);

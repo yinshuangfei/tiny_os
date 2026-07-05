@@ -4,14 +4,20 @@
 
 .globl interrupt_stack
 .globl isr_divide_error
+.globl isr_device_not_available
 .globl isr_invalid_opcode
+.globl isr_general_protection
 .globl isr_page_fault
+.globl isr_simd_fp
 .globl isr_syscall
 .globl isr_timer
 
 .extern divide_error_handler
+.extern device_not_available_handler
 .extern invalid_opcode_handler
+.extern general_protection_handler
 .extern page_fault_handler
+.extern simd_fp_handler
 .extern syscall_handler
 .extern timer_handler
 
@@ -63,6 +69,23 @@ isr_invalid_opcode:
 	pushl $0
 	TRAP_FRAME_ENTER
 	call invalid_opcode_handler
+	TRAP_FRAME_LEAVE
+
+isr_device_not_available:
+	pushl $0
+	TRAP_FRAME_ENTER
+	call device_not_available_handler
+	TRAP_FRAME_LEAVE
+
+isr_general_protection:
+	TRAP_FRAME_ENTER
+	call general_protection_handler
+	TRAP_FRAME_LEAVE
+
+isr_simd_fp:
+	pushl $0
+	TRAP_FRAME_ENTER
+	call simd_fp_handler
 	TRAP_FRAME_LEAVE
 
 isr_syscall:

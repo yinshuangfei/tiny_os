@@ -6,7 +6,10 @@
 #define IRQ_TIMER		0x20	// Timer Interrupt
 #define EXC_DIVIDE_ERROR	0x00	// Divide Error
 #define EXC_INVALID_OPCODE	0x06	// #UD Invalid Opcode
+#define EXC_DEVICE_NOT_AVAILABLE 0x07	// #NM Device Not Available
+#define EXC_GENERAL_PROTECTION	0x0d	// #GP General Protection
 #define EXC_PAGE_FAULT		0x0e	// Page Fault
+#define EXC_SIMD_FP		0x13	// #XM SIMD FP Exception
 #define INT_SYSCALL		0x80	// System Call
 
 /* IDT 门属性：P=1, DPL, 0, E=1, Gate=1110(中断门) */
