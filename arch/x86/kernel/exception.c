@@ -34,6 +34,7 @@ void device_not_available_handler(struct trapframe *tf)
 {
 	uint32 cr0;
 
+	printf("device not available (#NM) at eip=0x%x\n", tf->eip);
 	/* lazy FPU：清 TS 后返回，让当前上下文继续执行 SSE/FP 指令 */
 	cr0 = r_cr0();
 	cr0 &= ~CR0_TS;

@@ -28,6 +28,55 @@ void divide_error_test(void)
 	a = a / b;
 }
 
+void general_protection_test(void)
+{
+	printf("Triggering general protection (#GP)...\n");
+	/*
+	 * 向 DS 加载超出 GDT 范围的选择子（index 8191）触发 #GP。
+	 * 比 null selector 更直观：明确是“描述符索引非法”。
+	 */
+	__asm__ volatile (
+		"cli\n\t"
+		"movw $0xffff, %%ax\n\t"
+		"movw %%ax, %%ds"
+		::: "ax", "memory");
+}
+
+void device_not_available_test(void)
+{
+	printf("Triggering device not available (#NM)...\n");
+	/*
+	 * CR0.TS=1 时执行 SSE/FP 指令会触发 #NM；handler 清 TS 后返回重试。
+	 */
+	w_cr0(r_cr0() | CR0_TS);
+	__asm__ volatile ("xorps %%xmm0, %%xmm0" ::: "xmm0", "memory");
+	printf("#NM handled, SSE instruction completed\n");
+}
+
+void simd_fp_test(void)
+{
+	static const float one = 1.0f;
+	uint32 mxcsr;
+
+	printf("Triggering simd fp exception (#XM)...\n");
+	/*
+	 * 取消 MXCSR 除零屏蔽（bit 9），再执行 1.0/0.0 的 divss 触发 #XM。
+	 * 真机上 divss 直接 #XM；QEMU 可能不投递，fall-through 到 int $0x13
+	 * 进入同一 vector（真机不会执行到 int）。
+	 */
+	__asm__ volatile (
+		"stmxcsr %0\n\t"
+		"andl $0xfffffdff, %0\n\t"
+		"ldmxcsr %0\n\t"
+		"xorps %%xmm1, %%xmm1\n\t"
+		"movss %1, %%xmm0\n\t"
+		"divss %%xmm1, %%xmm0\n\t"
+		"int $0x13"
+		: "+m"(mxcsr)
+		: "m"(one)
+		: "xmm0", "xmm1", "memory");
+}
+
 static int test_check(const char *name, int ok)
 {
 	printf("  %s: %s\n", name, ok ? "OK" : "FAIL");
@@ -149,4 +198,7 @@ void kernel_test(void)
 
 	// paging_enable_test();
 	// divide_error_test();
+	// general_protection_test();
+	// device_not_available_test();
+	// simd_fp_test();
 }
