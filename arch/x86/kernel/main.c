@@ -19,6 +19,8 @@ void main(void)
 	gdt_init();
 	// 初始化 IDT
 	idt_init();
+	// 检测并开启 SSE（须在可能生成 SSE 指令的代码之前）
+	cpu_init();
 	// 初始化 PIC/APIC
 	pic_init();
 	// 初始化物理页分配器（须在 kvm_init 之前）

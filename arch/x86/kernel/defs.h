@@ -13,6 +13,9 @@ void *alloc_page(void);
 void free_page(void *addr);
 unsigned int pmm_nr_free_pages(void);
 
+/** cpu.c */
+void cpu_init(void);
+
 /** interrupt.c */
 void idt_set_gate(int vec, void (*handler)(void), uint16 selector, uint8 type_attr);
 void idt_init(void);

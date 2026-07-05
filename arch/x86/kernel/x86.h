@@ -86,7 +86,56 @@ static inline void r_idtr(struct idt_ptr *ptr)
 }
 
 /** CR0 flags */
+#define CR0_EM  0x00000004	/* emulation (FP/SSE trap if set) */
+#define CR0_TS  0x00000008	/* task switched (FP/SSE trap if set) */
 #define CR0_PG  0x80000000	/* paging */
+
+/** CR4 flags */
+#define CR4_OSFXSR     0x00000200	/* enable SSE instructions */
+#define CR4_OSXMMEXCPT 0x00000400	/* enable #XM for SSE */
+
+static inline uint r_cr4(void)
+{
+	uint val;
+
+	__asm__ volatile ("movl %%cr4, %0" : "=r"(val));
+	return val;
+}
+
+static inline void w_cr4(uint val)
+{
+	__asm__ volatile ("movl %0, %%cr4" : : "r"(val));
+}
+
+static inline void cpuid(uint32 leaf, uint32 *eax, uint32 *ebx,
+			 uint32 *ecx, uint32 *edx)
+{
+	__asm__ volatile ("cpuid"
+			  : "=a"(*eax), "=b"(*ebx), "=c"(*ecx), "=d"(*edx)
+			  : "a"(leaf), "c"(0));
+}
+
+static inline int cpu_has_cpuid(void)
+{
+	uint32 a, b;
+
+	__asm__ volatile (
+		"pushfl\n"
+		"popl %0\n"
+		"movl %0, %1\n"
+		"xorl $0x200000, %0\n"
+		"pushl %0\n"
+		"popfl\n"
+		"pushfl\n"
+		"popl %0\n"
+		"pushl %1\n"
+		"popfl\n"
+		: "=r"(a), "=r"(b)
+		:
+		: "memory"
+	);
+	return a != b;
+}
 
 static inline uint r_cr0(void)
 {

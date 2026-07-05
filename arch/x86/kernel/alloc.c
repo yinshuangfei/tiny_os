@@ -173,7 +173,7 @@ void pmm_init(void)
 {
 	unsigned int i;
 	uint addr;
-	char total_size[HUMAN_SIZE_MAX];
+	char total_size[HUMAN_SIZE_MAX] = {0};
 
 	mem_start = PGROUNDUP((uint)end);
 	mem_end = PHYSTOP;

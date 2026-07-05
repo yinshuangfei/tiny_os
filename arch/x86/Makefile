@@ -56,6 +56,7 @@ C_OBJS = \
 	$(KDIR)/serial.o \
 	$(KDIR)/timer.o \
 	$(KDIR)/interrupt.o \
+	$(KDIR)/cpu.o \
 	$(KDIR)/printf.o \
 	$(KDIR)/utils.o \
 	$(KDIR)/alloc.o \
