@@ -41,4 +41,5 @@ void main(void)
 	sti();
 
 	kernel_test();
+	scheduler();
 }

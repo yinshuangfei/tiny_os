@@ -49,6 +49,12 @@ int holding(struct spinlock *lk)
 	return lk->locked && lk->cpu == mycpu();
 }
 
+/**
+ * push_off - 关闭中断并增加中断计数器
+ * 保存当前中断状态，并关闭中断。
+ * 如果中断计数器为 0，则保存当前中断使能状态。
+ * 增加中断计数器。
+ */
 void push_off(void)
 {
 	int old = intr_get();
@@ -59,6 +65,13 @@ void push_off(void)
 	mycpu()->noff++;
 }
 
+/**
+ * pop_off - 恢复中断状态并减少中断计数器
+ * 检查是否在中断模式下执行，如果在中断模式下执行，则panic。
+ * 检查中断计数器是否大于 0，如果小于 0，则panic。
+ * 减少中断计数器。
+ * 如果中断计数器为 0，则恢复中断使能状态。
+ */
 void pop_off(void)
 {
 	struct cpu *c = mycpu();

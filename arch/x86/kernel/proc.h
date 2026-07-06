@@ -7,26 +7,27 @@
 #include "vm.h"
 #include "interrupt.h"
 
+/* swtch.S 保存的内核 callee-saved 寄存器（x86 32 位） */
+struct context {
+	uint eip;	/* offset  0, 指令指针 */
+	uint esp;	/* offset  4, 内核栈指针 ss:sp, sp 是栈顶指针 */
+	uint ebx;	/* offset  8, 基址寄存器 */
+	uint esi;	/* offset 12, 源索引寄存器 */
+	uint edi;	/* offset 16, 目标索引寄存器 */
+	uint ebp;	/* offset 20, 基址指针寄存器 */
+};
+
 struct cpu {
 	int id;
 	struct proc *proc;
-	int noff;		/* nested interrupt disable count */
-	int intena;		/* interrupt enabled flag */
+	struct context context;	/* scheduler 上下文，swtch 回到此处 */
+	int noff;
+	int intena;
 };
 
 extern struct cpu cpus[NCPU];
 
 struct cpu *mycpu(void);
-
-/* swtch.S 保存的内核 callee-saved 寄存器（x86 32 位） */
-struct context {
-	uint eip;
-	uint esp;
-	uint ebx;
-	uint esi;
-	uint edi;
-	uint ebp;
-};
 
 enum procstate {
 	UNUSED,
@@ -38,20 +39,22 @@ enum procstate {
 };
 
 struct proc {
-	struct list_head list;	/* 全局 proc 链表 / 就绪队列节点 */
+	struct list_head list;	/* 就绪队列节点 */
 	enum procstate state;
 	int pid;
 	struct proc *parent;
-	void *chan;		/* sleep/wakeup 等待通道；0 表示仅按时钟唤醒 */
-	unsigned int wakeup_tick;	/* sleep_ticks 到期 tick；0 表示无超时 */
+	void *chan;
+	unsigned int wakeup_tick;
 	int killed;
-	int xstate;		/* exit 状态，wait 回收（预留） */
+	int xstate;
 
 	pagetable_t pagetable;
-	struct trapframe *kframe;	/* 内核态 trap 保存区（预留） */
+	struct trapframe *kframe;
 	struct context context;
-	void *kstack;		/* 内核栈页（预留） */
-	uint sz;			/* 用户地址空间大小（预留） */
+	void *kstack;
+	void (*entry)(void *);
+	void *entry_arg;
+	uint sz;
 	char name[NNAME];
 };
 
@@ -69,5 +72,12 @@ void sleep(void *chan);
 void wakeup(void *chan);
 void sleep_ticks(unsigned int nticks);
 void proc_timer_tick(void);
+
+void sched(void);
+void yield(void);
+void scheduler(void) __attribute__((noreturn));
+
+struct proc *kthread_create(void (*fn)(void *), void *arg, const char *name);
+void kthread_exit(void);
 
 #endif

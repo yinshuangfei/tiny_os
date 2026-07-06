@@ -26,6 +26,7 @@ static volatile unsigned int ticks;
  */
 void pic_eoi(int irq)
 {
+	// 清 ISR、允许 PIC 再报这条/后续 IRQ
 	if (irq >= 8)
 		outb(PIC2_CMD, 0x20);
 	outb(PIC1_CMD, 0x20);

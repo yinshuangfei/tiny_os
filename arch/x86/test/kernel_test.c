@@ -94,6 +94,38 @@ void sleep_ticks_test(void)
 	printf("sleep_ticks test passed\n");
 }
 
+static void kthread_a(void *arg)
+{
+	int i;
+
+	(void)arg;
+	for (i = 0; i < 10; i++) {
+		printf("  kthread A: round %d\n", i);
+		yield();
+	}
+}
+
+static void kthread_b(void *arg)
+{
+	int i;
+
+	(void)arg;
+	for (i = 0; i < 10; i++) {
+		printf("  kthread B: round %d\n", i);
+		yield();
+	}
+}
+
+void kthread_test(void)
+{
+	printf("kthread switch test:\n");
+	if (!kthread_create(kthread_a, 0, "kthread-a"))
+		panic("kthread_create A failed");
+	if (!kthread_create(kthread_b, 0, "kthread-b"))
+		panic("kthread_create B failed");
+	printf("kthread test: threads created, hand over to scheduler\n");
+}
+
 static int test_check(const char *name, int ok)
 {
 	printf("  %s: %s\n", name, ok ? "OK" : "FAIL");
@@ -219,4 +251,5 @@ void kernel_test(void)
 	// device_not_available_test();
 	// simd_fp_test();
 	// sleep_ticks_test();
+	kthread_test();
 }

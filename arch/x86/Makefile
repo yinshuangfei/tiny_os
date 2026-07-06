@@ -74,6 +74,7 @@ C_OBJS = \
 
 AS_OBJS = \
 	$(KDIR)/trap.o \
+	$(KDIR)/swtch.o \
 
 OBJS = $(C_OBJS) $(AS_OBJS)
 

@@ -36,6 +36,12 @@ static inline void list_add(struct list_head *new, struct list_head *head)
 	__list_add(new, head, head->next);
 }
 
+/* 在 head 之前插入（队列尾） */
+static inline void list_add_tail(struct list_head *new, struct list_head *head)
+{
+	__list_add(new, head->prev, head);
+}
+
 /* 从链表中摘除 entry，并置为自环 */
 static inline void list_del(struct list_head *entry)
 {
