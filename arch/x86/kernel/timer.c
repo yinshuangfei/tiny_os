@@ -1,5 +1,7 @@
 #include "defs.h"
 #include "x86.h"
+#include "timer.h"
+#include "proc.h"
 
 /** PIC: Programmable Interrupt Controller (可编程中断控制器)  */
 /** 8259 主中断控制器 */
@@ -14,10 +16,20 @@
 #define PIT_CMD   0x43		// 命令端口
 #define PIT_CH0   0x40		// 通道 0 端口
 
-#define PIT_FREQ  1193182	// 1193182 Hz (1.193182 MHz)
-#define TIMER_HZ  100		// 100 Hz (100 ticks per second)
+#define PIT_FREQ  1193182	/* 8254 输入时钟 1.193182 MHz */
 
 static volatile unsigned int ticks;
+
+/**
+ * 8259 EOI：IRQ >= 8 时需先向从片、再向主片发送。
+ * 在 handler 开头调用，避免 handler 偏长时边沿触发丢下一拍 IRQ。
+ */
+void pic_eoi(int irq)
+{
+	if (irq >= 8)
+		outb(PIC2_CMD, 0x20);
+	outb(PIC1_CMD, 0x20);
+}
 
 /**
  * 配置 8259 中断控制器
@@ -48,7 +60,10 @@ void pic_init(void)
 /** 配置 8254 可编程间隔定时器 */
 void pit_init(void)
 {
-	unsigned short divisor = PIT_FREQ / TIMER_HZ;
+	uint32 divisor = PIT_FREQ / TIMER_HZ;
+
+	if (divisor > 0xffff)
+		panic("pit: divisor overflow");
 
 	/**
 	 * bit 7–6: 通道选择：00 通道 0，01 通道 1，10 通道 2，11 读回波特率
@@ -68,8 +83,10 @@ void pit_init(void)
 
 void timer_handler(void)
 {
+	/* IRQ0：先 EOI 再干活，避免 8259 边沿模式下 handler 过长丢中断 */
+	pic_eoi(0);
 	ticks++;
-	// printf("ticks: %d\n", ticks);
+	proc_timer_tick();
 }
 
 unsigned int timer_ticks(void)

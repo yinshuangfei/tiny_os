@@ -36,9 +36,10 @@ void serial_init(void);
 void uart_putc(char c);
 void uart_puts(const char *s);
 
+#include "proc.h"
+#include "spinlock.h"
+
 /** timer.c */
-void pic_init(void);
-void pit_init(void);
-unsigned int timer_ticks(void);
+#include "timer.h"
 
 #endif

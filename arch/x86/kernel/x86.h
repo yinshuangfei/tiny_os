@@ -7,6 +7,7 @@ struct gdt_ptr;
 
 struct idt_ptr;
 
+/** set interrupt flag */
 static inline void sti(void)
 {
 	__asm__ volatile ("sti");

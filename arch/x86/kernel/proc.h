@@ -42,7 +42,8 @@ struct proc {
 	enum procstate state;
 	int pid;
 	struct proc *parent;
-	void *chan;		/* sleep/wakeup 等待通道（预留） */
+	void *chan;		/* sleep/wakeup 等待通道；0 表示仅按时钟唤醒 */
+	unsigned int wakeup_tick;	/* sleep_ticks 到期 tick；0 表示无超时 */
 	int killed;
 	int xstate;		/* exit 状态，wait 回收（预留） */
 
@@ -57,9 +58,16 @@ struct proc {
 extern struct proc *proc_table;
 extern struct list_head runqueue;
 
+struct proc *myproc(void);
+
 void procinit(void);
 struct proc *proc_alloc(void);
 void proc_free(struct proc *p);
 struct proc *proc_find(int pid);
+
+void sleep(void *chan);
+void wakeup(void *chan);
+void sleep_ticks(unsigned int nticks);
+void proc_timer_tick(void);
 
 #endif

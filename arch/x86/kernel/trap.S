@@ -106,6 +106,4 @@ isr_timer:
 	IRQSTACK_SWITCH
 	call timer_handler
 	IRQSTACK_RESTORE
-	movb $0x20, %al
-	outb %al, $0x20
 	iret

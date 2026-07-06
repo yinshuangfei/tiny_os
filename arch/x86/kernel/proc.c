@@ -7,6 +7,8 @@
 #include "list.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "timer.h"
+#include "x86.h"
 
 struct proc *proc_table;
 struct list_head runqueue;
@@ -14,9 +16,33 @@ struct list_head runqueue;
 static struct spinlock proc_lock;
 static int nextpid = 1;
 
+struct proc *myproc(void)
+{
+	return mycpu()->proc;
+}
+
+static void sched_sleep(void)
+{
+	struct proc *p = myproc();
+
+	for (;;) {
+		acquire(&proc_lock);
+		if (p->state != SLEEPING) {
+			release(&proc_lock);
+			return;
+		}
+		release(&proc_lock);
+		sti();
+
+		// isr_timer 的 iret 回到 halt 后面继续执行
+		halt();
+	}
+}
+
 void procinit(void)
 {
 	int i;
+	struct proc *init;
 
 	initlock(&proc_lock, "proc");
 	INIT_LIST_HEAD(&runqueue);
@@ -30,8 +56,85 @@ void procinit(void)
 		INIT_LIST_HEAD(&p->list);
 		p->state = UNUSED;
 	}
+
+	/* slot 0 作为内核/bootstrap 上下文，供 sleep_ticks 等使用 */
+	init = &proc_table[0];
+	init->state = RUNNABLE;
+	init->pid = 0;
+	mycpu()->proc = init;
+
 	printf("proc: table ready, nproc=%d (%d bytes)\n",
 	       NPROC, NPROC * (uint)sizeof(struct proc));
+}
+
+void proc_timer_tick(void)
+{
+	unsigned int now = timer_ticks();
+	int i;
+	struct proc *p;
+
+	acquire(&proc_lock);
+	for (i = 0; i < NPROC; i++) {
+		p = &proc_table[i];
+		if (p->state != SLEEPING)
+			continue;
+		if (p->wakeup_tick != 0 && now >= p->wakeup_tick) {
+			p->state = RUNNABLE;
+			p->wakeup_tick = 0;
+			p->chan = 0;
+		}
+	}
+	release(&proc_lock);
+}
+
+void sleep(void *chan)
+{
+	struct proc *p = myproc();
+
+	if (!chan)
+		panic("sleep: null chan");
+
+	acquire(&proc_lock);
+	p->chan = chan;
+	p->wakeup_tick = 0;
+	p->state = SLEEPING;
+	release(&proc_lock);
+	sched_sleep();
+}
+
+void wakeup(void *chan)
+{
+	int i;
+	struct proc *p;
+
+	if (!chan)
+		return;
+
+	acquire(&proc_lock);
+	for (i = 0; i < NPROC; i++) {
+		p = &proc_table[i];
+		if (p->state == SLEEPING && p->chan == chan) {
+			p->state = RUNNABLE;
+			p->chan = 0;
+			p->wakeup_tick = 0;
+		}
+	}
+	release(&proc_lock);
+}
+
+void sleep_ticks(unsigned int nticks)
+{
+	struct proc *p = myproc();
+
+	if (nticks == 0)
+		return;
+
+	acquire(&proc_lock);
+	p->wakeup_tick = timer_ticks() + nticks;
+	p->chan = 0;
+	p->state = SLEEPING;
+	release(&proc_lock);
+	sched_sleep();
 }
 
 struct proc *proc_alloc(void)
@@ -40,7 +143,7 @@ struct proc *proc_alloc(void)
 	struct proc *p;
 
 	acquire(&proc_lock);
-	for (i = 0; i < NPROC; i++) {
+	for (i = 1; i < NPROC; i++) {
 		p = &proc_table[i];
 		if (p->state != UNUSED)
 			continue;

@@ -1,6 +1,7 @@
 #include "../kernel/defs.h"
 #include "../kernel/x86.h"
 #include "../kernel/interrupt.h"
+#include "../kernel/timer.h"
 
 void paging_enable_test(void)
 {
@@ -75,6 +76,22 @@ void simd_fp_test(void)
 		: "+m"(mxcsr)
 		: "m"(one)
 		: "xmm0", "xmm1", "memory");
+}
+
+void sleep_ticks_test(void)
+{
+	unsigned int t0, t1, delta, to_sleep = 3;
+
+	t0 = timer_ticks();
+	sleep_ticks(to_sleep);
+	t1 = timer_ticks();
+	delta = t1 - t0;
+
+	printf("sleep_ticks test: %d -> %d (delta=%d, expect ~%d)\n",
+	       (int)t0, (int)t1, (int)delta, to_sleep);
+	if (delta < to_sleep / 2 || delta > to_sleep * 2)
+		panic("sleep_ticks test failed");
+	printf("sleep_ticks test passed\n");
 }
 
 static int test_check(const char *name, int ok)
@@ -201,4 +218,5 @@ void kernel_test(void)
 	// general_protection_test();
 	// device_not_available_test();
 	// simd_fp_test();
+	// sleep_ticks_test();
 }
