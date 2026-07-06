@@ -12,6 +12,12 @@
  *   order n →  2^n 页
  *
  * 例：释放 8 页后，相邻 buddy 可合并成 order=3 的 16 页块。
+
+ * (1)系统启动时，会通过 BIOS 中断（如 INT 0x15, eax=0xe820）探测物理内存布局，生成
+ * 内存映射表。
+ * (2)内核在初始化内存管理子系统时，会将已分配给内核自身核心数据结构（如内核代码段、
+ * 数据段、内核栈等）的内存从可用内存池中扣除。
+ * (3)随后，内核才会将剩余的物理内存页交给伙伴系统（Buddy System）等通用分配器进行管理。
  */
 #include "types.h"
 #include "defs.h"
@@ -21,7 +27,6 @@
 
 extern char end[];	/* kernel.ld: .bss 结束后的第一个地址 */
 
-#define MAX_ORDER   11	/* 支持 order 0..10，最大单块 2^10 = 1024 页 (4 MiB) */
 #define PAGE_INUSE  ((unsigned int)-1)	/* 已分配页标记，不在任何 free_area 链上 */
 
 /*

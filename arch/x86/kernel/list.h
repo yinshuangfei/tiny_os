@@ -52,4 +52,7 @@ static inline void list_del(struct list_head *entry)
 #define list_first_entry(head, type, member) \
 	list_entry((head)->next, type, member)
 
+#define list_for_each(pos, head) \
+	for (pos = (head)->next; pos != (head); pos = pos->next)
+
 #endif

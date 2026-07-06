@@ -9,6 +9,12 @@
 
 #define PGSIZE     4096
 
+/*
+ * buddy 物理页分配器 order 上限：有效 order 为 0 .. MAX_ORDER-1，
+ * 最大单块 2^(MAX_ORDER-1) 页（order 10 → 1024 页 = 4 MiB）。
+ */
+#define MAX_ORDER  11
+
 // 向上取整，将地址向上对齐到 PGSIZE 的倍数
 #define PGROUNDUP(sz)   (((sz) + PGSIZE - 1) & ~(PGSIZE - 1))
 // 向下取整，将地址向下对齐到 PGSIZE 的倍数

@@ -27,8 +27,12 @@ void main(void)
 	pic_init();
 	// 初始化物理页分配器
 	pmm_init();
+	// 内核小对象堆（PCB 等动态结构）
+	kmem_init();
 	// 初始化页表并开启分页
 	kvm_init();
+	// 进程表
+	procinit();
 	// 初始化时钟
 	pit_init();
 	// 开启中断

@@ -64,7 +64,9 @@ C_OBJS = \
 	$(KDIR)/printf.o \
 	$(KDIR)/utils.o \
 	$(KDIR)/alloc.o \
+	$(KDIR)/kmem.o \
 	$(KDIR)/vm.o \
+	$(KDIR)/proc.o \
 	$(KDIR)/debug.o \
 	$(KDIR)/exception.o \
 	$(TESTDIR)/kernel_test.o \

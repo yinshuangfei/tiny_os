@@ -3,6 +3,9 @@
 
 #include "types.h"
 #include "utils.h"
+#include "vm.h"
+#include "kmem.h"
+#include "proc.h"
 
 /** alloc.c — Linux-style buddy page allocator */
 void *memset(void *dst, int c, uint n);
@@ -35,9 +38,5 @@ void uart_puts(const char *s);
 void pic_init(void);
 void pit_init(void);
 unsigned int timer_ticks(void);
-
-/** vm.c */
-void kvm_init(void);
-extern pde_t *kernel_pgdir;
 
 #endif

@@ -14,6 +14,10 @@
 
 pagetable_t kernel_pgdir;
 
+/* -------------------------------------------------------------------------- */
+/* 页表遍历与映射（内核 / 用户页表共用）                                        */
+/* -------------------------------------------------------------------------- */
+
 /*
  * Return the address of the PTE for virtual address va.
  * Create intermediate page-table pages when alloc != 0.
@@ -71,10 +75,57 @@ static int mappages(pagetable_t pgdir, uint va, uint size, uint pa, int perm)
 	return 0;
 }
 
-static void kvmmap(uint va, uint pa, uint size, int perm)
+static int unmappages(pagetable_t pgdir, uint va, uint size)
+{
+	pte_t *pte;
+	uint a, last;
+
+	if ((va % PGSIZE) != 0) {
+		printf("page not aligned: va=%p, size=%p\n", (void *)va, (void *)size);
+		return -1;
+	}
+	if (size == 0 || (size % PGSIZE) != 0) {
+		printf("size not aligned: va=%p, size=%p\n", (void *)va, (void *)size);
+		return -1;
+	}
+
+	a = va;
+	last = va + size - PGSIZE;
+	for (;;) {
+		pte = walk(pgdir, a, 0);
+		if (pte == 0 || !(*pte & PTE_P))
+			return -1;
+		*pte = 0;
+		if (a == last)
+			break;
+		a += PGSIZE;
+	}
+	return 0;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 内核地址空间                                                                 */
+/* -------------------------------------------------------------------------- */
+
+void kvmmap(uint va, uint pa, uint size, int perm)
 {
 	if (mappages(kernel_pgdir, va, size, pa, perm) < 0)
 		panic("kvmmap");
+}
+
+void kvmunmap(uint va, uint size)
+{
+	if (unmappages(kernel_pgdir, va, size) < 0)
+		panic("kvmunmap");
+	/** 刷新 TLB */
+	w_cr3((uint)kernel_pgdir);
+}
+
+void *kvmalloc(uint va, int perm)
+{
+	(void)va;
+	(void)perm;
+	return 0;
 }
 
 /*
@@ -111,4 +162,13 @@ void kvm_init(void)
 		if (kernel_pgdir[i] != 0)
 			printf("  kpage dir[%d]: %p\n", i, kernel_pgdir[i]);
 	}
+}
+
+/* -------------------------------------------------------------------------- */
+/* 用户地址空间                                                                 */
+/* -------------------------------------------------------------------------- */
+
+pagetable_t uvmcreate(void)
+{
+	return 0;
 }
