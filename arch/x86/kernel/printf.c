@@ -3,14 +3,14 @@
 #include "types.h"
 #include "defs.h"
 #include "x86.h"
+#include "spinlock.h"
 
 volatile int panicked = 0;
 
-// lock to avoid interleaving concurrent printf's.
-// static struct {
-// 	struct spinlock lock;
-// 	int locking;
-// } pr;
+static struct {
+	struct spinlock lock;
+	int locking;
+} pr;
 
 void consputc(int c)
 {
@@ -79,12 +79,12 @@ void printf(char *fmt, ...)
 {
 	va_list ap;
 	int i, c, c2;
-	// int locking;
+	int locking;
 	char *s;
 
-	// locking = pr.locking;
-	// if (locking)
-	// 	acquire(&pr.lock);
+	locking = pr.locking;
+	if (locking)
+		acquire(&pr.lock);
 
 	if (fmt == 0)
 		panic("null fmt");
@@ -146,13 +146,13 @@ void printf(char *fmt, ...)
 			break;
 		}
 	}
-	// if (locking)
-	// 	release(&pr.lock);
+	if (locking)
+		release(&pr.lock);
 }
 
 void panic(char *s)
 {
-	// pr.locking = 0;
+	pr.locking = 0;
 	printf("panic: ");
 	printf(s);
 	printf("\n");
@@ -160,8 +160,8 @@ void panic(char *s)
 	for (;;) halt();
 }
 
-// void printfinit(void)
-// {
-// 	initlock(&pr.lock, "pr");
-// 	pr.locking = 1;
-// }
+void printfinit(void)
+{
+	initlock(&pr.lock, "pr");
+	pr.locking = 1;
+}

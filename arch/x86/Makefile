@@ -61,6 +61,7 @@ C_OBJS = \
 	$(KDIR)/interrupt.o \
 	$(KDIR)/trapstack.o \
 	$(KDIR)/cpu.o \
+	$(KDIR)/spinlock.o \
 	$(KDIR)/printf.o \
 	$(KDIR)/utils.o \
 	$(KDIR)/alloc.o \

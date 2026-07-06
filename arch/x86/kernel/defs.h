@@ -6,6 +6,7 @@
 #include "vm.h"
 #include "kmem.h"
 #include "proc.h"
+#include "spinlock.h"
 
 /** alloc.c — Linux-style buddy page allocator */
 void *memset(void *dst, int c, uint n);
@@ -27,6 +28,7 @@ void gdt_init(void);
 
 /** printf.c */
 void printf(char *fmt, ...);
+void printfinit(void);
 void panic(char *s);
 
 /** serial.c */

@@ -31,8 +31,10 @@ void main(void)
 	kmem_init();
 	// 初始化页表并开启分页
 	kvm_init();
-	// 进程表
+	// 初始化进程表
 	procinit();
+	// printf 自旋锁（须在 sti 之前，避免定时器 IRQ 交错输出）
+	printfinit();
 	// 初始化时钟
 	pit_init();
 	// 开启中断

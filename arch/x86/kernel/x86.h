@@ -18,6 +18,25 @@ static inline void cli(void)
 	__asm__ volatile ("cli");
 }
 
+/** read EFLAGS.IF (1 = interrupts enabled) */
+static inline int intr_get(void)
+{
+	uint32 eflags;
+
+	__asm__ volatile ("pushfl; popl %0" : "=r"(eflags));
+	return (eflags & 0x200) != 0;
+}
+
+static inline void intr_off(void)
+{
+	cli();
+}
+
+static inline void intr_on(void)
+{
+	sti();
+}
+
 /** halt */
 static inline void halt(void)
 {

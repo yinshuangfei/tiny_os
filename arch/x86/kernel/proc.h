@@ -7,6 +7,17 @@
 #include "vm.h"
 #include "interrupt.h"
 
+struct cpu {
+	int id;
+	struct proc *proc;
+	int noff;		/* nested interrupt disable count */
+	int intena;		/* interrupt enabled flag */
+};
+
+extern struct cpu cpus[NCPU];
+
+struct cpu *mycpu(void);
+
 /* swtch.S 保存的内核 callee-saved 寄存器（x86 32 位） */
 struct context {
 	uint eip;

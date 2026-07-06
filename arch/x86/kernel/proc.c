@@ -6,16 +6,19 @@
 #include "param.h"
 #include "list.h"
 #include "proc.h"
+#include "spinlock.h"
 
 struct proc *proc_table;
 struct list_head runqueue;
 
+static struct spinlock proc_lock;
 static int nextpid = 1;
 
 void procinit(void)
 {
 	int i;
 
+	initlock(&proc_lock, "proc");
 	INIT_LIST_HEAD(&runqueue);
 	proc_table = kcalloc(NPROC, sizeof(struct proc));
 	if (!proc_table)
@@ -36,6 +39,7 @@ struct proc *proc_alloc(void)
 	int i;
 	struct proc *p;
 
+	acquire(&proc_lock);
 	for (i = 0; i < NPROC; i++) {
 		p = &proc_table[i];
 		if (p->state != UNUSED)
@@ -45,8 +49,10 @@ struct proc *proc_alloc(void)
 		INIT_LIST_HEAD(&p->list);
 		p->state = USED;
 		p->pid = nextpid++;
+		release(&proc_lock);
 		return p;
 	}
+	release(&proc_lock);
 	return 0;
 }
 
@@ -55,6 +61,7 @@ void proc_free(struct proc *p)
 	if (!p || p->state == UNUSED)
 		return;
 
+	acquire(&proc_lock);
 	p->state = UNUSED;
 	p->pid = 0;
 	p->parent = 0;
@@ -63,16 +70,23 @@ void proc_free(struct proc *p)
 	p->name[0] = '\0';
 	list_del(&p->list);
 	INIT_LIST_HEAD(&p->list);
+	release(&proc_lock);
 }
 
 struct proc *proc_find(int pid)
 {
 	int i;
 
+	acquire(&proc_lock);
 	for (i = 0; i < NPROC; i++) {
 		if (proc_table[i].pid == pid &&
-		    proc_table[i].state != UNUSED)
-			return &proc_table[i];
+		    proc_table[i].state != UNUSED) {
+			struct proc *p = &proc_table[i];
+
+			release(&proc_lock);
+			return p;
+		}
 	}
+	release(&proc_lock);
 	return 0;
 }

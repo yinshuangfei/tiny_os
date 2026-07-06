@@ -7,9 +7,12 @@
 #include "memlayout.h"
 #include "list.h"
 #include "kmem.h"
+#include "spinlock.h"
 
 #define KMAGIC       0x4b4d454d	/* 'KMEM' */
 #define KFLAG_PAGE   0x80000000u	/* size 字段标记：整页分配 */
+
+static struct spinlock kmem_lock;
 
 struct khdr {
 	struct list_head node;
@@ -72,6 +75,7 @@ void kmem_init(void)
 	uint i;
 
 	nr_kfree = 0;
+	initlock(&kmem_lock, "kmem");
 	for (i = 0; i < NCACHE; i++)
 		INIT_LIST_HEAD(&cache[i].free);
 	printf("kmem: size-class (slab) allocator ready (%d buckets)\n", NCACHE);
@@ -86,6 +90,7 @@ void *kmalloc(uint size)
 	if (size == 0)
 		return 0;
 
+	acquire(&kmem_lock);
 	need = size + sizeof(struct khdr);
 
 	/* 如果需要的 size 大于 cache 中最大的 block size，则直接分配一整页 */
@@ -99,10 +104,13 @@ void *kmalloc(uint size)
 				panic("kmalloc: size too large");
 		}
 		h = (struct khdr *)alloc_pages(order);
-		if (!h)
+		if (!h) {
+			release(&kmem_lock);
 			return 0;
+		}
 		h->size = KFLAG_PAGE | order;
 		h->magic = KMAGIC;
+		release(&kmem_lock);
 		return (void *)(h + 1);
 	}
 
@@ -119,6 +127,7 @@ void *kmalloc(uint size)
 
 	h->size = cache[idx].bsize;
 	h->magic = KMAGIC;
+	release(&kmem_lock);
 	return (void *)(h + 1);
 }
 
@@ -145,6 +154,7 @@ void kfree(void *ptr)
 	if (!ptr)
 		return;
 
+	acquire(&kmem_lock);
 	h = (struct khdr *)ptr - 1;
 	if (h->magic != KMAGIC)
 		panic("kfree: bad magic");
@@ -152,8 +162,8 @@ void kfree(void *ptr)
 	h->magic = 0;
 
 	if (h->size & KFLAG_PAGE) {
-		/* 如果 size 包含 KFLAG_PAGE，则表示整页分配，直接释放整页 */
 		free_pages(h, h->size & ~KFLAG_PAGE);
+		release(&kmem_lock);
 		return;
 	}
 
@@ -163,9 +173,15 @@ void kfree(void *ptr)
 
 	list_add(&h->node, &cache[idx].free);
 	nr_kfree++;
+	release(&kmem_lock);
 }
 
 unsigned int kmem_nr_free(void)
 {
-	return nr_kfree;
+	unsigned int n;
+
+	acquire(&kmem_lock);
+	n = nr_kfree;
+	release(&kmem_lock);
+	return n;
 }

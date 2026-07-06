@@ -23,6 +23,7 @@
 #include "defs.h"
 #include "memlayout.h"
 #include "list.h"
+#include "spinlock.h"
 #include "utils.h"
 
 extern char end[];	/* kernel.ld: .bss 结束后的第一个地址 */
@@ -48,6 +49,7 @@ struct free_area {
 };
 
 static struct free_area free_area[MAX_ORDER];
+static struct spinlock pmm_lock;
 static struct page *mem_map;	/* 指向 page_storage，按页号索引 */
 static uint mem_start;		/* 可分配区起始物理地址（页对齐） */
 static uint mem_end;		/* 可分配区结束物理地址（= physmem_top） */
@@ -185,6 +187,7 @@ void pmm_init(void)
 	nr_pages = (mem_end - mem_start) / PGSIZE;
 	mem_map = page_storage;
 	nr_free = 0;
+	initlock(&pmm_lock, "pmm");
 
 	for (i = 0; i < MAX_ORDER; i++) {
 		INIT_LIST_HEAD(&free_area[i].free_list);
@@ -210,12 +213,19 @@ void pmm_init(void)
 void *alloc_pages(unsigned int order)
 {
 	struct page *page;
+	void *addr;
 
+	acquire(&pmm_lock);
 	page = __alloc_pages(order);
-	if (!page)
+	if (!page) {
+		release(&pmm_lock);
 		return 0;
-	memset(page_to_addr(page), 0, PGSIZE << order);
-	return page_to_addr(page);
+	}
+	addr = page_to_addr(page);
+	release(&pmm_lock);
+
+	memset(addr, 0, PGSIZE << order);
+	return addr;
 }
 
 /* 释放 addr 起的 2^order 页；order 必须与分配时一致 */
@@ -225,10 +235,13 @@ void free_pages(void *addr, unsigned int order)
 
 	if (order >= MAX_ORDER)
 		panic("free_pages: bad order");
+
+	acquire(&pmm_lock);
 	page = addr_to_page(addr);
 	if (!page)
 		panic("free_pages: bad addr");
 	__free_one_page(page, order);
+	release(&pmm_lock);
 }
 
 void *alloc_page(void)
@@ -243,5 +256,10 @@ void free_page(void *addr)
 
 unsigned int pmm_nr_free_pages(void)
 {
-	return nr_free;
+	unsigned int n;
+
+	acquire(&pmm_lock);
+	n = nr_free;
+	release(&pmm_lock);
+	return n;
 }
