@@ -75,32 +75,34 @@ static int mappages(pagetable_t pgdir, uint va, uint size, uint pa, int perm)
 	return 0;
 }
 
-static int unmappages(pagetable_t pgdir, uint va, uint size)
+/*
+ * 解除 va 起连续 npages 页的映射；do_free 非 0 时一并释放物理页。
+ * 内核 / 用户页表共用，由 kvmunmap / uvmunmap 封装错误处理与 TLB 策略。
+ */
+static int unmappages(pagetable_t pgdir, uint va, uint npages, int do_free)
 {
 	pte_t *pte;
-	uint a, last;
+	uint a;
 
-	if ((va % PGSIZE) != 0) {
-		printf("page not aligned: va=%p, size=%p\n", (void *)va, (void *)size);
+	if (pgdir == 0 || (va % PGSIZE) != 0 || npages == 0)
 		return -1;
-	}
-	if (size == 0 || (size % PGSIZE) != 0) {
-		printf("size not aligned: va=%p, size=%p\n", (void *)va, (void *)size);
-		return -1;
-	}
 
-	a = va;
-	last = va + size - PGSIZE;
-	for (;;) {
+	for (a = va; a < va + npages * PGSIZE; a += PGSIZE) {
 		pte = walk(pgdir, a, 0);
 		if (pte == 0 || !(*pte & PTE_P))
 			return -1;
+		if (do_free)
+			free_page((void *)PTE_ADDR(*pte));
 		*pte = 0;
-		if (a == last)
-			break;
-		a += PGSIZE;
 	}
 	return 0;
+}
+
+/* 仅当 pgdir 为当前 CR3 时刷新 TLB（用户页表卸载场景） */
+static void tlb_flush_if_active(pagetable_t pgdir)
+{
+	if (r_cr3() == (uint)pgdir)
+		w_cr3((uint)pgdir);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -115,8 +117,13 @@ void kvmmap(uint va, uint pa, uint size, int perm)
 
 void kvmunmap(uint va, uint size)
 {
-	if (unmappages(kernel_pgdir, va, size) < 0)
+	// 内核恒等映射 [0, physmem_top) 时，很多物理页并不是“为这个映射专门分配的”
+	// ——可能是 boot 区、MMIO、buddy 池里的页。kvmunmap 只拆映射，不能随便 free_page
+	if ((va % PGSIZE) != 0 || size == 0 || (size % PGSIZE) != 0)
 		panic("kvmunmap");
+	if (unmappages(kernel_pgdir, va, size / PGSIZE, 0) < 0)
+		panic("kvmunmap");
+
 	/** 刷新 TLB */
 	w_cr3((uint)kernel_pgdir);
 }
@@ -170,5 +177,27 @@ void kvm_init(void)
 
 pagetable_t uvmcreate(void)
 {
+	pagetable_t pgdir;
+
+	pgdir = (pagetable_t)alloc_page();
+	if (pgdir == 0)
+		return 0;
+	memset(pgdir, 0, PGSIZE);
+	return pgdir;
+}
+
+int uvmmap(pagetable_t pgdir, uint va, uint pa, uint size, int perm)
+{
+	if (pgdir == 0)
+		return -1;
+	return mappages(pgdir, va, size, pa, perm | PTE_U);
+}
+
+int uvmunmap(pagetable_t pgdir, uint va, uint npages, int do_free)
+{
+	if (unmappages(pgdir, va, npages, do_free) < 0)
+		return -1;
+	/* 进程页表未必是当前 CR3，按需刷新 */
+	tlb_flush_if_active(pgdir);
 	return 0;
 }
