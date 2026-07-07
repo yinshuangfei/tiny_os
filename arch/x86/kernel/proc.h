@@ -87,6 +87,7 @@ void sched_tick(void);
 void preempt_check(void);
 
 void sched(void);
+void context_switch(struct context *old, struct context *new);
 void yield(void);
 void scheduler(void) __attribute__((noreturn));
 

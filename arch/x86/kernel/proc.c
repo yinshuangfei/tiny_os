@@ -72,6 +72,12 @@ static void kthread_reap(struct proc *p)
 	}
 }
 
+void context_switch(struct context *old, struct context *new)
+{
+	intr_off();
+	swtch(old, new);
+}
+
 void sched(void)
 {
 	struct proc *p = myproc();
@@ -82,8 +88,7 @@ void sched(void)
 		panic("sched: scheduler not initialized, "
 		      "first sched() should be called by scheduler\n");
 
-	intr_off();
-	swtch(&p->context, &c->context);
+	context_switch(&p->context, &c->context);
 	if (iflag)
 		intr_on();
 }
@@ -396,7 +401,7 @@ void scheduler(void)
 			p->state = RUNNING;
 			c->proc = p;
 			release(&proc_lock);
-			swtch(&c->context, &p->context);
+			context_switch(&c->context, &p->context);
 			c->proc = 0;
 			if (p->state == UNUSED)
 				kthread_reap(p);
