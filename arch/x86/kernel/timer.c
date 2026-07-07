@@ -87,7 +87,7 @@ void timer_handler(void)
 	/* IRQ0：先 EOI 再干活，避免 8259 边沿模式下 handler 过长丢中断 */
 	pic_eoi(0);
 	ticks++;
-	proc_timer_tick();
+	sched_tick();
 }
 
 unsigned int timer_ticks(void)

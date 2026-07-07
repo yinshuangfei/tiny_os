@@ -100,10 +100,13 @@ isr_page_fault:
 	TRAP_FRAME_LEAVE
 
 /*
- * 定时器 IRQ：硬件 IRQ 无 trapframe，仅切换栈后调用 C，再 EOI。
+ * 定时器 IRQ：切 interrupt_stack 调 C；返回被中断栈后再检查抢占并 iret。
  */
+.extern preempt_check
+
 isr_timer:
 	IRQSTACK_SWITCH
 	call timer_handler
 	IRQSTACK_RESTORE
+	call preempt_check
 	iret

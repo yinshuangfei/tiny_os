@@ -50,7 +50,7 @@ int holding(struct spinlock *lk)
 }
 
 /**
- * push_off - 关闭中断并增加中断计数器
+ * push_off - （CPU 级别）关闭中断并增加中断计数器
  * 保存当前中断状态，并关闭中断。
  * 如果中断计数器为 0，则保存当前中断使能状态。
  * 增加中断计数器。
@@ -66,7 +66,7 @@ void push_off(void)
 }
 
 /**
- * pop_off - 恢复中断状态并减少中断计数器
+ * pop_off - （CPU 级别）恢复中断状态并减少中断计数器
  * 检查是否在中断模式下执行，如果在中断模式下执行，则panic。
  * 检查中断计数器是否大于 0，如果小于 0，则panic。
  * 减少中断计数器。
@@ -81,6 +81,8 @@ void pop_off(void)
 	if (c->noff < 1)
 		panic("pop_off");
 	c->noff--;
-	if (c->noff == 0 && c->intena)
+	if (c->noff == 0 && c->intena) {
+		preempt_check();
 		intr_on();
+	}
 }

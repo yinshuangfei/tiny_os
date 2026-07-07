@@ -67,22 +67,86 @@ void sched(void)
 {
 	struct proc *p = myproc();
 	struct cpu *c = mycpu();
+	int iflag = intr_get();
 
-	push_off();
+	if (c->context.esp == 0)
+		panic("sched: scheduler not initialized, "
+		      "first sched() should be called by scheduler\n");
+
+	intr_off();
 	swtch(&p->context, &c->context);
-	// kthread_exit -> sched() 的 pop_off 永远不会执行，
-	pop_off();
+	if (iflag)
+		intr_on();
 }
 
 void yield(void)
 {
 	struct proc *p = myproc();
 
+	mycpu()->need_resched = 0;
 	acquire(&proc_lock);
 	p->state = RUNNABLE;
 	enqueue_runnable(p);
 	release(&proc_lock);
 	sched();
+}
+
+static int should_preempt(void)
+{
+	struct cpu *c = mycpu();
+	struct proc *p;
+
+	/* 持有 spinlock (c->noff != 0) 时，不抢占 */
+	if (!c->need_resched || c->noff != 0)
+		return 0;
+	p = myproc();
+	if (!p || p->state != RUNNING)
+		return 0;
+	acquire(&proc_lock);
+	if (list_empty(&runqueue)) {
+		c->need_resched = 0;
+		release(&proc_lock);
+		return 0;
+	}
+	release(&proc_lock);
+	return 1;
+}
+
+void preempt_check(void)
+{
+	if (should_preempt())
+		yield();
+}
+
+void sched_tick(void)
+{
+	unsigned int now = timer_ticks();
+	int i;
+	struct proc *p;
+
+	/* 唤醒睡眠进程 */
+	acquire(&proc_lock);
+	for (i = 0; i < NPROC; i++) {
+		p = &proc_table[i];
+		if (p->state != SLEEPING)
+			continue;
+		if (p->wakeup_tick != 0 && now >= p->wakeup_tick) {
+			p->state = RUNNABLE;
+			p->wakeup_tick = 0;
+			p->chan = 0;
+			enqueue_runnable(p);
+		}
+	}
+	release(&proc_lock);
+
+	/* 检查是否需要抢占 */
+	p = myproc();
+	if (p && p->state == RUNNING) {
+		acquire(&proc_lock);
+		if (!list_empty(&runqueue))
+			mycpu()->need_resched = 1;
+		release(&proc_lock);
+	}
 }
 
 /**
@@ -137,27 +201,6 @@ void procinit(void)
 
 	printf("proc: table ready, nproc=%d (%d bytes)\n",
 	       NPROC, NPROC * (uint)sizeof(struct proc));
-}
-
-void proc_timer_tick(void)
-{
-	unsigned int now = timer_ticks();
-	int i;
-	struct proc *p;
-
-	acquire(&proc_lock);
-	for (i = 0; i < NPROC; i++) {
-		p = &proc_table[i];
-		if (p->state != SLEEPING)
-			continue;
-		if (p->wakeup_tick != 0 && now >= p->wakeup_tick) {
-			p->state = RUNNABLE;
-			p->wakeup_tick = 0;
-			p->chan = 0;
-			enqueue_runnable(p);
-		}
-	}
-	release(&proc_lock);
 }
 
 void sleep(void *chan)
@@ -332,14 +375,8 @@ void scheduler(void)
 			release(&proc_lock);
 			swtch(&c->context, &p->context);
 			c->proc = 0;
-			/*
-			 * kthread_exit -> sched() 的 pop_off 永远不会执行，
-			 * 在此补一次以恢复 noff / IF。
-			 */
-			if (p->state == UNUSED) {
-				pop_off();
+			if (p->state == UNUSED)
 				kthread_reap(p);
-			}
 		} else {
 			release(&proc_lock);
 			halt();

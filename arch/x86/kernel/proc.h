@@ -23,6 +23,7 @@ struct cpu {
 	struct context context;	/* scheduler 上下文，swtch 回到此处 */
 	int noff;
 	int intena;
+	int need_resched;	/* 定时器 tick 请求抢占 */
 };
 
 extern struct cpu cpus[NCPU];
@@ -71,7 +72,8 @@ struct proc *proc_find(int pid);
 void sleep(void *chan);
 void wakeup(void *chan);
 void sleep_ticks(unsigned int nticks);
-void proc_timer_tick(void);
+void sched_tick(void);
+void preempt_check(void);
 
 void sched(void);
 void yield(void);

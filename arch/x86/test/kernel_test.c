@@ -78,9 +78,12 @@ void simd_fp_test(void)
 		: "xmm0", "xmm1", "memory");
 }
 
-void sleep_ticks_test(void)
+static void sleep_ticks_kthread(void *arg)
 {
 	unsigned int t0, t1, delta, to_sleep = 3;
+
+	(void)arg;
+	printf("sleep_ticks test: %d\n", to_sleep);
 
 	t0 = timer_ticks();
 	sleep_ticks(to_sleep);
@@ -92,6 +95,12 @@ void sleep_ticks_test(void)
 	if (delta < to_sleep / 2 || delta > to_sleep * 2)
 		panic("sleep_ticks test failed");
 	printf("sleep_ticks test passed\n");
+}
+
+void sleep_ticks_test(void)
+{
+	if (!kthread_create(sleep_ticks_kthread, 0, "sleep-test"))
+		panic("sleep_ticks_test: kthread_create failed");
 }
 
 static void kthread_a(void *arg)
@@ -114,6 +123,31 @@ static void kthread_b(void *arg)
 		printf("  kthread B: round %d\n", i);
 		yield();
 	}
+}
+
+static void kthread_spinner(void *arg)
+{
+	int id = (int)arg;
+	int i;
+
+	for (i = 0; i < 4; i++) {
+		/*
+		 * 忙等，不 yield；依赖定时器抢占。
+		 * for 循环中单次执行时间小于一个 tick，不会触发抢占。
+		 */
+		for (volatile int j = 0; j < 8000000; j++)
+			;
+		printf("  spinner %d: slice %d done\n", id, i);
+	}
+}
+
+void kthread_preempt_test(void)
+{
+	printf("kthread preempt test (no yield, one tick one switch):\n");
+	if (!kthread_create(kthread_spinner, (void *)1, "spin-1"))
+		panic("kthread_create spin-1 failed");
+	if (!kthread_create(kthread_spinner, (void *)2, "spin-2"))
+		panic("kthread_create spin-2 failed");
 }
 
 void kthread_test(void)
@@ -250,6 +284,7 @@ void kernel_test(void)
 	// general_protection_test();
 	// device_not_available_test();
 	// simd_fp_test();
-	// sleep_ticks_test();
-	kthread_test();
+	sleep_ticks_test();
+	// kthread_test();
+	// kthread_preempt_test();
 }
