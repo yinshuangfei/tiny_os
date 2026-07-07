@@ -1,6 +1,7 @@
 #include "../kernel/defs.h"
 #include "../kernel/x86.h"
 #include "../kernel/interrupt.h"
+#include "../kernel/memlayout.h"
 #include "../kernel/timer.h"
 #include "../kernel/debug.h"
 
@@ -199,6 +200,14 @@ void gdt_test(void)
 	pass &= test_check("gdt[4] user data",
 			   (gdt_get_access(4) & GDT_ACCESS_MASK) == GDT_USER_DATA &&
 			   gdt_get_granularity(4) == GDT_GRAN_4GB);
+	pass &= test_check("gdt[5] TSS",
+			   (gdt_get_access(5) & GDT_ACCESS_MASK) ==
+			   (GDT_TSS & GDT_ACCESS_MASK));
+	pass &= test_check("TR == SEG_TSS", r_tr() == SEG_TSS);
+	pass &= test_check("TSS.ss0 == SEG_KDATA", tss_get_ss0() == SEG_KDATA);
+	pass &= test_check("TSS.esp0 set",
+			   tss_get_esp0() == (uint32)INTERRUPT_STACK_TOP ||
+			   tss_get_esp0() > 0);
 
 	if (!pass)
 		panic("GDT test failed");

@@ -110,6 +110,14 @@ static inline uint16 r_ss(void)
 	return val;
 }
 
+static inline uint16 r_tr(void)
+{
+	uint16 val;
+
+	__asm__ volatile ("str %0" : "=r"(val));
+	return val;
+}
+
 static inline void r_gdtr(struct gdt_ptr *ptr)
 {
 	__asm__ volatile ("sgdt %0" : "=m"(*ptr));

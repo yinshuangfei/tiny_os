@@ -1,11 +1,13 @@
 #include "types.h"
 #include "defs.h"
 #include "interrupt.h"
+#include "memlayout.h"
 #include "x86.h"
 
 struct idt_entry idt[IDT_ENTRIES];
 
 static struct gdt_entry gdt[GDT_ENTRIES] __attribute__((aligned(8)));
+static struct tss tss __attribute__((aligned(16)));
 
 extern void isr_timer(void);
 extern void isr_divide_error(void);
@@ -76,6 +78,11 @@ static void gdt_set_entry(int idx, uint32 base, uint32 limit,
 	gdt[idx].base_high = (base >> 24) & 0xff;
 }
 
+static void tss_load(void)
+{
+	__asm__ volatile ("ltr %w0" : : "r"(SEG_TSS));
+}
+
 static void gdt_load(void)
 {
 	struct gdt_ptr ptr;
@@ -115,9 +122,41 @@ void gdt_init(void)
 	gdt_set_entry(3, 0, 0xffff, GDT_USER_CODE, GDT_GRAN_4GB);
 	/* 4: 用户数据段 */
 	gdt_set_entry(4, 0, 0xffff, GDT_USER_DATA, GDT_GRAN_4GB);
+	/* 5: TSS（须在 lgdt 之前写入 GDT） */
+	tss_init();
 
 	gdt_load();
+	tss_load();
 	printf("system gdt loaded\n");
+}
+
+void tss_init(void)
+{
+	uint32 base = (uint32)&tss;
+	uint32 limit = sizeof(tss) - 1;
+
+	memset(&tss, 0, sizeof(tss));
+	tss.ss0 = SEG_KDATA;
+	tss.esp0 = (uint32)INTERRUPT_STACK_TOP;
+	tss.iomap_base = sizeof(tss);
+
+	gdt_set_entry(5, base, limit, GDT_TSS, (limit >> 16) & 0x0f);
+	printf("system tss loaded (esp0=0x%x)\n", tss.esp0);
+}
+
+void tss_set_esp0(uint32 esp)
+{
+	tss.esp0 = esp;
+}
+
+uint32 tss_get_esp0(void)
+{
+	return tss.esp0;
+}
+
+uint32 tss_get_ss0(void)
+{
+	return tss.ss0;
 }
 
 uint32 gdt_table_addr(void)

@@ -217,7 +217,7 @@ void procinit(void)
 	swapper->state = USED;
 	swapper->pid = 0;
 	swapper->parent = swapper;
-	proc_name_set(swapper->name, "swapper");
+	proc_name_set(swapper->name, "swapper|idle");
 	mycpu()->proc = swapper;
 
 	printf("proc: table ready, nproc=%d (%d bytes), swapper pid=0\n",
@@ -400,6 +400,8 @@ void scheduler(void)
 		if (p) {
 			p->state = RUNNING;
 			c->proc = p;
+			if (p->kstack)
+				tss_set_esp0((uint)p->kstack + KSTACKSIZE);
 			release(&proc_lock);
 			context_switch(&c->context, &p->context);
 			c->proc = 0;
