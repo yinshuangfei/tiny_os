@@ -6,8 +6,6 @@
 #define MINOR_VERSION 0
 #define PATCH_VERSION 1
 
-void kernel_test(void);
-
 void main(void)
 {
 	// 初始化串口
@@ -40,6 +38,6 @@ void main(void)
 	// 开启中断
 	sti();
 
-	kernel_test();
+	init_start();
 	scheduler();
 }

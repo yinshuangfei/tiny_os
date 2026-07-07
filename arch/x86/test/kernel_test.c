@@ -129,16 +129,16 @@ static void kthread_b(void *arg)
 static void kthread_spinner(void *arg)
 {
 	int id = (int)arg;
-	int i;
+	int target = 4;
 
-	for (i = 0; i < 4; i++) {
+	for (int i = 0; i < target; i++) {
 		/*
 		 * 忙等，不 yield；依赖定时器抢占。
 		 * for 循环中单次执行时间小于一个 tick，不会触发抢占。
 		 */
 		for (volatile int j = 0; j < 8000000; j++)
 			;
-		printf("  spinner %d: slice %d done\n", id, i);
+		printf("  spinner %d: slice [%d/%d] done\n", id, i+1, target);
 	}
 }
 

@@ -28,7 +28,7 @@ void dump_proc_table(void)
 		if (p->state == UNUSED)
 			continue;
 
-		printf("pid [%d]: %s, %s\n",
-			p->pid, p->name, procstate_str[p->state]);
+		printf("pid:%d, ppid:%d, %s, %s\n",
+			p->pid, p->parent->pid, p->name, procstate_str[p->state]);
 	}
 }

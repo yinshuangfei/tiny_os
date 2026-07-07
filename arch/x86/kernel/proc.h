@@ -69,11 +69,13 @@ struct proc {
 };
 
 extern struct proc *proc_table;
+extern struct proc *initproc;
 extern struct list_head runqueue;
 
 struct proc *myproc(void);
 
 void procinit(void);
+void init_start(void);
 struct proc *proc_alloc(void);
 void proc_free(struct proc *p);
 struct proc *proc_find(int pid);

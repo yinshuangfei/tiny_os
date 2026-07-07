@@ -12,6 +12,7 @@
 #include "x86.h"
 
 struct proc *proc_table;
+struct proc *initproc;
 struct list_head runqueue;
 
 static struct spinlock proc_lock;
@@ -39,6 +40,7 @@ struct proc *myproc(void)
 	return mycpu()->proc;
 }
 
+/* 将进程加入就绪队列尾部 */
 static void enqueue_runnable(struct proc *p)
 {
 	if (p->state != RUNNABLE)
@@ -46,6 +48,7 @@ static void enqueue_runnable(struct proc *p)
 	list_add_tail(&p->list, &runqueue);
 }
 
+/* 从就绪队列头部取出进程 */
 static struct proc *dequeue_runnable(void)
 {
 	struct list_head *node;
@@ -184,7 +187,7 @@ static void kthread_ctx_init(struct proc *p, uint entry)
 void procinit(void)
 {
 	int i;
-	struct proc *init;
+	struct proc *swapper;
 
 	initlock(&proc_lock, "proc");
 	INIT_LIST_HEAD(&runqueue);
@@ -199,13 +202,20 @@ void procinit(void)
 		p->state = UNUSED;
 	}
 
-	init = &proc_table[0];
-	init->state = USED;
-	init->pid = 0;
-	proc_name_set(init->name, "bootstrap");
-	mycpu()->proc = init;
+	/*
+	 * pid 0 swapper：main 在进 scheduler 前借用此 PCB，不分配 kstack、
+	 * 不入就绪队列；scheduler 启动后仅 init/其它线程被调度。
+	 */
+	swapper = &proc_table[0];
+	memset(swapper, 0, sizeof(*swapper));
+	INIT_LIST_HEAD(&swapper->list);
+	swapper->state = USED;
+	swapper->pid = 0;
+	swapper->parent = swapper;
+	proc_name_set(swapper->name, "swapper");
+	mycpu()->proc = swapper;
 
-	printf("proc: table ready, nproc=%d (%d bytes)\n",
+	printf("proc: table ready, nproc=%d (%d bytes), swapper pid=0\n",
 	       NPROC, NPROC * (uint)sizeof(struct proc));
 }
 
@@ -300,6 +310,8 @@ struct proc *kthread_create(void (*fn)(void *), void *arg, const char *name)
 	p->entry_arg = arg;
 	if (name)
 		proc_name_set(p->name, name);
+	if (initproc)
+		p->parent = initproc;
 
 	kthread_ctx_init(p, (uint)kthread_trampoline);
 
@@ -313,6 +325,9 @@ struct proc *kthread_create(void (*fn)(void *), void *arg, const char *name)
 void kthread_exit(void)
 {
 	struct proc *p = myproc();
+
+	if (p == initproc)
+		panic("init exiting");
 
 	acquire(&proc_lock);
 	p->entry = 0;
