@@ -30,14 +30,23 @@ extern struct cpu cpus[NCPU];
 
 struct cpu *mycpu(void);
 
+/* 用 X-Macro 维护一份 PROCSTATE_LIST */
+#define PROCSTATE_LIST \
+	X(UNUSED) \
+	X(USED) \
+	X(SLEEPING) \
+	X(RUNNABLE) \
+	X(RUNNING) \
+	X(ZOMBIE)
+
 enum procstate {
-	UNUSED,
-	USED,
-	SLEEPING,
-	RUNNABLE,
-	RUNNING,
-	ZOMBIE,
+#define X(name) name,
+	PROCSTATE_LIST
+#undef X
+	NPROCSTATE
 };
+
+extern const char *procstate_str[];
 
 struct proc {
 	struct list_head list;	/* 就绪队列节点 */

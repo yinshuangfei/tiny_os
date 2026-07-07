@@ -2,6 +2,7 @@
 #include "../kernel/x86.h"
 #include "../kernel/interrupt.h"
 #include "../kernel/timer.h"
+#include "../kernel/debug.h"
 
 void paging_enable_test(void)
 {
@@ -80,7 +81,7 @@ void simd_fp_test(void)
 
 static void sleep_ticks_kthread(void *arg)
 {
-	unsigned int t0, t1, delta, to_sleep = 3;
+	unsigned int t0, t1, delta, to_sleep = 10;
 
 	(void)arg;
 	printf("sleep_ticks test: %d\n", to_sleep);
@@ -93,8 +94,8 @@ static void sleep_ticks_kthread(void *arg)
 	printf("sleep_ticks test: %d -> %d (delta=%d, expect ~%d)\n",
 	       (int)t0, (int)t1, (int)delta, to_sleep);
 	if (delta < to_sleep / 2 || delta > to_sleep * 2)
-		panic("sleep_ticks test failed");
-	printf("sleep_ticks test passed\n");
+		panic("sleep_ticks test --- FAILED");
+	printf("sleep_ticks test --- PASSED\n");
 }
 
 void sleep_ticks_test(void)
@@ -150,7 +151,7 @@ void kthread_preempt_test(void)
 		panic("kthread_create spin-2 failed");
 }
 
-void kthread_test(void)
+void kthread_yield_test(void)
 {
 	printf("kthread switch test:\n");
 	if (!kthread_create(kthread_a, 0, "kthread-a"))
@@ -284,7 +285,8 @@ void kernel_test(void)
 	// general_protection_test();
 	// device_not_available_test();
 	// simd_fp_test();
-	sleep_ticks_test();
-	// kthread_test();
+	// sleep_ticks_test();
+	// kthread_yield_test();
 	// kthread_preempt_test();
+	dump_proc_table();
 }

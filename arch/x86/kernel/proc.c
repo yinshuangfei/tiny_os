@@ -17,6 +17,12 @@ struct list_head runqueue;
 static struct spinlock proc_lock;
 static int nextpid = 1;
 
+const char *procstate_str[] = {
+#define X(name) #name,
+	PROCSTATE_LIST
+#undef X
+};
+
 extern void swtch(struct context *old, struct context *new);
 
 static void proc_name_set(char *dst, const char *src)
@@ -363,6 +369,8 @@ void scheduler(void)
 {
 	struct cpu *c = mycpu();
 	struct proc *p;
+
+	printf("scheduler: starting ...\n");
 
 	c->proc = 0;
 	for (;;) {

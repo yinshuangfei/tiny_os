@@ -1,8 +1,10 @@
 /*
  * 字节 ↔ 人类可读大小（1024 进制，整数，K/M/G 后缀）
  */
+#include "proc.h"
 #include "types.h"
 #include "utils.h"
+#include "defs.h"
 
 int bytes_to_human(uint64 bytes, char *buf, uint buflen)
 {
