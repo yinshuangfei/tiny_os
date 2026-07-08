@@ -8,14 +8,33 @@
 
 void kernel_test(void);
 
+static void ttt(void *arg)
+{
+	(void)arg;
+
+	while (1) {
+		kernel_test();
+		sleep_ticks(100);
+	}
+}
+
 static void init_main(void *arg)
 {
 	(void)arg;
 
 	printf("init: pid=%d starting\n", myproc()->pid);
 	printf("init: launching first user program\n");
+
+	struct proc *t = kthread_create(ttt, 0, "ttt");
+	if (!t)
+		panic("ttt: kthread_create failed");
+
 	start_first_user();
-	panic("init: returned from user mode");
+
+	while (1) {
+		printf("init: returned from user mode\n");
+		sleep_ticks(100);
+	}
 }
 
 void init_start(void)

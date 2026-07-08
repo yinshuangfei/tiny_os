@@ -80,6 +80,77 @@ static void kthread_reap(struct proc *p)
 	}
 }
 
+/* 用户进程 ZOMBIE：exit 已释放页表，此处回收 kstack 与 PCB */
+static void zombie_reap(struct proc *p)
+{
+	acquire(&proc_lock);
+	if (p->state != ZOMBIE) {
+		release(&proc_lock);
+		return;
+	}
+	if (p->kstack) {
+		free_page(p->kstack);
+		p->kstack = 0;
+	}
+	p->state = UNUSED;
+	p->pid = 0;
+	p->parent = 0;
+	p->xstate = 0;
+	p->kframe = 0;
+	p->name[0] = '\0';
+	list_del(&p->list);
+	INIT_LIST_HEAD(&p->list);
+	release(&proc_lock);
+}
+
+static void reparent(struct proc *p)
+{
+	int i;
+	struct proc *pp;
+
+	for (i = 0; i < NPROC; i++) {
+		pp = &proc_table[i];
+		if (pp->parent == p && pp->state != UNUSED)
+			pp->parent = initproc;
+	}
+}
+
+/*
+ * 终止当前进程；不返回。资源由 exit 与 scheduler 分阶段释放：
+ *   exit      — 用户页表、ZOMBIE 状态、唤醒父进程
+ *   scheduler — 回收 kstack 与 PCB
+ */
+void exit(int status)
+{
+	struct proc *p = myproc();
+	struct proc *parent;
+
+	if (p == initproc)
+		panic("init exiting");
+
+	if (p->pagetable) {
+		if (current_user_pgdir == p->pagetable)
+			current_user_pgdir = 0;
+		uvmfree(p->pagetable);
+		p->pagetable = 0;
+		p->sz = 0;
+	}
+
+	acquire(&proc_lock);
+	parent = p->parent;
+	reparent(p);
+	p->xstate = status;
+	p->state = ZOMBIE;
+	release(&proc_lock);
+
+	if (parent)
+		wakeup(parent);
+
+	printf("exit: pid=%d status=%d\n", p->pid, status);
+	sched();
+	panic("exit: ZOMBIE state reached\n");
+}
+
 void context_switch(struct context *old, struct context *new)
 {
 	intr_off();
@@ -96,6 +167,7 @@ void sched(void)
 		panic("sched: scheduler not initialized, "
 		      "first sched() should be called by scheduler\n");
 
+	c->last_sched = p;
 	context_switch(&p->context, &c->context);
 	if (iflag)
 		intr_on();
@@ -359,6 +431,11 @@ void proc_free(struct proc *p)
 		return;
 
 	acquire(&proc_lock);
+	if (p->pagetable) {
+		uvmfree(p->pagetable);
+		p->pagetable = 0;
+		p->sz = 0;
+	}
 	if (p->kstack) {
 		free_page(p->kstack);
 		p->kstack = 0;
@@ -366,7 +443,8 @@ void proc_free(struct proc *p)
 	p->state = UNUSED;
 	p->pid = 0;
 	p->parent = 0;
-	p->pagetable = 0;
+	p->kframe = 0;
+	p->xstate = 0;
 	p->entry = 0;
 	p->entry_arg = 0;
 	p->name[0] = '\0';
@@ -411,10 +489,14 @@ void scheduler(void)
 			if (p->kstack)
 				tss_set_esp0((uint)p->kstack + KSTACKSIZE);
 			release(&proc_lock);
+			printf("scheduler: switched to process %s\n", p->name);
 			context_switch(&c->context, &p->context);
 			c->proc = 0;
+			if (c->last_sched && c->last_sched->state == ZOMBIE)
+				zombie_reap(c->last_sched);
 			if (p->state == UNUSED)
 				kthread_reap(p);
+			c->last_sched = 0;
 		} else {
 			release(&proc_lock);
 			halt();
@@ -467,7 +549,7 @@ void start_first_user(void)
 	memset(tf, 0, sizeof(*tf));
 	tf->eip = USERBASE;
 	tf->cs = SEG_UCODE | 3;
-	tf->esp = USERSTACK;
+	tf->esp = USERINITESP;
 	tf->ss = SEG_UDATA | 3;
 	tf->eflags = 0x202;	/* IF | 保留位 1 */
 	p->kframe = tf;

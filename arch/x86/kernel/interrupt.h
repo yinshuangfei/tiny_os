@@ -123,13 +123,13 @@ struct trapframe {
 	uint32 edx;	// esp+20
 	uint32 ecx;	// esp+24
 	uint32 eax;	// esp+28  ← pushal 最先压入
-	uint32 ds;	// 数据段选择子
-	uint32 err;	// 错误码
-	uint32 eip;	// 指令指针
-	uint32 cs;	// 代码段选择子
-	uint32 eflags;	// 标志寄存器
-	uint32 esp;	/* 栈顶指针，ring3 硬件压栈的用户 esp；内核态 trap 时无效 */
-	uint32 ss;	/* 栈段选择子，ring3 硬件压栈的用户 ss；内核态 trap 时无效 */
+	uint32 ds;	// esp+32 数据段选择子
+	uint32 err;	// esp+36 错误码
+	uint32 eip;	// esp+40 指令指针
+	uint32 cs;	// esp+44 代码段选择子
+	uint32 eflags;	// esp+48 标志寄存器
+	uint32 esp;	// esp+52 栈顶指针，ring3 硬件压栈的用户 esp；内核态 trap 时无效
+	uint32 ss;	// esp+56 栈段选择子，ring3 硬件压栈的用户 ss；内核态 trap 时无效
 };
 
 #endif

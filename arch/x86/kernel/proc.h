@@ -20,6 +20,7 @@ struct context {
 struct cpu {
 	int id;
 	struct proc *proc;	/* 当前运行进程, 内核态及用户态 */
+	struct proc *last_sched;/* 最近一次 sched() 的进程，供回收 ZOMBIE */
 	struct context context;	/* scheduler 上下文，swtch 回到此处 */
 	int noff;
 	int intena;
@@ -56,7 +57,7 @@ struct proc {
 	void *chan;
 	unsigned int wakeup_tick;
 	int killed;
-	int xstate;
+	int xstate;			/* 退出状态 */
 
 	pagetable_t pagetable;		/* 用户页表 */
 	struct trapframe *kframe;	/* 内核栈顶的 trapframe */
@@ -82,6 +83,8 @@ void init_start(void);
 struct proc *proc_alloc(void);
 void proc_free(struct proc *p);
 struct proc *proc_find(int pid);
+
+void exit(int status) __attribute__((noreturn));
 
 void sleep(void *chan);
 void wakeup(void *chan);

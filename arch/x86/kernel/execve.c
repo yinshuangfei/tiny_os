@@ -108,7 +108,7 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 	proc_name_from_path(p, name);
 
 	tf->eip = USERBASE;
-	tf->esp = USERSTACK;
+	tf->esp = USERINITESP;
 	tf->cs = SEG_UCODE | 3;
 	tf->ss = SEG_UDATA | 3;
 	tf->eflags = 0x202;

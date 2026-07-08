@@ -18,11 +18,9 @@ int sys_exit(struct trapframe *tf)
 {
 	int status;
 
-	argint(tf, 0, &status);
-	printf("sys_exit: pid=%d status=%d\n", myproc()->pid, status);
-	/* 首个用户进程尚无完整回收路径，挂起 CPU */
-	for (;;)
-		halt();
+	if (argint(tf, 0, &status) < 0)
+		status = -1;
+	exit(status);
 }
 
 int sys_write(struct trapframe *tf)
