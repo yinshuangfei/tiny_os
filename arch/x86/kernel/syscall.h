@@ -1,0 +1,18 @@
+#ifndef __SYSCALL_H__
+#define __SYSCALL_H__
+
+#include "../user/syscall.h"
+#include "interrupt.h"
+
+struct trapframe;
+
+void syscall(struct trapframe *tf);
+
+int argint(struct trapframe *tf, int n, int *ip);
+int argaddr(struct trapframe *tf, int n, uint *ip);
+
+int sys_exit(struct trapframe *tf);
+int sys_getpid(struct trapframe *tf);
+int sys_write(struct trapframe *tf);
+
+#endif

@@ -72,6 +72,8 @@ C_OBJS = \
 	$(KDIR)/init.o \
 	$(KDIR)/debug.o \
 	$(KDIR)/exception.o \
+	$(KDIR)/syscall.o \
+	$(KDIR)/sysproc.o \
 	$(TESTDIR)/kernel_test.o \
 
 AS_OBJS = \
@@ -84,9 +86,10 @@ INITCODE_BIN=$(USERDIR)/initcode.bin
 
 OBJS = $(C_OBJS) $(AS_OBJS)
 
+# -j .rodata 保存常量字符串
 $(INITCODE_BIN): $(USERDIR)/initcode.o
 	@$(LD) -m elf_i386 -N -e start -Ttext 0x00400000 -o $(USERDIR)/initcode.elf $(USERDIR)/initcode.o
-	@$(OBJCOPY) -O binary -j .text $(USERDIR)/initcode.elf $@
+	@$(OBJCOPY) -O binary -j .text -j .rodata $(USERDIR)/initcode.elf $@
 
 $(USERDIR)/initcode.o: $(USERDIR)/initcode.S
 	$(AS) --32 $< -o $@

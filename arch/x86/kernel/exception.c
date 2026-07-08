@@ -61,6 +61,6 @@ void simd_fp_handler(struct trapframe *tf)
 
 void syscall_handler(struct trapframe *tf)
 {
-	printf("syscall: eax=0x%x eip=0x%x\n", tf->eax, tf->eip);
+	syscall(tf);
 	/* int 0x80 硬件已将 eip 设为下一条指令，勿再 += 2 */
 }

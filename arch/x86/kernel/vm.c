@@ -268,3 +268,48 @@ int uvminit(pagetable_t pgdir, uint va, const void *src, uint sz)
 	}
 	return 0;
 }
+
+/*
+ * 返回 va 对应用户页的物理/线性地址（含页内偏移）；须 PTE_P 且 PTE_U。
+ */
+uint walkaddr(pagetable_t pgdir, uint va)
+{
+	pte_t *pte;
+
+	if (pgdir == 0)
+		return 0;
+	pte = walk(pgdir, va, 0, 0);
+	if (pte == 0 || !(*pte & PTE_P) || !(*pte & PTE_U))
+		return 0;
+	return PTE_ADDR(*pte) | (va & (PGSIZE - 1));
+}
+
+/*
+ * 从用户页表 copyin 至多 n 字节到内核缓冲区；跨页自动拆分。
+ */
+int copyin(pagetable_t pgdir, void *dst, uint srcva, uint n)
+{
+	char *d = dst;
+	uint va, pa, chunk;
+
+	if (pgdir == 0 || dst == 0)
+		return -1;
+	while (n > 0) {
+		uint i;
+
+		va = PGROUNDDOWN(srcva);
+		pa = walkaddr(pgdir, va);
+		if (pa == 0)
+			return -1;
+		chunk = PGSIZE - (srcva - va);
+		if (chunk > n)
+			chunk = n;
+		pa += srcva - va;
+		for (i = 0; i < chunk; i++)
+			d[i] = ((char *)pa)[i];
+		d += chunk;
+		srcva += chunk;
+		n -= chunk;
+	}
+	return 0;
+}

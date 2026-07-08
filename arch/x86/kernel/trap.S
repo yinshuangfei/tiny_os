@@ -96,15 +96,16 @@ isr_syscall:
 
 	 * ring3 进入时栈上已有 eip/cs/eflags/esp/ss；须先切回内核页表，
 	 * 否则 ISR 自身无法取指。ring0 的 int 0x80 仍走 TRAP_FRAME_ENTER。
+	 *
+	 * 用 test 直接读栈上 CS，勿占用 eax~ebp（系统调用参数寄存器）。
 	 */
-	movl 4(%esp), %ecx
-	testl $3, %ecx		/* ecx & 3，只保留最低 2 位，0:kernel, 3:user */
+	testl $3, 4(%esp)
 	jz syscall_from_kernel
 
 	/* ring3 路径 */
 	pushl $0		/* err 占位，与 struct trapframe 对齐 */
 	pushl %ds		/* 保存用户 ds */
-	pushal			/* 保存 eax~edi（此时 eax 仍是用户的 42） */
+	pushal			/* 保存 eax~edi（含系统调用号与参数） */
 
 	/* 切换到内核页表
 	 * ISR 代码在内核 VA，必须先切回 kernel_pgdir 才能继续执行
@@ -145,8 +146,7 @@ isr_page_fault:
 
 isr_timer:
 	/* 若从 ring3 打断，须先切内核页表以便 ISR 可执行 */
-	movl 4(%esp), %ecx
-	testl $3, %ecx
+	testl $3, 4(%esp)
 	jz timer_from_kernel
 	movl kernel_pgdir, %eax
 	movl %eax, %cr3
@@ -155,14 +155,12 @@ timer_from_kernel:
 	call timer_handler
 	IRQSTACK_RESTORE
 	/* 仅 ring0 被打断时检查抢占；ring3 帧在栈上，不能在此 yield */
-	movl 4(%esp), %ecx
-	testl $3, %ecx
+	testl $3, 4(%esp)
 	jnz timer_to_user
 	call preempt_check
 timer_to_user:
 	/* 返回 ring3 前恢复用户页表 */
-	movl 4(%esp), %ecx
-	testl $3, %ecx
+	testl $3, 4(%esp)
 	jz timer_iret
 	movl current_user_pgdir, %eax
 	movl %eax, %cr3

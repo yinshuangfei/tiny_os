@@ -42,4 +42,7 @@ void uart_puts(const char *s);
 /** timer.c */
 #include "timer.h"
 
+/** syscall */
+#include "syscall.h"
+
 #endif

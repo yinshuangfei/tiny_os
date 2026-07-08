@@ -24,4 +24,7 @@ int uvmunmap(pagetable_t pgdir, uint va, uint npages, int do_free);
 int uvminit(pagetable_t pgdir, uint va, const void *src, uint sz);
 void uvmcopy_kernel(pagetable_t pgdir);
 
+uint walkaddr(pagetable_t pgdir, uint va);
+int copyin(pagetable_t pgdir, void *dst, uint srcva, uint n);
+
 #endif
