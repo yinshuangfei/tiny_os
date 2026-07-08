@@ -74,15 +74,17 @@ C_OBJS = \
 	$(KDIR)/exception.o \
 	$(KDIR)/syscall.o \
 	$(KDIR)/sysproc.o \
+	$(KDIR)/execve.o \
 	$(TESTDIR)/kernel_test.o \
 
 AS_OBJS = \
 	$(KDIR)/trap.o \
 	$(KDIR)/trapuser.o \
 	$(KDIR)/swtch.o \
-	$(KDIR)/initcode.o \
+	$(KDIR)/userbins.o \
 
 INITCODE_BIN=$(USERDIR)/initcode.bin
+LOADER_BIN=$(USERDIR)/loader.bin
 
 OBJS = $(C_OBJS) $(AS_OBJS)
 
@@ -91,11 +93,18 @@ $(INITCODE_BIN): $(USERDIR)/initcode.o
 	@$(LD) -m elf_i386 -N -e start -Ttext 0x00400000 -o $(USERDIR)/initcode.elf $(USERDIR)/initcode.o
 	@$(OBJCOPY) -O binary -j .text -j .rodata $(USERDIR)/initcode.elf $@
 
+$(LOADER_BIN): $(USERDIR)/loader.o
+	@$(LD) -m elf_i386 -N -e start -Ttext 0x00400000 -o $(USERDIR)/loader.elf $(USERDIR)/loader.o
+	@$(OBJCOPY) -O binary -j .text -j .rodata $(USERDIR)/loader.elf $@
+
 $(USERDIR)/initcode.o: $(USERDIR)/initcode.S
 	$(AS) --32 $< -o $@
 
-$(KDIR)/initcode.o: $(KDIR)/initcode.inc.S $(INITCODE_BIN)
-	$(AS) --32 $(KDIR)/initcode.inc.S -o $@
+$(USERDIR)/loader.o: $(USERDIR)/loader.S
+	$(AS) --32 $< -o $@
+
+$(KDIR)/userbins.o: $(KDIR)/userbins.inc.S $(INITCODE_BIN) $(LOADER_BIN)
+	$(AS) --32 $(KDIR)/userbins.inc.S -o $@
 
 $(KDIR)/trap.o: $(KDIR)/trap.S
 	$(AS) --32 $< -o $@
@@ -146,4 +155,5 @@ clean:
 	setup.elf setup.bin kernel_body.elf kernel_body.bin \
 	$(BOOTDIR)/*.o $(BOOTDIR)/*.bin \
 	$(USERDIR)/initcode.o $(USERDIR)/initcode.elf $(USERDIR)/initcode.bin \
+	$(USERDIR)/loader.o $(USERDIR)/loader.elf $(USERDIR)/loader.bin \
 	$(OBJS)

@@ -5,6 +5,7 @@
 #include "defs.h"
 #include "proc.h"
 #include "syscall.h"
+#include "execve.h"
 #include "x86.h"
 
 int sys_getpid(struct trapframe *tf)
@@ -45,4 +46,20 @@ int sys_write(struct trapframe *tf)
 	for (i = 0; i < n; i++)
 		uart_putc(buf[i]);
 	return n;
+}
+
+int sys_execve(struct trapframe *tf)
+{
+	char path[NNAME];
+	uint upath;
+	struct proc *p = myproc();
+
+	if (!p || !p->pagetable)
+		return -1;
+	if (argaddr(tf, 0, &upath) < 0)
+		return -1;
+	if (copyinstr(p->pagetable, path, upath, NNAME) < 0)
+		return -1;
+	/* envp/argv 暂未实现，忽略 arg1、arg2 */
+	return execve(p, tf, path);
 }

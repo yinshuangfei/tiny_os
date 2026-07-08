@@ -313,3 +313,85 @@ int copyin(pagetable_t pgdir, void *dst, uint srcva, uint n)
 	}
 	return 0;
 }
+
+/*
+ * 将 src（长度 sz）按页拷贝到 va 起连续用户页；代码段只读 PTE_P。
+ * va 须页对齐；va+sz 不得超过 USEREND。
+ */
+int loaduvm(pagetable_t pgdir, uint va, const void *src, uint sz)
+{
+	char *mem;
+	uint a, off, n;
+
+	if (pgdir == 0 || src == 0 || sz == 0 || (va % PGSIZE) != 0)
+		return -1;
+	if (va < USERBASE || va + sz > USEREND)
+		return -1;
+
+	for (off = 0; off < sz; off += PGSIZE) {
+		mem = alloc_page();
+		if (mem == 0)
+			return -1;
+		memset(mem, 0, PGSIZE);
+		n = sz - off;
+		if (n > PGSIZE)
+			n = PGSIZE;
+		for (a = 0; a < n; a++)
+			mem[a] = ((const char *)src + off)[a];
+		a = va + off;
+		if (uvmmap(pgdir, a, (uint)mem, PGSIZE, PTE_P) < 0) {
+			free_page(mem);
+			return -1;
+		}
+	}
+	return 0;
+}
+
+/*
+ * 释放 pgdir 中 [USERBASE, USEREND) 的用户映射及用户专用页表页；
+ * 继承自 kernel_pgdir 的 PDE（无 PTE_U）保留不动，最后释放页目录。
+ */
+void uvmfree(pagetable_t pgdir)
+{
+	uint va;
+	pte_t *pte;
+	int i;
+
+	if (pgdir == 0)
+		return;
+
+	for (va = USERBASE; va < USEREND; va += PGSIZE) {
+		pte = walk(pgdir, va, 0, 0);
+		if (pte == 0)
+			continue;
+		if (*pte & PTE_P) {
+			free_page((void *)PTE_ADDR(*pte));
+			*pte = 0;
+		}
+	}
+	for (i = PDX(USERBASE); i <= PDX(USEREND - 1); i++) {
+		if (pgdir[i] & PTE_P && (pgdir[i] & PTE_U)) {
+			free_page((void *)PTE_ADDR(pgdir[i]));
+			pgdir[i] = 0;
+		}
+	}
+	free_page(pgdir);
+}
+
+/*
+ * 从用户空间拷贝以 '\0' 结尾的字符串；max 含结尾 NUL 上限。
+ */
+int copyinstr(pagetable_t pgdir, char *dst, uint srcva, uint max)
+{
+	uint i;
+
+	if (pgdir == 0 || dst == 0 || max == 0)
+		return -1;
+	for (i = 0; i + 1 < max; i++) {
+		if (copyin(pgdir, dst + i, srcva + i, 1) < 0)
+			return -1;
+		if (dst[i] == '\0')
+			return 0;
+	}
+	return -1;
+}

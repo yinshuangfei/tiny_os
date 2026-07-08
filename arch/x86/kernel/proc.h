@@ -49,7 +49,7 @@ enum procstate {
 extern const char *procstate_str[];
 
 struct proc {
-	struct list_head list;	/* 就绪队列节点 */
+	struct list_head list;		/* 就绪队列节点 */
 	enum procstate state;
 	int pid;
 	struct proc *parent;

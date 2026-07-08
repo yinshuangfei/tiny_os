@@ -6,8 +6,8 @@
 /** page directory / page table index, 10 bits */
 /** 页目录索引，32 位虚拟地址的高 10 位 */
 /** 页表索引，32 位虚拟地址的中间 10 位 */
-#define PDX(va)   (((uint)(va) >> 22) & 0x3ff)
-#define PTX(va)   (((uint)(va) >> 12) & 0x3ff)
+#define PDX(va)   (((uint)(va) >> 22) & 0x3ff)	/* 页目录索引 */
+#define PTX(va)   (((uint)(va) >> 12) & 0x3ff)	/* 页表索引 */
 
 /** extract physical address from a PTE/PDE */
 #define PTE_ADDR(pte)   ((uint)(pte) & 0xfffff000)	// physical address of the page

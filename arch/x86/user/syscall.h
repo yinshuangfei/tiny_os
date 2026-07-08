@@ -6,6 +6,7 @@
 #define __USER_SYSCALL_H__
 
 #define SYS_exit	2
+#define SYS_execve	3
 #define SYS_getpid	11
 #define SYS_write	16
 

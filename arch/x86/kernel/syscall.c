@@ -46,6 +46,17 @@ int argaddr(struct trapframe *tf, int n, uint *ip)
 	return 0;
 }
 
+int argstr(struct trapframe *tf, int n, char *buf, int max)
+{
+	uint addr;
+
+	if (argaddr(tf, n, &addr) < 0)
+		return -1;
+	if (copyinstr(myproc()->pagetable, buf, addr, max) < 0)
+		return -1;
+	return 0;
+}
+
 /**
  * syscalls[]：这是一个数组，名字叫做 syscalls。
  * (*syscalls[])：括号和星号表示数组里的每一个元素都是一个指针。
@@ -54,6 +65,7 @@ int argaddr(struct trapframe *tf, int n, uint *ip)
  */
 static int (*syscalls[])(struct trapframe *tf) = {
 	[SYS_exit] = sys_exit,
+	[SYS_execve] = sys_execve,
 	[SYS_getpid] = sys_getpid,
 	[SYS_write] = sys_write,
 };

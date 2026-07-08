@@ -31,8 +31,8 @@ const char *procstate_str[] = {
 
 extern void swtch(struct context *old, struct context *new);
 extern void user_enter(struct trapframe *tf, pagetable_t pgdir) __attribute__((noreturn));
-extern char initcode[];
-extern char initcode_end[];
+extern char loader[];
+extern char loader_end[];
 
 static void proc_name_set(char *dst, const char *src)
 {
@@ -437,7 +437,7 @@ void start_first_user(void)
 	if (!p)
 		panic("start_first_user: proc_alloc");
 
-	proc_name_set(p->name, "initcode");
+	proc_name_set(p->name, "loader");
 	p->parent = initproc;
 
 	p->kstack = alloc_page();
@@ -448,9 +448,9 @@ void start_first_user(void)
 	if (!p->pagetable)
 		panic("start_first_user: uvmcreate");
 
-	init_sz = (uint)(initcode_end - initcode);
-	if (uvminit(p->pagetable, USERBASE, initcode, init_sz) < 0)
-		panic("start_first_user: uvminit");
+	init_sz = (uint)(loader_end - loader);
+	if (loaduvm(p->pagetable, USERBASE, loader, init_sz) < 0)
+		panic("start_first_user: loaduvm");
 
 	ustack = alloc_page();
 	if (!ustack)

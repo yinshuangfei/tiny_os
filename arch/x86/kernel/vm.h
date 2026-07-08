@@ -16,15 +16,18 @@ extern pagetable_t kernel_pgdir;
 
 /*
  * 用户地址空间（每进程独立页表，PTE_U 映射）
- * 后续进程 / exec / fork 使用。
+ * 后续进程 / execve / fork 使用。
  */
 pagetable_t uvmcreate(void);
 int uvmmap(pagetable_t pgdir, uint va, uint pa, uint size, int perm);
 int uvmunmap(pagetable_t pgdir, uint va, uint npages, int do_free);
 int uvminit(pagetable_t pgdir, uint va, const void *src, uint sz);
+int loaduvm(pagetable_t pgdir, uint va, const void *src, uint sz);
+void uvmfree(pagetable_t pgdir);
 void uvmcopy_kernel(pagetable_t pgdir);
 
 uint walkaddr(pagetable_t pgdir, uint va);
 int copyin(pagetable_t pgdir, void *dst, uint srcva, uint n);
+int copyinstr(pagetable_t pgdir, char *dst, uint srcva, uint max);
 
 #endif
