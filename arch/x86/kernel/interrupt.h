@@ -115,19 +115,21 @@ uint32 tss_get_esp0(void);
 uint32 tss_get_ss0(void);
 
 struct trapframe {
-	uint32 edi;
-	uint32 esi;
-	uint32 ebp;
-	uint32 oesp;
-	uint32 ebx;
-	uint32 edx;
-	uint32 ecx;
-	uint32 eax;
+	uint32 edi;   // esp+ 0  ← popal 最后弹出
+	uint32 esi;   // esp+ 4
+	uint32 ebp;   // esp+ 8
+	uint32 oesp;  // esp+12  old esp, 压栈之前的 ESP（不是当前 ESP）
+	uint32 ebx;   // esp+16
+	uint32 edx;   // esp+20
+	uint32 ecx;   // esp+24
+	uint32 eax;   // esp+28  ← pushal 最先压入
 	uint32 ds;
 	uint32 err;
 	uint32 eip;
 	uint32 cs;
 	uint32 eflags;
+	uint32 esp;	/* ring3 硬件压栈的用户 esp；内核态 trap 时无效 */
+	uint32 ss;	/* ring3 硬件压栈的用户 ss；内核态 trap 时无效 */
 };
 
 #endif

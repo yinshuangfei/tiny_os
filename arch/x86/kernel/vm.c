@@ -22,7 +22,7 @@ pagetable_t kernel_pgdir;
  * Return the address of the PTE for virtual address va.
  * Create intermediate page-table pages when alloc != 0.
  */
-static pte_t *walk(pagetable_t pgdir, uint va, int alloc)
+static pte_t *walk(pagetable_t pgdir, uint va, int alloc, int user)
 {
 	pde_t *pde = &pgdir[PDX(va)];
 	pagetable_t pt;
@@ -35,12 +35,20 @@ static pte_t *walk(pagetable_t pgdir, uint va, int alloc)
 		pt = (pagetable_t)alloc_page();
 		if (pt == 0)
 			return 0;
-		*pde = PA2PTE((uint)pt) | PTE_P | PTE_W;
+		/*
+		 * 用户页表中的 PDE 须带 PTE_U，否则 ring3 访问该页表下任何页
+		 * 都会 #PF（err 常见为 0x5 保护违规）。
+		 */
+		if (user)
+			*pde = PA2PTE((uint)pt) | PTE_P | PTE_W | PTE_U;
+		else
+			*pde = PA2PTE((uint)pt) | PTE_P | PTE_W;
 	}
 	return &pt[PTX(va)];
 }
 
-static int mappages(pagetable_t pgdir, uint va, uint size, uint pa, int perm)
+static int mappages(pagetable_t pgdir, uint va, uint size, uint pa, int perm,
+		    int user)
 {
 	pte_t *pte;
 	uint a, last;
@@ -61,7 +69,7 @@ static int mappages(pagetable_t pgdir, uint va, uint size, uint pa, int perm)
 	a = va;
 	last = va + size - PGSIZE;
 	for (;;) {
-		pte = walk(pgdir, a, 1);
+		pte = walk(pgdir, a, 1, user);
 		if (pte == 0)
 			return -1;
 		if (*pte & PTE_P)
@@ -88,7 +96,7 @@ static int unmappages(pagetable_t pgdir, uint va, uint npages, int do_free)
 		return -1;
 
 	for (a = va; a < va + npages * PGSIZE; a += PGSIZE) {
-		pte = walk(pgdir, a, 0);
+		pte = walk(pgdir, a, 0, 0);
 		if (pte == 0 || !(*pte & PTE_P))
 			return -1;
 		if (do_free)
@@ -111,7 +119,7 @@ static void tlb_flush_if_active(pagetable_t pgdir)
 
 void kvmmap(uint va, uint pa, uint size, int perm)
 {
-	if (mappages(kernel_pgdir, va, size, pa, perm) < 0)
+	if (mappages(kernel_pgdir, va, size, pa, perm, 0) < 0)
 		panic("kvmmap");
 }
 
@@ -178,19 +186,53 @@ void kvm_init(void)
 pagetable_t uvmcreate(void)
 {
 	pagetable_t pgdir;
+	int i;
 
 	pgdir = (pagetable_t)alloc_page();
 	if (pgdir == 0)
 		return 0;
 	memset(pgdir, 0, PGSIZE);
+
+	/*
+	 * 继承内核页目录项，使 trap 时 ISR 仍可执行；跳过 [USERBASE, USEREND)
+	 * 所在 PDE，避免与 uvmmap 的用户页共用二级页表。
+	 */
+	for (i = 0; i < MAX_KERNEL_PT; i++) {
+		uint va = (uint)i << 22;
+
+		if (va >= USERBASE && va < USEREND)
+			continue;
+		if (kernel_pgdir[i] & PTE_P)
+			pgdir[i] = kernel_pgdir[i];
+	}
 	return pgdir;
+}
+
+/*
+ * 将 kernel_pgdir 的监督者映射复制到 pgdir（跳过用户 VA 窗口）。
+ * 供 fork 等场景复用。
+ */
+void uvmcopy_kernel(pagetable_t pgdir)
+{
+	int i;
+
+	if (pgdir == 0)
+		return;
+	for (i = 0; i < MAX_KERNEL_PT; i++) {
+		uint va = (uint)i << 22;
+
+		if (va >= USERBASE && va < USEREND)
+			continue;
+		if (kernel_pgdir[i] & PTE_P)
+			pgdir[i] = kernel_pgdir[i];
+	}
 }
 
 int uvmmap(pagetable_t pgdir, uint va, uint pa, uint size, int perm)
 {
 	if (pgdir == 0)
 		return -1;
-	return mappages(pgdir, va, size, pa, perm | PTE_U);
+	return mappages(pgdir, va, size, pa, perm | PTE_U, 1);
 }
 
 int uvmunmap(pagetable_t pgdir, uint va, uint npages, int do_free)
@@ -199,5 +241,30 @@ int uvmunmap(pagetable_t pgdir, uint va, uint npages, int do_free)
 		return -1;
 	/* 进程页表未必是当前 CR3，按需刷新 */
 	tlb_flush_if_active(pgdir);
+	return 0;
+}
+
+/*
+ * 将 src（长度 sz）拷贝到新分配物理页，并以只读用户页映射到 va。
+ * sz 须小于一页；失败时释放已分配物理页。
+ */
+int uvminit(pagetable_t pgdir, uint va, const void *src, uint sz)
+{
+	char *mem;
+	uint i;
+
+	if (pgdir == 0 || src == 0 || sz >= PGSIZE)
+		return -1;
+
+	mem = alloc_page();
+	if (mem == 0)
+		return -1;
+	memset(mem, 0, PGSIZE);
+	for (i = 0; i < sz; i++)
+		mem[i] = ((const char *)src)[i];
+	if (uvmmap(pgdir, va, (uint)mem, PGSIZE, PTE_P) < 0) {
+		free_page(mem);
+		return -1;
+	}
 	return 0;
 }

@@ -19,7 +19,7 @@ struct context {
 
 struct cpu {
 	int id;
-	struct proc *proc;
+	struct proc *proc;	/* 当前运行进程, 内核态及用户态 */
 	struct context context;	/* scheduler 上下文，swtch 回到此处 */
 	int noff;
 	int intena;
@@ -58,19 +58,22 @@ struct proc {
 	int killed;
 	int xstate;
 
-	pagetable_t pagetable;
-	struct trapframe *kframe;
+	pagetable_t pagetable;		/* 用户页表 */
+	struct trapframe *kframe;	/* 内核栈顶的 trapframe */
 	struct context context;
-	void *kstack;
+	void *kstack;			/* 内核栈 */
 	void (*entry)(void *);
 	void *entry_arg;
-	uint sz;
+	uint sz;			/* 用户虚拟空间大小 */
 	char name[NNAME];
 };
 
 extern struct proc *proc_table;
 extern struct proc *initproc;
 extern struct list_head runqueue;
+
+/* 当前运行在 ring3 的进程页表；trap 返回用户态前写回 CR3 */
+extern pagetable_t current_user_pgdir;
 
 struct proc *myproc(void);
 
@@ -93,5 +96,7 @@ void scheduler(void) __attribute__((noreturn));
 
 struct proc *kthread_create(void (*fn)(void *), void *arg, const char *name);
 void kthread_exit(void);
+
+void start_first_user(void) __attribute__((noreturn));
 
 #endif

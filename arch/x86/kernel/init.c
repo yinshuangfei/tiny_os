@@ -13,10 +13,9 @@ static void init_main(void *arg)
 	(void)arg;
 
 	printf("init: pid=%d starting\n", myproc()->pid);
-	kernel_test();
-	printf("init: idle (pid=%d)\n", myproc()->pid);
-	for (;;)
-		sleep_ticks(100);
+	printf("init: launching first user program\n");
+	start_first_user();
+	panic("init: returned from user mode");
 }
 
 void init_start(void)

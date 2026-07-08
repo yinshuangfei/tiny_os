@@ -21,5 +21,7 @@ extern pagetable_t kernel_pgdir;
 pagetable_t uvmcreate(void);
 int uvmmap(pagetable_t pgdir, uint va, uint pa, uint size, int perm);
 int uvmunmap(pagetable_t pgdir, uint va, uint npages, int do_free);
+int uvminit(pagetable_t pgdir, uint va, const void *src, uint sz);
+void uvmcopy_kernel(pagetable_t pgdir);
 
 #endif

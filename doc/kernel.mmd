@@ -1,0 +1,22 @@
+sequenceDiagram
+    participant U as 用户程序 ring3
+    participant CPU as CPU 硬件
+    participant TSS as TSS
+    participant ISR as isr_syscall
+    participant C as syscall_handler
+
+    U->>CPU: int 0x80
+    CPU->>TSS: 读 esp0/ss0
+    CPU->>CPU: 切内核栈，压 ss/esp/eflags/cs/eip
+    CPU->>ISR: 跳转到 isr_syscall
+
+    ISR->>ISR: testl $3,%ecx → ring3
+    ISR->>ISR: push err/ds/pushal
+    ISR->>ISR: lcr3(kernel_pgdir)
+    ISR->>C: syscall_handler(tf)
+
+    C-->>ISR: return
+    ISR->>ISR: popal/pop ds，跳过 err
+    ISR->>ISR: lcr3(user_pgdir)
+    ISR->>CPU: iret
+    CPU->>U: 恢复 ring3 继续执行

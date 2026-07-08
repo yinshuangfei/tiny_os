@@ -23,12 +23,15 @@ void dump_proc_table(void)
 {
 	struct proc *p;
 
+	printf("--------------------------------\n");
+	printf("process list:\n");
 	for (int i = 0; i < NPROC; i++) {
 		p = &proc_table[i];
 		if (p->state == UNUSED)
 			continue;
 
-		printf("pid:%d, ppid:%d, %s, %s\n",
+		printf("  pid:%d, ppid:%d, %s, %s\n",
 			p->pid, p->parent->pid, p->name, procstate_str[p->state]);
 	}
+	printf("--------------------------------\n");
 }

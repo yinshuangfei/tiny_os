@@ -9,11 +9,16 @@
 #include "proc.h"
 #include "spinlock.h"
 #include "timer.h"
+#include "mmu.h"
 #include "x86.h"
+#include "debug.h"
 
 struct proc *proc_table;
 struct proc *initproc;
 struct list_head runqueue;
+
+/* trap 路径在返回 ring3 前据此恢复用户 CR3 */
+pagetable_t current_user_pgdir;
 
 static struct spinlock proc_lock;
 static int nextpid = 1;
@@ -25,6 +30,9 @@ const char *procstate_str[] = {
 };
 
 extern void swtch(struct context *old, struct context *new);
+extern void user_enter(struct trapframe *tf, pagetable_t pgdir) __attribute__((noreturn));
+extern char initcode[];
+extern char initcode_end[];
 
 static void proc_name_set(char *dst, const char *src)
 {
@@ -412,4 +420,64 @@ void scheduler(void)
 			halt();
 		}
 	}
+}
+
+/*
+ * 创建第一个用户进程并通过 iret 切入 ring3。
+ * 由 init 内核线程调用；正常情况不返回。
+ */
+void start_first_user(void)
+{
+	struct proc *p;
+	struct trapframe *tf;
+	void *ustack;
+	uint init_sz;
+
+	p = proc_alloc();
+	if (!p)
+		panic("start_first_user: proc_alloc");
+
+	proc_name_set(p->name, "initcode");
+	p->parent = initproc;
+
+	p->kstack = alloc_page();
+	if (!p->kstack)
+		panic("start_first_user: kstack");
+
+	p->pagetable = uvmcreate();
+	if (!p->pagetable)
+		panic("start_first_user: uvmcreate");
+
+	init_sz = (uint)(initcode_end - initcode);
+	if (uvminit(p->pagetable, USERBASE, initcode, init_sz) < 0)
+		panic("start_first_user: uvminit");
+
+	ustack = alloc_page();
+	if (!ustack)
+		panic("start_first_user: ustack");
+	if (uvmmap(p->pagetable, USERSTACK - PGSIZE, (uint)ustack,
+		   PGSIZE, PTE_W | PTE_P) < 0)
+		panic("start_first_user: uvmmap stack");
+
+	p->sz = USERSTACK;
+
+	/* trapframe 放在内核栈顶，供 syscall / 异常处理与 iret 返回 */
+	tf = (struct trapframe *)((char *)p->kstack + KSTACKSIZE -
+				  sizeof(struct trapframe));
+	memset(tf, 0, sizeof(*tf));
+	tf->eip = USERBASE;
+	tf->cs = SEG_UCODE | 3;
+	tf->esp = USERSTACK;
+	tf->ss = SEG_UDATA | 3;
+	tf->eflags = 0x202;	/* IF | 保留位 1 */
+	p->kframe = tf;
+
+	p->state = RUNNING;
+	mycpu()->proc = p;
+	tss_set_esp0((uint)p->kstack + KSTACKSIZE);
+	current_user_pgdir = p->pagetable;
+
+	printf("init: user mode eip=0x%x esp=0x%x pgdir=%p\n",
+	       tf->eip, tf->esp, p->pagetable);
+	user_enter(tf, p->pagetable);
 }

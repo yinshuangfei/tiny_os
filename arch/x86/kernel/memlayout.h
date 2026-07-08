@@ -24,6 +24,15 @@
 
 #define KERNBASE   0x00100000
 
+/*
+ * 用户虚拟地址空间（独立页表，避免与内核恒等映射共用二级页表）：
+ * USERBASE      用户代码起始
+ * USERSTACK     用户栈顶（栈向下增长，映射 [USERSTACK-PGSIZE, USERSTACK)）
+ */
+#define USERBASE     0x00400000
+#define USERSTACK    0x00800000
+#define USEREND      0x00800000	/* [USERBASE, USEREND) 为用户独占 VA */
+
 #define KSTACKSIZE   4096	/* 内核主栈 / 中断栈大小 */
 
 extern char kernel_stack[KSTACKSIZE];

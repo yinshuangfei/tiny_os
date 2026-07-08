@@ -1,6 +1,7 @@
 KDIR=kernel
 BOOTDIR=boot
 TESTDIR=test
+USERDIR=user
 
 TOOLPREFIX :=
 
@@ -75,11 +76,31 @@ C_OBJS = \
 
 AS_OBJS = \
 	$(KDIR)/trap.o \
+	$(KDIR)/trapuser.o \
 	$(KDIR)/swtch.o \
+	$(KDIR)/initcode.o \
+
+INITCODE_BIN=$(USERDIR)/initcode.bin
 
 OBJS = $(C_OBJS) $(AS_OBJS)
 
-$(AS_OBJS): %.o: %.S
+$(INITCODE_BIN): $(USERDIR)/initcode.o
+	@$(LD) -m elf_i386 -N -e start -Ttext 0x00400000 -o $(USERDIR)/initcode.elf $(USERDIR)/initcode.o
+	@$(OBJCOPY) -O binary -j .text $(USERDIR)/initcode.elf $@
+
+$(USERDIR)/initcode.o: $(USERDIR)/initcode.S
+	$(AS) --32 $< -o $@
+
+$(KDIR)/initcode.o: $(KDIR)/initcode.inc.S $(INITCODE_BIN)
+	$(AS) --32 $(KDIR)/initcode.inc.S -o $@
+
+$(KDIR)/trap.o: $(KDIR)/trap.S
+	$(AS) --32 $< -o $@
+
+$(KDIR)/trapuser.o: $(KDIR)/trapuser.S
+	$(AS) --32 $< -o $@
+
+$(KDIR)/swtch.o: $(KDIR)/swtch.S
 	$(AS) --32 $< -o $@
 
 # 语法: 目标列表: 目标模式: 依赖模式
@@ -121,4 +142,5 @@ clean:
 	rm -f *.o *.elf *.bin *.img *.map *.vmdk *.tmp main.s test64.* \
 	setup.elf setup.bin kernel_body.elf kernel_body.bin \
 	$(BOOTDIR)/*.o $(BOOTDIR)/*.bin \
+	$(USERDIR)/initcode.o $(USERDIR)/initcode.elf $(USERDIR)/initcode.bin \
 	$(OBJS)
