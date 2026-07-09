@@ -20,6 +20,7 @@
 .extern simd_fp_handler
 .extern syscall_handler
 .extern timer_handler
+.extern timer_trap_user
 .extern kernel_pgdir
 .extern current_user_pgdir
 
@@ -140,7 +141,7 @@ isr_page_fault:
 	TRAP_FRAME_LEAVE
 
 /*
- * 定时器 IRQ：切 interrupt_stack 调 C；返回被中断栈后再检查抢占并 iret。
+ * 定时器 IRQ：ring0 走 interrupt_stack；ring3 保存 trapframe 后可 yield 抢占。
  */
 .extern preempt_check
 
@@ -148,21 +149,34 @@ isr_timer:
 	/* 若从 ring3 打断，须先切内核页表以便 ISR 可执行 */
 	testl $3, 4(%esp)
 	jz timer_from_kernel
+
+	/* ring3：与 isr_syscall 相同的 trapframe 布局 */
+	pushl $0		/* err 占位 */
+	pushl %ds
+	pushal
+
 	movl kernel_pgdir, %eax
 	movl %eax, %cr3
+	movw $0x10, %ax
+	movw %ax, %ds
+
+	movl %esp, %eax		/* trapframe 指针 */
+	pushl %eax
+	call timer_trap_user
+	addl $4, %esp
+
+	call preempt_check
+
+	movl current_user_pgdir, %eax
+	movl %eax, %cr3
+	popal
+	popl %ds
+	addl $4, %esp		/* err 占位 */
+	iret
+
 timer_from_kernel:
 	IRQSTACK_SWITCH
 	call timer_handler
 	IRQSTACK_RESTORE
-	/* 仅 ring0 被打断时检查抢占；ring3 帧在栈上，不能在此 yield */
-	testl $3, 4(%esp)
-	jnz timer_to_user
 	call preempt_check
-timer_to_user:
-	/* 返回 ring3 前恢复用户页表 */
-	testl $3, 4(%esp)
-	jz timer_iret
-	movl current_user_pgdir, %eax
-	movl %eax, %cr3
-timer_iret:
 	iret

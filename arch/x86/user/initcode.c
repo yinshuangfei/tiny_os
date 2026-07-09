@@ -9,6 +9,9 @@ int main(void)
 	static const char msg[] = "hello from user\n";
 
 	write(1, msg, sizeof(msg) - 1);
+	while (1) {
+		;
+	}
 	getpid();
 	exit(0);
 }

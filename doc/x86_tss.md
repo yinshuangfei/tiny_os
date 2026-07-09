@@ -12,11 +12,13 @@ TSS 是 Intel x86 架构特有的历史产物。其他架构有完全不同的�
 ## 第 1 步：在内核栈上构造返回帧
 栈顶（iret 弹出顺序）需为：
 （地址为低地址到高地址）
-| eip        |  用户程序入口
-| cs         |  SEG_UCODE | 3  → 0x1B
-| eflags     |  通常含 IF=1
-| esp        |  用户栈顶
-| ss         |  SEG_UDATA | 3  → 0x23
+┌─────────┐
+| eip     |  esp+0  ← 用户程序入口
+| cs      |  esp+4  ← SEG_UCODE | 3  → 0x1B
+| eflags  |  esp+8  ← 通常含 IF=1
+| esp     |  esp+12 ← 用户栈顶
+| ss      |  esp+16 ← SEG_UDATA | 3  → 0x23
+└─────────┘
 ## 第 2 步：恢复寄存器并 iret
 - 把返回值写入 trapframe->eax
 - 如需修改用户 eip（如 syscall 后 eip += 2 跳过 int 0x80），改 trapframe->eip
@@ -34,21 +36,15 @@ CPU 发现当前 CPL=3、目标门 DPL=0 时：
 - 在新内核栈上依次压入
 低地址 ← esp
 ┌─────────┐
-│   eip   │  esp+0
-│   cs    │  esp+4   (0x1b) ← ecx 读这里
+│ eip     │  esp+0   ← 用户态下一条指令
+│ cs      │  esp+4   ← 用户代码段（如 0x1B = SEG_UCODE|3）
 │ eflags  │  esp+8
-│ user_esp│  esp+12
-│   ss    │  esp+16  (0x23)
+│ esp     │  esp+12  ← 用户栈指针
+│ ss      │  esp+16  ← 用户数据段（如 0x23 = SEG_UDATA|3）
+│ [err]   │  esp+20  ← 部分异常带 error code（#GP、#PF 等）
 └─────────┘
 高地址
 
-（地址为低地址到高地址）
-| eip        |  ← 用户态下一条指令
-| cs         |  ← 用户代码段（如 0x1B = SEG_UCODE|3）
-| eflags     |
-| esp        |  ← 用户栈指针
-| ss         |  ← 用户数据段（如 0x23 = SEG_UDATA|3）
-| [err]      |  ← 部分异常带 error code（#GP、#PF 等）
 - 从 IDT 取门描述符，加载 CS:EIP 到 ISR 入口
 - 若门 DPL < CPL，还会清 IF（关中断）
 ## 第 2 步：汇编入口保存完整现场
@@ -58,8 +54,8 @@ CPU 发现当前 CPL=3、目标门 DPL=0 时：
 # 内核态 → 内核态（ring 0 → ring 0）
 （内核自己 int 0x80）：
 ┌─────────┐
-│   eip   │  esp+0
-│   cs    │  esp+4   (0x08, RPL=0)
+│ eip     │  esp+0
+│ cs      │  esp+4   (0x08, RPL=0)
 │ eflags  │  esp+8
 └─────────┘
 

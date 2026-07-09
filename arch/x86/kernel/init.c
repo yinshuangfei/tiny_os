@@ -14,7 +14,7 @@ static void ttt(void *arg)
 
 	while (1) {
 		kernel_test();
-		sleep_ticks(100);
+		sleep_ticks(150);
 	}
 }
 

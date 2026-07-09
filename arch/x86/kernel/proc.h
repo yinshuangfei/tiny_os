@@ -55,7 +55,7 @@ struct proc {
 	int pid;
 	struct proc *parent;
 	void *chan;
-	unsigned int wakeup_tick;
+	unsigned int wakeup_tick;	/* 唤醒时间戳 */
 	int killed;
 	int xstate;			/* 退出状态 */
 

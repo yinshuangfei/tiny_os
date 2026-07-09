@@ -115,6 +115,7 @@ uint32 tss_get_esp0(void);
 uint32 tss_get_ss0(void);
 
 struct trapframe {
+	/* pushal 压栈的部分 */
 	uint32 edi;	// esp+ 0  ← popal 最后弹出
 	uint32 esi;	// esp+ 4
 	uint32 ebp;	// esp+ 8
@@ -123,8 +124,14 @@ struct trapframe {
 	uint32 edx;	// esp+20
 	uint32 ecx;	// esp+24
 	uint32 eax;	// esp+28  ← pushal 最先压入
+
 	uint32 ds;	// esp+32 数据段选择子
 	uint32 err;	// esp+36 错误码
+
+	/*
+	 * ring3 -> ring0 硬件压栈的部分，eip, cs, eflags, esp, ss
+	 * ring0 -> ring0 硬件压栈的部分，eip, cs, eflags
+	 */
 	uint32 eip;	// esp+40 指令指针
 	uint32 cs;	// esp+44 代码段选择子
 	uint32 eflags;	// esp+48 标志寄存器

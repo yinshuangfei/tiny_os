@@ -2,6 +2,7 @@
 #include "x86.h"
 #include "timer.h"
 #include "proc.h"
+#include "interrupt.h"
 
 /** PIC: Programmable Interrupt Controller (可编程中断控制器)  */
 /** 8259 主中断控制器 */
@@ -88,6 +89,19 @@ void timer_handler(void)
 	pic_eoi(0);
 	ticks++;
 	sched_tick();
+}
+
+/*
+ * 定时器从 ring3 陷入时调用：记录 kframe 并执行 tick。
+ * 返回后汇编路径可安全调用 preempt_check → yield。
+ */
+void timer_trap_user(struct trapframe *tf)
+{
+	struct proc *p = myproc();
+
+	if (p)
+		p->kframe = tf;
+	timer_handler();
 }
 
 unsigned int timer_ticks(void)
