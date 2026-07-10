@@ -206,4 +206,12 @@ static inline void w_cr3(uint val)
 	__asm__ volatile ("movl %0, %%cr3" : : "r"(val));
 }
 
+static inline uint r_esp(void)
+{
+	uint esp;
+
+	__asm__ volatile("movl %%esp, %0" : "=r"(esp));
+	return esp;
+}
+
 #endif

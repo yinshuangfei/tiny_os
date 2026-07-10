@@ -67,6 +67,7 @@ struct proc {
 	void *entry_arg;
 	uint sz;			/* 用户虚拟空间大小 */
 	char name[NNAME];
+	int swtched;			/* 1: context 由 sched 保存，可 swtch 恢复 */
 };
 
 extern struct proc *proc_table;
@@ -100,6 +101,10 @@ void scheduler(void) __attribute__((noreturn));
 struct proc *kthread_create(void (*fn)(void *), void *arg, const char *name);
 void kthread_exit(void);
 
-void start_first_user(void) __attribute__((noreturn));
+void start_first_user(void);
+void init_wait_children(void);
+
+/** 打印就绪队列 */
+void dump_runqueue(void);
 
 #endif

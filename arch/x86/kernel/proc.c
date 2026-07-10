@@ -23,6 +23,12 @@ pagetable_t current_user_pgdir;
 static struct spinlock proc_lock;
 static int nextpid = 1;
 
+/* 分配新 pid；调用方须持有 proc_lock */
+static int alloc_pid(void)
+{
+	return nextpid++;
+}
+
 const char *procstate_str[] = {
 #define X(name) #name,
 	PROCSTATE_LIST
@@ -33,6 +39,9 @@ extern void swtch(struct context *old, struct context *new);
 extern void user_enter(struct trapframe *tf, pagetable_t pgdir) __attribute__((noreturn));
 extern char loader[];
 extern char loader_end[];
+extern char end[];
+
+static int esp_on_kstack(struct proc *p, uint esp);
 
 static void proc_name_set(char *dst, const char *src)
 {
@@ -48,11 +57,28 @@ struct proc *myproc(void)
 	return mycpu()->proc;
 }
 
+/* 进程是否仍在某链表中（含就绪队列） */
+static int proc_on_list(struct proc *p)
+{
+	return p->list.next != &p->list;
+}
+
+/* 若在链表中则摘除（exit/reap/复用 PCB 前调用） */
+static void proc_unlink(struct proc *p)
+{
+	if (proc_on_list(p)) {
+		list_del(&p->list);
+		INIT_LIST_HEAD(&p->list);
+	}
+}
+
 /* 将进程加入就绪队列尾部 */
 static void enqueue_runnable(struct proc *p)
 {
 	if (p->state != RUNNABLE)
 		panic("enqueue: not runnable");
+	if (proc_on_list(p))
+		panic("enqueue: already queued");
 	list_add_tail(&p->list, &runqueue);
 }
 
@@ -80,26 +106,31 @@ static void kthread_reap(struct proc *p)
 	}
 }
 
-/* 用户进程 ZOMBIE：exit 已释放页表，此处回收 kstack 与 PCB */
-static void zombie_reap(struct proc *p)
+/* 用户进程 ZOMBIE：exit 已释放页表；调用方须持有 proc_lock */
+static void zombie_reap_locked(struct proc *p)
 {
-	acquire(&proc_lock);
-	if (p->state != ZOMBIE) {
-		release(&proc_lock);
+	if (p->state != ZOMBIE)
 		return;
-	}
+	proc_unlink(p);
 	if (p->kstack) {
 		free_page(p->kstack);
 		p->kstack = 0;
 	}
+	memset(&p->context, 0, sizeof(p->context));
 	p->state = UNUSED;
 	p->pid = 0;
 	p->parent = 0;
 	p->xstate = 0;
 	p->kframe = 0;
+	p->pagetable = 0;
+	p->sz = 0;
 	p->name[0] = '\0';
-	list_del(&p->list);
-	INIT_LIST_HEAD(&p->list);
+}
+
+static void zombie_reap(struct proc *p)
+{
+	acquire(&proc_lock);
+	zombie_reap_locked(p);
 	release(&proc_lock);
 }
 
@@ -140,6 +171,9 @@ void exit(int status)
 	parent = p->parent;
 	reparent(p);
 	p->xstate = status;
+	proc_unlink(p);		/* 抢占 yield 后 exit 时可能仍在就绪队列 */
+	p->swtched = 0;
+	memset(&p->context, 0, sizeof(p->context));
 	p->state = ZOMBIE;
 	release(&proc_lock);
 
@@ -148,7 +182,8 @@ void exit(int status)
 
 	printf("exit: pid=%d status=%d\n", p->pid, status);
 	sched();
-	panic("exit: ZOMBIE state reached\n");
+	for (;;)
+		halt();
 }
 
 void context_switch(struct context *old, struct context *new)
@@ -162,13 +197,21 @@ void sched(void)
 	struct proc *p = myproc();
 	struct cpu *c = mycpu();
 	int iflag = intr_get();
+	static struct context zombie_ctx;
 
 	if (c->context.esp == 0)
 		panic("sched: scheduler not initialized, "
 		      "first sched() should be called by scheduler\n");
 
 	c->last_sched = p;
-	context_switch(&p->context, &c->context);
+	if (p->state == ZOMBIE || p->state == UNUSED)
+		context_switch(&zombie_ctx, &c->context);
+	else
+		context_switch(&p->context, &c->context);
+	/* 已 exit 的进程不应再次被调度 */
+	if (p->state == ZOMBIE)
+		for (;;)
+			halt();
 	if (iflag)
 		intr_on();
 }
@@ -180,6 +223,7 @@ void yield(void)
 	mycpu()->need_resched = 0;
 	acquire(&proc_lock);
 	p->state = RUNNABLE;
+	p->swtched = 1;
 	enqueue_runnable(p);
 	release(&proc_lock);
 	sched();
@@ -208,6 +252,15 @@ static int should_preempt(void)
 
 void preempt_check(void)
 {
+	struct proc *p = myproc();
+
+	/*
+	 * 仅在当前 ESP 落在此进程 kstack 时才允许抢占。
+	 * 否则可能正运行在 scheduler 的 kernel_stack / interrupt_stack，
+	 * 此时 yield 会把错误的 esp 写入 PCB（导致后续 page fault）。
+	 */
+	if (!p || !esp_on_kstack(p, r_esp()))
+		return;
 	if (should_preempt())
 		yield();
 }
@@ -267,6 +320,111 @@ static void kthread_ctx_init(struct proc *p, uint entry)
 	*--sp = entry;
 	p->context.eip = entry;
 	p->context.esp = (uint)sp;
+	p->swtched = 0;
+}
+
+/*
+ * scheduler 首次调度用户进程时的入口：切页表 + iret 进 ring3。
+ * 被抢占后由 timer/syscall 保存的 trapframe 经 iret 恢复，不再经过此处。
+ */
+static void user_start_trampoline(void)
+{
+	struct proc *p = myproc();
+
+	if (!p->pagetable || !p->kframe)
+		panic("user_start: no user image");
+
+	current_user_pgdir = p->pagetable;
+	tss_set_esp0((uint)p->kstack + KSTACKSIZE);
+	printf("user_start: pid=%d eip=0x%x esp=0x%x pgdir=%p\n",
+	       p->pid, p->kframe->eip, p->kframe->esp, p->pagetable);
+	user_enter(p->kframe, p->pagetable);
+}
+
+static void user_ctx_init(struct proc *p)
+{
+	uint *sp;
+
+	memset(&p->context, 0, sizeof(p->context));
+	/* 内核栈顶留给 trapframe；context 栈在其下方 */
+	sp = (uint *)((char *)p->kstack + KSTACKSIZE - sizeof(struct trapframe));
+	*--sp = (uint)user_start_trampoline;
+	p->context.eip = (uint)user_start_trampoline;
+	p->context.esp = (uint)sp;
+	p->swtched = 0;
+}
+
+static int esp_on_kstack(struct proc *p, uint esp)
+{
+	uint lo = (uint)p->kstack;
+
+	if (!p->kstack)
+		return 0;
+	return esp >= lo && esp < lo + KSTACKSIZE;
+}
+
+/* 指针落在上内核映像内 */
+static int kernel_ptr(uint addr)
+{
+	return addr >= KERNBASE && addr < (uint)end;
+}
+
+/* swtch 恢复用的 esp 须落在此进程 kstack 内 */
+static int context_on_kstack(struct proc *p)
+{
+	uint esp = p->context.esp;
+	uint lo = (uint)p->kstack;
+
+	if (!p->kstack)
+		return 0;
+	return esp >= lo && esp < lo + KSTACKSIZE;
+}
+
+/*
+ * sched 保存的 context 须满足：esp 在本进程 kstack，eip 为内核地址，
+ * 且栈顶保存的返回地址与 eip 一致（swtch 约定）。
+ */
+static int context_sane(struct proc *p)
+{
+	uint eip = p->context.eip;
+	uint retaddr;
+
+	if (!context_on_kstack(p))
+		return 0;
+	if (eip == (uint)user_start_trampoline)
+		return 1;
+	if (!kernel_ptr(eip))
+		return 0;
+	retaddr = *(uint *)p->context.esp;
+	return retaddr == eip;
+}
+
+/*
+ * 调度前准备 context：
+ *   用户进程 swtched=0 → 走 user_start_trampoline
+ *   用户进程 swtched=1 → 校验后 swtch 恢复
+ *   内核线程         → 校验 kstack，异常则重建
+ */
+static void prepare_context(struct proc *p)
+{
+	if (!p->kstack)
+		panic("prepare_context: no kstack");
+
+	if (p->pagetable) {
+		if (!p->swtched)
+			user_ctx_init(p);
+		else if (!context_sane(p)) {
+			/* context 损坏但 trapframe 仍有效时，经 user_start 恢复用户态 */
+			if (p->kframe && (p->kframe->cs & 3))
+				user_ctx_init(p);
+			else
+				panic("prepare_context: bad user context");
+		}
+		return;
+	}
+
+	if (p->entry && !context_on_kstack(p))
+		kthread_ctx_init(p, (uint)kthread_trampoline);
 }
 
 void procinit(void)
@@ -314,6 +472,7 @@ void sleep(void *chan)
 	acquire(&proc_lock);
 	p->chan = chan;
 	p->wakeup_tick = 0;
+	p->swtched = 1;
 	p->state = SLEEPING;
 	release(&proc_lock);
 	sched();
@@ -350,6 +509,7 @@ void sleep_ticks(unsigned int nticks)
 	acquire(&proc_lock);
 	p->wakeup_tick = timer_ticks() + nticks;
 	p->chan = 0;
+	p->swtched = 1;
 	p->state = SLEEPING;
 	release(&proc_lock);
 	sched();
@@ -366,10 +526,11 @@ struct proc *proc_alloc(void)
 		if (p->state != UNUSED)
 			continue;
 
+		proc_unlink(p);	/* 防止槽位仍在就绪队列时被复用 */
 		memset(p, 0, sizeof(*p));
 		INIT_LIST_HEAD(&p->list);
 		p->state = USED;
-		p->pid = nextpid++;
+		p->pid = alloc_pid();
 		release(&proc_lock);
 		return p;
 	}
@@ -440,6 +601,8 @@ void proc_free(struct proc *p)
 		free_page(p->kstack);
 		p->kstack = 0;
 	}
+	memset(&p->context, 0, sizeof(p->context));
+	proc_unlink(p);
 	p->state = UNUSED;
 	p->pid = 0;
 	p->parent = 0;
@@ -448,8 +611,6 @@ void proc_free(struct proc *p)
 	p->entry = 0;
 	p->entry_arg = 0;
 	p->name[0] = '\0';
-	list_del(&p->list);
-	INIT_LIST_HEAD(&p->list);
 	release(&proc_lock);
 }
 
@@ -475,6 +636,7 @@ void scheduler(void)
 {
 	struct cpu *c = mycpu();
 	struct proc *p;
+	struct proc *prev;
 
 	printf("scheduler: starting ...\n");
 
@@ -484,18 +646,24 @@ void scheduler(void)
 		acquire(&proc_lock);
 		p = dequeue_runnable();
 		if (p) {
+			if (p->state != RUNNABLE)
+				panic("scheduler: dequeued non-runnable proc");
 			p->state = RUNNING;
 			c->proc = p;
 			if (p->kstack)
 				tss_set_esp0((uint)p->kstack + KSTACKSIZE);
+			prepare_context(p);
 			release(&proc_lock);
 			printf("scheduler: switched to process %s\n", p->name);
 			context_switch(&c->context, &p->context);
 			c->proc = 0;
-			if (c->last_sched && c->last_sched->state == ZOMBIE)
-				zombie_reap(c->last_sched);
-			if (p->state == UNUSED)
-				kthread_reap(p);
+			prev = c->last_sched;
+			if (prev) {
+				if (prev->state == ZOMBIE)
+					zombie_reap(prev);
+				else if (prev->state == UNUSED)
+					kthread_reap(prev);
+			}
 			c->last_sched = 0;
 		} else {
 			release(&proc_lock);
@@ -505,8 +673,7 @@ void scheduler(void)
 }
 
 /*
- * 创建第一个用户进程并通过 iret 切入 ring3。
- * 由 init 内核线程调用；正常情况不返回。
+ * 创建第一个用户子进程并入就绪队列；由 scheduler 经 user_start 进入 ring3。
  */
 void start_first_user(void)
 {
@@ -543,7 +710,6 @@ void start_first_user(void)
 
 	p->sz = USERSTACK;
 
-	/* trapframe 放在内核栈顶，供 syscall / 异常处理与 iret 返回 */
 	tf = (struct trapframe *)((char *)p->kstack + KSTACKSIZE -
 				  sizeof(struct trapframe));
 	memset(tf, 0, sizeof(*tf));
@@ -551,15 +717,69 @@ void start_first_user(void)
 	tf->cs = SEG_UCODE | 3;
 	tf->esp = USERINITESP;
 	tf->ss = SEG_UDATA | 3;
-	tf->eflags = 0x202;	/* IF | 保留位 1 */
+	tf->eflags = 0x202;
 	p->kframe = tf;
 
-	p->state = RUNNING;
-	mycpu()->proc = p;
-	tss_set_esp0((uint)p->kstack + KSTACKSIZE);
-	current_user_pgdir = p->pagetable;
+	user_ctx_init(p);
 
-	printf("init: user mode eip=0x%x esp=0x%x pgdir=%p\n",
-	       tf->eip, tf->esp, p->pagetable);
-	user_enter(tf, p->pagetable);
+	acquire(&proc_lock);
+	p->state = RUNNABLE;
+	enqueue_runnable(p);
+	release(&proc_lock);
+
+	printf("start_first_user: pid=%d loader queued\n", p->pid);
+}
+
+/*
+ * init 等待子进程退出并回收 ZOMBIE；无存活子进程时返回。
+ */
+void init_wait_children(void)
+{
+	struct proc *p = myproc();
+	int i, havekids;
+
+	for (;;) {
+		acquire(&proc_lock);
+		for (i = 0; i < NPROC; i++) {
+			struct proc *ch = &proc_table[i];
+
+			if (ch->parent != initproc || ch->state != ZOMBIE)
+				continue;
+			printf("init: reaped pid=%d status=%d\n",
+			       ch->pid, ch->xstate);
+			zombie_reap_locked(ch);
+		}
+		havekids = 0;
+		for (i = 0; i < NPROC; i++) {
+			struct proc *ch = &proc_table[i];
+
+			if (ch->parent == initproc && ch->state != UNUSED &&
+			    ch->state != ZOMBIE)
+				havekids = 1;
+		}
+		if (!havekids) {
+			release(&proc_lock);
+			return;
+		}
+		p->chan = initproc;
+		p->swtched = 1;
+		p->state = SLEEPING;
+		release(&proc_lock);
+		sched();
+	}
+}
+
+void dump_runqueue(void)
+{
+	printf("--------------------------------\n");
+	printf("queue:\n");
+	struct list_head *node;
+	struct proc *p;
+	acquire(&proc_lock);
+	list_for_each(node, &runqueue) {
+		p = list_entry(node, struct proc, list);
+		printf("  pid:%d, %s\n", p->pid, procstate_str[p->state]);
+	}
+	release(&proc_lock);
+	printf("--------------------------------\n");
 }

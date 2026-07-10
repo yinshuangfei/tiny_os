@@ -298,4 +298,5 @@ void kernel_test(void)
 	// kthread_yield_test();
 	// kthread_preempt_test();
 	dump_proc_table();
+	dump_runqueue();
 }
