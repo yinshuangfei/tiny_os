@@ -1,10 +1,13 @@
 /**
- * x86 32 位两级页表里，PDE 和 PTE 格式相同，都是 32 位（4 字节）：
- * 31          12 11    9 8 7 6 5 4 3 2 1 0
- * ┌──────────────┬──────┬─┬─┬─┬─┬─┬─┬─┬─┬─┐
- * │  物理页号     │  AVL │G│P│0│A│D│W│U│P│
- * └──────────────┴──────┴─┴─┴─┴─┴─┴─┴─┴─┘
-*/
+ * x86 32 位两级页表里，PDE 和 PTE 格式相同，都是 32 位（4 字节）。
+ * 位编号：31 为最高位，0 为最低位（与 Intel SDM 一致）。
+ *  31                    12 11  9 8 7 6 5 4 3 2 1 0
+ * ┌────────────────────────┬─────┬─┬─┬─┬─┬─┬─┬─┬─┬─┐
+ * │   Physical Base        │ AVL │G│P│D│A│P│P│U│R│P│
+ * │   (PPN, 20 bits)       │ 3b  │ │S│ │ │C│W│/│/│ │
+ * │                        │     │ │ │ │ │D│T│S│w│ │
+ * └────────────────────────┴─────┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
+ */
 
 #include "types.h"
 #include "defs.h"
@@ -12,10 +15,11 @@
 #include "mmu.h"
 #include "x86.h"
 
+/* 内核页目录, 所有内核线程共享。和 Linux 一样：内核页表是全局共用的 */
 pagetable_t kernel_pgdir;
 
 /* -------------------------------------------------------------------------- */
-/* 页表遍历与映射（内核 / 用户页表共用）                                        */
+/* 页表遍历与映射（内核 / 用户页表共用）                                         */
 /* -------------------------------------------------------------------------- */
 
 /*
@@ -114,7 +118,7 @@ static void tlb_flush_if_active(pagetable_t pgdir)
 }
 
 /* -------------------------------------------------------------------------- */
-/* 内核地址空间                                                                 */
+/* 内核地址空间                                                                */
 /* -------------------------------------------------------------------------- */
 
 void kvmmap(uint va, uint pa, uint size, int perm)
@@ -136,6 +140,7 @@ void kvmunmap(uint va, uint size)
 	w_cr3((uint)kernel_pgdir);
 }
 
+/* 不保证物理连续，可能返回物理上不连续的内存 */
 void *kvmalloc(uint va, int perm)
 {
 	(void)va;
@@ -155,7 +160,7 @@ static void kvminit_map(void)
 	kernel_pgdir = boot_pgdir;
 	memset(kernel_pgdir, 0, PGSIZE);
 
-	/** 分页机制开启，所有物理地址都映射到内核虚拟地址空间 */
+	/** 分页机制开启，所有物理地址都恒等映射到内核虚拟地址空间 */
 	kvmmap(0, 0, physmem_top, PTE_W);
 }
 
@@ -173,14 +178,14 @@ void kvm_init(void)
 	w_cr0(r_cr0() | CR0_PG);
 	printf("operating system paging enabled, kernel pgdir: %p\n", kernel_pgdir);
 
-	for (int i = 0; i < MAX_KERNEL_PT; i++) {
-		if (kernel_pgdir[i] != 0)
-			printf("  kpage dir[%d]: %p\n", i, kernel_pgdir[i]);
-	}
+	// for (int i = 0; i < MAX_KERNEL_PT; i++) {
+	// 	if (kernel_pgdir[i] != 0)
+	// 		printf("  kpage dir[%d]: %p\n", i, kernel_pgdir[i]);
+	// }
 }
 
 /* -------------------------------------------------------------------------- */
-/* 用户地址空间                                                                 */
+/* 用户地址空间                                                                */
 /* -------------------------------------------------------------------------- */
 
 pagetable_t uvmcreate(void)
@@ -194,14 +199,17 @@ pagetable_t uvmcreate(void)
 	memset(pgdir, 0, PGSIZE);
 
 	/*
-	 * 继承内核页目录项，使 trap 时 ISR 仍可执行；跳过 [USERBASE, USEREND)
-	 * 所在 PDE，避免与 uvmmap 的用户页共用二级页表。
+	 * 继承内核页目录项，使 trap 时 ISR 仍可执行
 	 */
 	for (i = 0; i < MAX_KERNEL_PT; i++) {
 		uint va = (uint)i << 22;
 
+		/* 跳过 [USERBASE, USEREND) 所在 PDE，避免与 uvmmap 的用户页共用
+		 * 二级页表 */
 		if (va >= USERBASE && va < USEREND)
 			continue;
+
+		/* 继承内核页目录项 */
 		if (kernel_pgdir[i] & PTE_P)
 			pgdir[i] = kernel_pgdir[i];
 	}

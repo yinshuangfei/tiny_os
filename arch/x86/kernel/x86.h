@@ -4,7 +4,6 @@
 #include "types.h"
 
 struct gdt_ptr;
-
 struct idt_ptr;
 
 /** set interrupt flag */
@@ -44,12 +43,6 @@ static inline void halt(void)
 	__asm__ volatile ("hlt");
 }
 
-/** outb */
-static inline void outb(unsigned short port, unsigned char val)
-{
-	__asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
-}
-
 /** inb */
 static inline unsigned char inb(unsigned short port)
 {
@@ -57,6 +50,12 @@ static inline unsigned char inb(unsigned short port)
 
 	__asm__ volatile ("inb %1, %0" : "=a"(val) : "Nd"(port));
 	return val;
+}
+
+/** outb */
+static inline void outb(unsigned short port, unsigned char val)
+{
+	__asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
 }
 
 /** outw */
@@ -110,6 +109,7 @@ static inline uint16 r_ss(void)
 	return val;
 }
 
+/** read task register */
 static inline uint16 r_tr(void)
 {
 	uint16 val;
@@ -118,36 +118,16 @@ static inline uint16 r_tr(void)
 	return val;
 }
 
+/** read GDT pointer */
 static inline void r_gdtr(struct gdt_ptr *ptr)
 {
 	__asm__ volatile ("sgdt %0" : "=m"(*ptr));
 }
 
+/** read IDT pointer */
 static inline void r_idtr(struct idt_ptr *ptr)
 {
 	__asm__ volatile ("sidt %0" : "=m"(*ptr));
-}
-
-/** CR0 flags */
-#define CR0_EM  0x00000004	/* emulation (FP/SSE trap if set) */
-#define CR0_TS  0x00000008	/* task switched (FP/SSE trap if set) */
-#define CR0_PG  0x80000000	/* paging */
-
-/** CR4 flags */
-#define CR4_OSFXSR     0x00000200	/* enable SSE instructions */
-#define CR4_OSXMMEXCPT 0x00000400	/* enable #XM for SSE */
-
-static inline uint r_cr4(void)
-{
-	uint val;
-
-	__asm__ volatile ("movl %%cr4, %0" : "=r"(val));
-	return val;
-}
-
-static inline void w_cr4(uint val)
-{
-	__asm__ volatile ("movl %0, %%cr4" : : "r"(val));
 }
 
 static inline void cpuid(uint32 leaf, uint32 *eax, uint32 *ebx,
@@ -180,6 +160,15 @@ static inline int cpu_has_cpuid(void)
 	return a != b;
 }
 
+/** CR0 flags */
+#define CR0_EM  0x00000004	/* emulation (FP/SSE trap if set) */
+#define CR0_TS  0x00000008	/* task switched (FP/SSE trap if set) */
+#define CR0_PG  0x80000000	/* paging */
+
+/** CR4 flags */
+#define CR4_OSFXSR     0x00000200	/* enable SSE instructions */
+#define CR4_OSXMMEXCPT 0x00000400	/* enable #XM for SSE */
+
 static inline uint r_cr0(void)
 {
 	uint val;
@@ -204,6 +193,19 @@ static inline uint r_cr3(void)
 static inline void w_cr3(uint val)
 {
 	__asm__ volatile ("movl %0, %%cr3" : : "r"(val));
+}
+
+static inline uint r_cr4(void)
+{
+	uint val;
+
+	__asm__ volatile ("movl %%cr4, %0" : "=r"(val));
+	return val;
+}
+
+static inline void w_cr4(uint val)
+{
+	__asm__ volatile ("movl %0, %%cr4" : : "r"(val));
 }
 
 static inline uint r_esp(void)

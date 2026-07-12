@@ -31,7 +31,7 @@ else
 QEMUOPTS += -drive file=boot.img,format=raw,if=floppy,index=0 -boot a
 endif
 
-.PHONY: qemu clean print-cc print-cflags
+.PHONY: qemu clean print-cc print-cflags compile_commands.json
 
 qemu: $(if $(filter 1,$(K)),kernel.elf,boot.img)
 	@$(QEMU) $(QEMUOPTS)
@@ -60,16 +60,18 @@ C_OBJS = \
 	$(KDIR)/mem.o \
 	$(KDIR)/serial.o \
 	$(KDIR)/timer.o \
-	$(KDIR)/interrupt.o \
+	$(KDIR)/gdt.o \
+	$(KDIR)/idt.o \
 	$(KDIR)/trapstack.o \
 	$(KDIR)/cpu.o \
 	$(KDIR)/spinlock.o \
 	$(KDIR)/printf.o \
 	$(KDIR)/utils.o \
-	$(KDIR)/alloc.o \
-	$(KDIR)/kmem.o \
+	$(KDIR)/buddy.o \
+	$(KDIR)/slab.o \
 	$(KDIR)/vm.o \
 	$(KDIR)/proc.o \
+	$(KDIR)/task_queue.o \
 	$(KDIR)/init.o \
 	$(KDIR)/debug.o \
 	$(KDIR)/exception.o \
@@ -157,6 +159,9 @@ print-cc:
 
 print-cflags:
 	@echo $(CFLAGS)
+
+compile_commands.json:
+	@python3 scripts/gen_compile_commands.py
 
 clean:
 	rm -f *.o *.elf *.bin *.img *.map *.vmdk *.tmp main.s test64.* \

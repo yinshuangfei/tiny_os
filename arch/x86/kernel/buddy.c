@@ -172,6 +172,7 @@ static struct page *__alloc_pages(unsigned int order)
 }
 
 /*
+ * pmm: physical memory manager
  * 初始化：把 [end, physmem_top) 全部以 order=0 逐页释放，
  * buddy 合并会自动拼出更大的连续空闲块。
  * 须在 kvm_init 之前调用（此时尚未开分页，物理地址 == 线性地址）。

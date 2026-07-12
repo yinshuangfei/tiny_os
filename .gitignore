@@ -11,3 +11,5 @@ mkfs/mkfs
 *.asm
 _*
 lib/usys.S
+.cache
+.clangd

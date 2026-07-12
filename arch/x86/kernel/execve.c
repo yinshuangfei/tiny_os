@@ -9,6 +9,7 @@
 #include "mmu.h"
 #include "proc.h"
 #include "x86.h"
+#include "gdt.h"
 
 extern char initcode[];
 extern char initcode_end[];
@@ -109,8 +110,8 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 
 	tf->eip = USERBASE;
 	tf->esp = USERINITESP;
-	tf->cs = SEG_UCODE | 3;
-	tf->ss = SEG_UDATA | 3;
+	tf->cs = SEG_UCODE | DPL_USER;
+	tf->ss = SEG_UDATA | DPL_USER;
 	tf->eflags = 0x202;
 
 	current_user_pgdir = newpg;

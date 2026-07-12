@@ -1,5 +1,7 @@
 #include "defs.h"
 #include "debug.h"
+#include "gdt.h"
+#include "idt.h"
 #include "x86.h"
 
 #define MAJOR_VERSION 0
@@ -20,7 +22,7 @@ void main(void)
 	// 检测并开启 SSE（须在可能生成 SSE 指令的代码之前）
 	cpu_init();
 	// 探测物理内存大小（须在 pmm_init / kvm_init 之前）
-	mem_init();
+	mem_probe();
 	// 初始化 PIC/APIC
 	pic_init();
 	// 初始化物理页分配器

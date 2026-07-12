@@ -6,7 +6,7 @@
 #include "defs.h"
 #include "memlayout.h"
 #include "list.h"
-#include "kmem.h"
+#include "slab.h"
 #include "spinlock.h"
 
 #define KMAGIC       0x4b4d454d	/* 'KMEM' */
@@ -81,6 +81,7 @@ void kmem_init(void)
 	printf("kmem: size-class (slab) allocator ready (%d buckets)\n", NCACHE);
 }
 
+/* 保证分配的内存块在物理内存中是连续的 */
 void *kmalloc(uint size)
 {
 	struct khdr *h;

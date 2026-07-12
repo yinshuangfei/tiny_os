@@ -5,7 +5,23 @@
 #include "param.h"
 #include "list.h"
 #include "vm.h"
-#include "interrupt.h"
+#include "trap.h"
+
+/* 用 X-Macro 维护一份 PROCSTATE_LIST */
+#define PROCSTATE_LIST \
+	X(UNUSED) \
+	X(USED) \
+	X(SLEEPING) \
+	X(RUNNABLE) \
+	X(RUNNING) \
+	X(ZOMBIE)
+
+enum procstate {
+#define X(name) name,
+	PROCSTATE_LIST
+#undef X
+	NPROCSTATE
+};
 
 /* swtch.S 保存的内核 callee-saved 寄存器（x86 32 位） */
 struct context {
@@ -27,28 +43,9 @@ struct cpu {
 	int need_resched;	/* 定时器 tick 请求抢占 */
 };
 
-extern struct cpu cpus[NCPU];
-
-struct cpu *mycpu(void);
-
-/* 用 X-Macro 维护一份 PROCSTATE_LIST */
-#define PROCSTATE_LIST \
-	X(UNUSED) \
-	X(USED) \
-	X(SLEEPING) \
-	X(RUNNABLE) \
-	X(RUNNING) \
-	X(ZOMBIE)
-
-enum procstate {
-#define X(name) name,
-	PROCSTATE_LIST
-#undef X
-	NPROCSTATE
-};
-
-extern const char *procstate_str[];
-
+/* 进程结构体
+ * 在 Linux 内核里，struct proc 对应的主要结构体是 struct task_struct.
+*/
 struct proc {
 	struct list_head list;		/* 就绪队列节点 */
 	enum procstate state;
@@ -60,9 +57,9 @@ struct proc {
 	int xstate;			/* 退出状态 */
 
 	pagetable_t pagetable;		/* 用户页表 */
-	struct trapframe *kframe;	/* 内核栈顶的 trapframe */
-	struct context context;
-	void *kstack;			/* 内核栈 */
+	struct trapframe *kframe;	/* 指向内核栈的栈顶的 trapframe */
+	struct context context;		/* 进程上下文 */
+	void *kstack;			/* 内核栈（用户态及内核态） */
 	void (*entry)(void *);
 	void *entry_arg;
 	uint sz;			/* 用户虚拟空间大小 */
@@ -70,9 +67,11 @@ struct proc {
 	int swtched;			/* 1: context 由 sched 保存，可 swtch 恢复 */
 };
 
+extern struct cpu cpus[NCPU];
+struct cpu *mycpu(void);
+extern const char *procstate_str[];
 extern struct proc *proc_table;
 extern struct proc *initproc;
-extern struct list_head runqueue;
 
 /* 当前运行在 ring3 的进程页表；trap 返回用户态前写回 CR3 */
 extern pagetable_t current_user_pgdir;
@@ -101,7 +100,7 @@ void scheduler(void) __attribute__((noreturn));
 struct proc *kthread_create(void (*fn)(void *), void *arg, const char *name);
 void kthread_exit(void);
 
-void start_first_user(void);
+void uthread_create(void);
 void init_wait_children(void);
 
 /** 打印就绪队列 */

@@ -1,7 +1,7 @@
 #ifndef __EXECVE_H__
 #define __EXECVE_H__
 
-#include "interrupt.h"
+#include "trap.h"
 
 struct proc;
 

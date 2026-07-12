@@ -4,14 +4,14 @@
 #include "types.h"
 #include "utils.h"
 #include "vm.h"
-#include "kmem.h"
+#include "slab.h"
 #include "proc.h"
 #include "spinlock.h"
 
-/** alloc.c — Linux-style buddy page allocator */
+/** buddy.c — Linux-style buddy page allocator */
 void *memset(void *dst, int c, uint n);
 void pmm_init(void);
-void mem_init(void);
+void mem_probe(void);
 void *alloc_pages(unsigned int order);
 void free_pages(void *addr, unsigned int order);
 void *alloc_page(void);
@@ -21,10 +21,6 @@ unsigned int pmm_nr_free_pages(void);
 /** cpu.c */
 void cpu_init(void);
 
-/** interrupt.c */
-void idt_set_gate(int vec, void (*handler)(void), uint16 selector, uint8 type_attr);
-void idt_init(void);
-void gdt_init(void);
 
 /** printf.c */
 void printf(char *fmt, ...);

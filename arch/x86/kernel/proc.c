@@ -7,21 +7,25 @@
 #include "memlayout.h"
 #include "list.h"
 #include "proc.h"
+#include "proc_lock.h"
+#include "task_queue.h"
 #include "spinlock.h"
 #include "timer.h"
 #include "mmu.h"
 #include "x86.h"
 #include "debug.h"
+#include "gdt.h"
 
 struct proc *proc_table;
 struct proc *initproc;
-struct list_head runqueue;
 
 /* trap 路径在返回 ring3 前据此恢复用户 CR3 */
 pagetable_t current_user_pgdir;
 
-static struct spinlock proc_lock;
+struct spinlock proc_lock;
 static int nextpid = 1;
+
+struct cpu cpus[NCPU];
 
 /* 分配新 pid；调用方须持有 proc_lock */
 static int alloc_pid(void)
@@ -57,46 +61,6 @@ struct proc *myproc(void)
 	return mycpu()->proc;
 }
 
-/* 进程是否仍在某链表中（含就绪队列） */
-static int proc_on_list(struct proc *p)
-{
-	return p->list.next != &p->list;
-}
-
-/* 若在链表中则摘除（exit/reap/复用 PCB 前调用） */
-static void proc_unlink(struct proc *p)
-{
-	if (proc_on_list(p)) {
-		list_del(&p->list);
-		INIT_LIST_HEAD(&p->list);
-	}
-}
-
-/* 将进程加入就绪队列尾部 */
-static void enqueue_runnable(struct proc *p)
-{
-	if (p->state != RUNNABLE)
-		panic("enqueue: not runnable");
-	if (proc_on_list(p))
-		panic("enqueue: already queued");
-	list_add_tail(&p->list, &runqueue);
-}
-
-/* 从就绪队列头部取出进程 */
-static struct proc *dequeue_runnable(void)
-{
-	struct list_head *node;
-	struct proc *p;
-
-	if (list_empty(&runqueue))
-		return 0;
-	node = runqueue.next;
-	p = list_entry(node, struct proc, list);
-	list_del(&p->list);
-	INIT_LIST_HEAD(&p->list);
-	return p;
-}
-
 /* 线程已退出，在 scheduler 上下文回收（swtch 期间仍占用 kstack） */
 static void kthread_reap(struct proc *p)
 {
@@ -111,11 +75,13 @@ static void zombie_reap_locked(struct proc *p)
 {
 	if (p->state != ZOMBIE)
 		return;
-	proc_unlink(p);
+
+	task_queue_unlink_locked(p);
 	if (p->kstack) {
 		free_page(p->kstack);
 		p->kstack = 0;
 	}
+
 	memset(&p->context, 0, sizeof(p->context));
 	p->state = UNUSED;
 	p->pid = 0;
@@ -134,15 +100,16 @@ static void zombie_reap(struct proc *p)
 	release(&proc_lock);
 }
 
+/* 将子进程的父进程设置为 init */
 static void reparent(struct proc *p)
 {
 	int i;
-	struct proc *pp;
+	struct proc *cp;	/* child proc */
 
 	for (i = 0; i < NPROC; i++) {
-		pp = &proc_table[i];
-		if (pp->parent == p && pp->state != UNUSED)
-			pp->parent = initproc;
+		cp = &proc_table[i];
+		if (cp->parent == p && cp->state != UNUSED)
+			cp->parent = initproc;
 	}
 }
 
@@ -171,12 +138,13 @@ void exit(int status)
 	parent = p->parent;
 	reparent(p);
 	p->xstate = status;
-	proc_unlink(p);		/* 抢占 yield 后 exit 时可能仍在就绪队列 */
+	task_queue_unlink_locked(p);		/* 抢占 yield 后 exit 时可能仍在就绪队列 */
 	p->swtched = 0;
 	memset(&p->context, 0, sizeof(p->context));
 	p->state = ZOMBIE;
 	release(&proc_lock);
 
+	/* 唤醒父进程 */
 	if (parent)
 		wakeup(parent);
 
@@ -208,6 +176,7 @@ void sched(void)
 		context_switch(&zombie_ctx, &c->context);
 	else
 		context_switch(&p->context, &c->context);
+
 	/* 已 exit 的进程不应再次被调度 */
 	if (p->state == ZOMBIE)
 		for (;;)
@@ -224,7 +193,7 @@ void yield(void)
 	acquire(&proc_lock);
 	p->state = RUNNABLE;
 	p->swtched = 1;
-	enqueue_runnable(p);
+	task_queue_enqueue_locked(p);
 	release(&proc_lock);
 	sched();
 }
@@ -241,7 +210,7 @@ static int should_preempt(void)
 	if (!p || p->state != RUNNING)
 		return 0;
 	acquire(&proc_lock);
-	if (list_empty(&runqueue)) {
+	if (task_queue_empty_locked()) {
 		c->need_resched = 0;
 		release(&proc_lock);
 		return 0;
@@ -281,7 +250,7 @@ void sched_tick(void)
 			p->state = RUNNABLE;
 			p->wakeup_tick = 0;
 			p->chan = 0;
-			enqueue_runnable(p);
+			task_queue_enqueue_locked(p);
 		}
 	}
 	release(&proc_lock);
@@ -290,7 +259,7 @@ void sched_tick(void)
 	p = myproc();
 	if (p && p->state == RUNNING) {
 		acquire(&proc_lock);
-		if (!list_empty(&runqueue))
+		if (!task_queue_empty_locked())
 			mycpu()->need_resched = 1;
 		release(&proc_lock);
 	}
@@ -310,15 +279,17 @@ static void kthread_trampoline(void)
 	kthread_exit();
 }
 
-static void kthread_ctx_init(struct proc *p, uint entry)
+/* 内核线程的 context 初始化 */
+static void kthread_ctx_init(struct proc *p)
 {
 	uint *sp;
 
 	memset(&p->context, 0, sizeof(p->context));
 	sp = (uint *)((char *)p->kstack + KSTACKSIZE);
-	// 伪造的返回地址, 后面 swtch 用 ret 跳过去, 跳到 kthread_trampoline
-	*--sp = entry;
-	p->context.eip = entry;
+
+	/* 伪造的返回地址, 后面 swtch 用 ret 跳过去, 跳到 kthread_trampoline */
+	*--sp = (uint)kthread_trampoline;
+	p->context.eip = (uint)kthread_trampoline;
 	p->context.esp = (uint)sp;
 	p->swtched = 0;
 }
@@ -335,17 +306,23 @@ static void user_start_trampoline(void)
 		panic("user_start: no user image");
 
 	current_user_pgdir = p->pagetable;
+
+	/* 设置 TSS 的 ESP0 为当前进程的内核栈栈顶 */
 	tss_set_esp0((uint)p->kstack + KSTACKSIZE);
+
 	printf("user_start: pid=%d eip=0x%x esp=0x%x pgdir=%p\n",
 	       p->pid, p->kframe->eip, p->kframe->esp, p->pagetable);
+
 	user_enter(p->kframe, p->pagetable);
 }
 
+/* 用户进程的 context 初始化 */
 static void user_ctx_init(struct proc *p)
 {
 	uint *sp;
 
 	memset(&p->context, 0, sizeof(p->context));
+
 	/* 内核栈顶留给 trapframe；context 栈在其下方 */
 	sp = (uint *)((char *)p->kstack + KSTACKSIZE - sizeof(struct trapframe));
 	*--sp = (uint)user_start_trampoline;
@@ -364,7 +341,7 @@ static int esp_on_kstack(struct proc *p, uint esp)
 }
 
 /* 指针落在上内核映像内 */
-static int kernel_ptr(uint addr)
+static int on_kernel_text(uint addr)
 {
 	return addr >= KERNBASE && addr < (uint)end;
 }
@@ -381,8 +358,10 @@ static int context_on_kstack(struct proc *p)
 }
 
 /*
- * sched 保存的 context 须满足：esp 在本进程 kstack，eip 为内核地址，
- * 且栈顶保存的返回地址与 eip 一致（swtch 约定）。
+ * sched 保存的 context 须满足：
+ * - esp 在本进程 kstack
+ * - eip 为内核地址
+ * - 栈顶保存的返回地址与 eip 一致（swtch 约定）
  */
 static int context_sane(struct proc *p)
 {
@@ -393,7 +372,7 @@ static int context_sane(struct proc *p)
 		return 0;
 	if (eip == (uint)user_start_trampoline)
 		return 1;
-	if (!kernel_ptr(eip))
+	if (!on_kernel_text(eip))
 		return 0;
 	retaddr = *(uint *)p->context.esp;
 	return retaddr == eip;
@@ -403,19 +382,20 @@ static int context_sane(struct proc *p)
  * 调度前准备 context：
  *   用户进程 swtched=0 → 走 user_start_trampoline
  *   用户进程 swtched=1 → 校验后 swtch 恢复
- *   内核线程         → 校验 kstack，异常则重建
+ *   内核线程           → 校验 kstack，异常则重建
  */
 static void prepare_context(struct proc *p)
 {
 	if (!p->kstack)
 		panic("prepare_context: no kstack");
 
+	/* 包含用户态页表的进程 */
 	if (p->pagetable) {
-		if (!p->swtched)
+		if (!p->swtched) {
 			user_ctx_init(p);
-		else if (!context_sane(p)) {
+		} else if (!context_sane(p)) {
 			/* context 损坏但 trapframe 仍有效时，经 user_start 恢复用户态 */
-			if (p->kframe && (p->kframe->cs & 3))
+			if (p->kframe && (p->kframe->cs & DPL_USER))
 				user_ctx_init(p);
 			else
 				panic("prepare_context: bad user context");
@@ -423,8 +403,9 @@ static void prepare_context(struct proc *p)
 		return;
 	}
 
+	/* 内核线程 */
 	if (p->entry && !context_on_kstack(p))
-		kthread_ctx_init(p, (uint)kthread_trampoline);
+		kthread_ctx_init(p);
 }
 
 void procinit(void)
@@ -433,7 +414,7 @@ void procinit(void)
 	struct proc *swapper;
 
 	initlock(&proc_lock, "proc");
-	INIT_LIST_HEAD(&runqueue);
+	task_queue_init();
 	proc_table = kcalloc(NPROC, sizeof(struct proc));
 	if (!proc_table)
 		panic("procinit: out of memory");
@@ -493,7 +474,7 @@ void wakeup(void *chan)
 			p->state = RUNNABLE;
 			p->chan = 0;
 			p->wakeup_tick = 0;
-			enqueue_runnable(p);
+			task_queue_enqueue_locked(p);
 		}
 	}
 	release(&proc_lock);
@@ -526,7 +507,9 @@ struct proc *proc_alloc(void)
 		if (p->state != UNUSED)
 			continue;
 
-		proc_unlink(p);	/* 防止槽位仍在就绪队列时被复用 */
+		if (on_list(p))
+			panic("proc_alloc: proc on list");
+
 		memset(p, 0, sizeof(*p));
 		INIT_LIST_HEAD(&p->list);
 		p->state = USED;
@@ -536,54 +519,6 @@ struct proc *proc_alloc(void)
 	}
 	release(&proc_lock);
 	return 0;
-}
-
-struct proc *kthread_create(void (*fn)(void *), void *arg, const char *name)
-{
-	struct proc *p;
-
-	p = proc_alloc();
-	if (!p)
-		return 0;
-
-	p->kstack = alloc_page();
-	if (!p->kstack) {
-		proc_free(p);
-		return 0;
-	}
-
-	p->entry = fn;
-	p->entry_arg = arg;
-	if (name)
-		proc_name_set(p->name, name);
-	if (initproc)
-		p->parent = initproc;
-
-	kthread_ctx_init(p, (uint)kthread_trampoline);
-
-	acquire(&proc_lock);
-	p->state = RUNNABLE;
-	enqueue_runnable(p);
-	release(&proc_lock);
-	return p;
-}
-
-void kthread_exit(void)
-{
-	struct proc *p = myproc();
-
-	if (p == initproc)
-		panic("init exiting");
-
-	acquire(&proc_lock);
-	p->entry = 0;
-	p->entry_arg = 0;
-	p->state = UNUSED;
-	p->pid = 0;
-	p->name[0] = '\0';
-	release(&proc_lock);
-	sched();
-	panic("kthread_exit: sched returned");
 }
 
 void proc_free(struct proc *p)
@@ -602,7 +537,7 @@ void proc_free(struct proc *p)
 		p->kstack = 0;
 	}
 	memset(&p->context, 0, sizeof(p->context));
-	proc_unlink(p);
+	task_queue_unlink_locked(p);
 	p->state = UNUSED;
 	p->pid = 0;
 	p->parent = 0;
@@ -612,6 +547,57 @@ void proc_free(struct proc *p)
 	p->entry_arg = 0;
 	p->name[0] = '\0';
 	release(&proc_lock);
+}
+
+/* 创建内核线程 */
+struct proc *kthread_create(void (*fn)(void *), void *arg, const char *name)
+{
+	struct proc *p;
+
+	p = proc_alloc();
+	if (!p)
+		return 0;
+
+	p->kstack = alloc_page();
+	if (!p->kstack) {
+		proc_free(p);
+		return 0;
+	}
+
+	p->entry = fn;
+	p->entry_arg = arg;
+
+	if (name)
+		proc_name_set(p->name, name);
+	if (initproc)
+		p->parent = initproc;
+
+	kthread_ctx_init(p);
+
+	acquire(&proc_lock);
+	p->state = RUNNABLE;
+	task_queue_enqueue_locked(p);
+	release(&proc_lock);
+	return p;
+}
+
+/* 退出内核线程 */
+void kthread_exit(void)
+{
+	struct proc *p = myproc();
+
+	if (p == initproc)
+		panic("init exiting");
+
+	acquire(&proc_lock);
+	p->entry = 0;
+	p->entry_arg = 0;
+	p->state = UNUSED;
+	p->pid = 0;
+	p->name[0] = '\0';
+	release(&proc_lock);
+	sched();
+	panic("kthread_exit: sched returned");
 }
 
 struct proc *proc_find(int pid)
@@ -644,18 +630,22 @@ void scheduler(void)
 	for (;;) {
 		sti();
 		acquire(&proc_lock);
-		p = dequeue_runnable();
+
+		p = task_queue_dequeue_locked();
 		if (p) {
 			if (p->state != RUNNABLE)
 				panic("scheduler: dequeued non-runnable proc");
+
 			p->state = RUNNING;
 			c->proc = p;
 			if (p->kstack)
 				tss_set_esp0((uint)p->kstack + KSTACKSIZE);
+
 			prepare_context(p);
 			release(&proc_lock);
-			printf("scheduler: switched to process %s\n", p->name);
+
 			context_switch(&c->context, &p->context);
+
 			c->proc = 0;
 			prev = c->last_sched;
 			if (prev) {
@@ -675,7 +665,7 @@ void scheduler(void)
 /*
  * 创建第一个用户子进程并入就绪队列；由 scheduler 经 user_start 进入 ring3。
  */
-void start_first_user(void)
+void uthread_create(void)
 {
 	struct proc *p;
 	struct trapframe *tf;
@@ -684,54 +674,64 @@ void start_first_user(void)
 
 	p = proc_alloc();
 	if (!p)
-		panic("start_first_user: proc_alloc");
+		panic("uthread_create: proc_alloc");
 
 	proc_name_set(p->name, "loader");
 	p->parent = initproc;
 
+	/* 创建进程内核栈, 范围是 [p->kstack, p->kstack+PGSIZE) */
+	/* kstack 靠 kvm_init() 的全局恒等映射, 已经可访问, 不需要重新映射 */
 	p->kstack = alloc_page();
 	if (!p->kstack)
-		panic("start_first_user: kstack");
+		panic("uthread_create: kstack");
 
+	/* 创建用户页表 */
 	p->pagetable = uvmcreate();
 	if (!p->pagetable)
-		panic("start_first_user: uvmcreate");
+		panic("uthread_create: uvmcreate");
 
 	init_sz = (uint)(loader_end - loader);
 	if (loaduvm(p->pagetable, USERBASE, loader, init_sz) < 0)
-		panic("start_first_user: loaduvm");
+		panic("uthread_create: loaduvm");
 
+	/* 创建用户栈 */
 	ustack = alloc_page();
 	if (!ustack)
-		panic("start_first_user: ustack");
+		panic("uthread_create: ustack");
+
+	/* 映射用户栈 */
 	if (uvmmap(p->pagetable, USERSTACK - PGSIZE, (uint)ustack,
 		   PGSIZE, PTE_W | PTE_P) < 0)
-		panic("start_first_user: uvmmap stack");
+		panic("uthread_create: uvmmap stack");
 
 	p->sz = USERSTACK;
 
+	/* trapframe 位于内核栈的栈顶的 */
 	tf = (struct trapframe *)((char *)p->kstack + KSTACKSIZE -
 				  sizeof(struct trapframe));
 	memset(tf, 0, sizeof(*tf));
+
+	/* 设置 trapframe 的 eip 为 USERBASE，即用户程序的入口地址 */
 	tf->eip = USERBASE;
-	tf->cs = SEG_UCODE | 3;
+	tf->cs = SEG_UCODE | DPL_USER;
 	tf->esp = USERINITESP;
-	tf->ss = SEG_UDATA | 3;
+	tf->ss = SEG_UDATA | DPL_USER;
 	tf->eflags = 0x202;
 	p->kframe = tf;
 
+	/* 初始化用户进程的 context */
 	user_ctx_init(p);
 
 	acquire(&proc_lock);
 	p->state = RUNNABLE;
-	enqueue_runnable(p);
+	task_queue_enqueue_locked(p);
 	release(&proc_lock);
 
-	printf("start_first_user: pid=%d loader queued\n", p->pid);
+	printf("uthread_create: pid=%d loader queued\n", p->pid);
 }
 
 /*
- * init 等待子进程退出并回收 ZOMBIE；无存活子进程时返回。
+ * 等待子进程退出并回收 ZOMBIE；无存活子进程时返回。
  */
 void init_wait_children(void)
 {
@@ -740,6 +740,8 @@ void init_wait_children(void)
 
 	for (;;) {
 		acquire(&proc_lock);
+
+		/* 回收父进程为 init 的 ZOMBIE 状态的子进程 */
 		for (i = 0; i < NPROC; i++) {
 			struct proc *ch = &proc_table[i];
 
@@ -750,6 +752,8 @@ void init_wait_children(void)
 			zombie_reap_locked(ch);
 		}
 		havekids = 0;
+
+		/* 检查是否还有存活子进程 */
 		for (i = 0; i < NPROC; i++) {
 			struct proc *ch = &proc_table[i];
 
@@ -757,10 +761,14 @@ void init_wait_children(void)
 			    ch->state != ZOMBIE)
 				havekids = 1;
 		}
+
+		/* 没有存活子进程，返回 */
 		if (!havekids) {
 			release(&proc_lock);
 			return;
 		}
+
+		/* 有存活子进程，将唤醒通道设置为 init，并进入睡眠状态 */
 		p->chan = initproc;
 		p->swtched = 1;
 		p->state = SLEEPING;
@@ -771,15 +779,7 @@ void init_wait_children(void)
 
 void dump_runqueue(void)
 {
-	printf("--------------------------------\n");
-	printf("queue:\n");
-	struct list_head *node;
-	struct proc *p;
 	acquire(&proc_lock);
-	list_for_each(node, &runqueue) {
-		p = list_entry(node, struct proc, list);
-		printf("  pid:%d, %s\n", p->pid, procstate_str[p->state]);
-	}
+	task_queue_dump_locked();
 	release(&proc_lock);
-	printf("--------------------------------\n");
 }

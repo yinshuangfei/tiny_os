@@ -20,6 +20,7 @@ user_enter:
 	movl 4(%esp), %eax	/* tf */
 	movl 8(%esp), %ebx	/* pgdir */
 
+	/* 设置用户页表 */
 	movl %ebx, current_user_pgdir
 	movl %ebx, %cr3
 

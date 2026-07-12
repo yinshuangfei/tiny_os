@@ -2,7 +2,6 @@
 #include "x86.h"
 #include "timer.h"
 #include "proc.h"
-#include "interrupt.h"
 
 /** PIC: Programmable Interrupt Controller (可编程中断控制器)  */
 /** 8259 主中断控制器 */

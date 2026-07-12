@@ -1,5 +1,5 @@
-#ifndef __KMEM_H__
-#define __KMEM_H__
+#ifndef __SLAB_H__
+#define __SLAB_H__
 
 #include "types.h"
 

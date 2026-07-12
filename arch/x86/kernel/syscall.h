@@ -2,9 +2,7 @@
 #define __SYSCALL_H__
 
 #include "../user/syscall.h"
-#include "interrupt.h"
-
-struct trapframe;
+#include "trap.h"
 
 void syscall(struct trapframe *tf);
 

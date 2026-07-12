@@ -33,6 +33,8 @@ SERIAL_PUTC
 _start:
 	cli
 	cld
+
+	/* 设置内核栈, 给 scheduler 使用 */
 	movl $(kernel_stack + KSTACKSIZE), %esp
 
 	/* clear .bss */

@@ -63,7 +63,7 @@ static int boot_info_ram_size(uint *top)
 	return 0;
 }
 
-void mem_init(void)
+void mem_probe(void)
 {
 	uint top = 0;
 	char human[HUMAN_SIZE_MAX];

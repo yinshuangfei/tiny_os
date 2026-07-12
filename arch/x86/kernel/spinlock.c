@@ -1,11 +1,8 @@
 #include "types.h"
-#include "param.h"
 #include "defs.h"
 #include "spinlock.h"
 #include "proc.h"
 #include "x86.h"
-
-struct cpu cpus[NCPU];
 
 struct cpu *mycpu(void)
 {

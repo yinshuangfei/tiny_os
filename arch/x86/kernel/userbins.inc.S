@@ -1,5 +1,5 @@
 /*
- * 将 user/*.bin 嵌入内核 .rodata，供 execve / start_first_user 加载。
+ * 将 user/*.bin 嵌入内核 .rodata，供 execve / uthread_create 加载。
  */
 .section .rodata
 .align 4

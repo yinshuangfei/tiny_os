@@ -29,7 +29,7 @@ static void init_main(void *arg)
 
 	for (;;) {
 		printf("init: launching user program\n");
-		start_first_user();
+		uthread_create();
 		yield();		/* 入就绪队列，让 scheduler 调度 loader */
 		init_wait_children();
 		printf("init: all children exited\n");

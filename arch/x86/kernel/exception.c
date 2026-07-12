@@ -21,7 +21,7 @@
      用户态任务，切换到内核态执行相应的中断服务例程。
 */
 #include "defs.h"
-#include "interrupt.h"
+#include "trap.h"
 #include "x86.h"
 
 void divide_error_handler(struct trapframe *tf)
@@ -47,10 +47,23 @@ void invalid_opcode_handler(struct trapframe *tf)
 	panic("invalid opcode");
 }
 
+/*
+ * #GP 异常是不可屏蔽/不可禁用的（#GP cannot be disabled），这是硬件级的强制保护机制
+ */
 void general_protection_handler(struct trapframe *tf)
 {
 	printf("general protection (#GP) err=0x%x eip=0x%x\n", tf->err, tf->eip);
 	panic("general protection");
+}
+
+void page_fault_handler(struct trapframe *tf)
+{
+	uint32 fault_va;
+
+	__asm__ volatile ("movl %%cr2, %0" : "=r"(fault_va));
+	printf("page fault at va=%p err=0x%x eip=0x%x\n",
+	       (void *)fault_va, tf->err, tf->eip);
+	panic("page fault");
 }
 
 void simd_fp_handler(struct trapframe *tf)
