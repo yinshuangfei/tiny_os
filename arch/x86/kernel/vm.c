@@ -323,6 +323,36 @@ int copyin(pagetable_t pgdir, void *dst, uint srcva, uint n)
 }
 
 /*
+ * 从内核缓冲区 copyout 至多 n 字节到用户页表；跨页自动拆分。
+ */
+int copyout(pagetable_t pgdir, uint dstva, const void *src, uint n)
+{
+	const char *s = src;
+	uint va, pa, chunk;
+
+	if (pgdir == 0 || src == 0)
+		return -1;
+	while (n > 0) {
+		uint i;
+
+		va = PGROUNDDOWN(dstva);
+		pa = walkaddr(pgdir, va);
+		if (pa == 0)
+			return -1;
+		chunk = PGSIZE - (dstva - va);
+		if (chunk > n)
+			chunk = n;
+		pa += dstva - va;
+		for (i = 0; i < chunk; i++)
+			((char *)pa)[i] = s[i];
+		s += chunk;
+		dstva += chunk;
+		n -= chunk;
+	}
+	return 0;
+}
+
+/*
  * 将 src（长度 sz）按页拷贝到 va 起连续用户页；代码段只读 PTE_P。
  * va 须页对齐；va+sz 不得超过 USEREND。
  */

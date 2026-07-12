@@ -6,9 +6,12 @@
 
 #include "syscall.h"
 
+struct timespec;
+
 int execve(const char *, char *const *, char *const *);
 int exit(int) __attribute__((noreturn));
 int getpid(void);
+int nanosleep(const struct timespec *req, struct timespec *rem);
 int write(int, const void *, int);
 
 #endif

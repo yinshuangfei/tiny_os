@@ -480,20 +480,30 @@ void wakeup(void *chan)
 	release(&proc_lock);
 }
 
-void sleep_ticks(unsigned int nticks)
+void sleep_deadline(unsigned int deadline)
 {
 	struct proc *p = myproc();
 
-	if (nticks == 0)
+	if (timer_ticks() >= deadline)
 		return;
 
 	acquire(&proc_lock);
-	p->wakeup_tick = timer_ticks() + nticks;
+	p->wakeup_tick = deadline;
 	p->chan = 0;
 	p->swtched = 1;
 	p->state = SLEEPING;
 	release(&proc_lock);
 	sched();
+}
+
+void sleep_ticks(unsigned int nticks)
+{
+	unsigned int now;
+
+	if (nticks == 0)
+		return;
+	now = timer_ticks();
+	sleep_deadline(now + nticks);
 }
 
 struct proc *proc_alloc(void)

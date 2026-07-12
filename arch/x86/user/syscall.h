@@ -9,5 +9,13 @@
 #define SYS_execve	3
 #define SYS_getpid	11
 #define SYS_write	16
+#define SYS_nanosleep	162	/* Linux i386 __NR_nanosleep */
+
+#ifndef __ASSEMBLER__
+struct timespec {
+	unsigned int tv_sec;
+	unsigned int tv_nsec;
+};
+#endif
 
 #endif

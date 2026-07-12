@@ -4,7 +4,7 @@
  * 主要作用：把栈参数搬进 int 0x80 约定寄存器: ebx, ecx, edx, esi, edi;
  *          然后把 eax 设为系统调用号，再 int 0x80 触发中断，进入内核。
  */
-#include "syscall.h"
+#include "syscall.inc"
 
 .code32
 .section .text
@@ -37,5 +37,13 @@ write:
 	movl 8(%esp), %ecx
 	movl 12(%esp), %edx
 	movl $SYS_write, %eax
+	int $0x80
+	ret
+
+.globl nanosleep
+nanosleep:
+	movl 4(%esp), %ebx
+	movl 8(%esp), %ecx
+	movl $SYS_nanosleep, %eax
 	int $0x80
 	ret

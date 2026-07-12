@@ -28,6 +28,7 @@ void uvmcopy_kernel(pagetable_t pgdir);
 
 uint walkaddr(pagetable_t pgdir, uint va);
 int copyin(pagetable_t pgdir, void *dst, uint srcva, uint n);
+int copyout(pagetable_t pgdir, uint dstva, const void *src, uint n);
 int copyinstr(pagetable_t pgdir, char *dst, uint srcva, uint max);
 
 #endif

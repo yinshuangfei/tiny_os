@@ -3,3 +3,4 @@
 .set SYS_execve, 3
 .set SYS_getpid, 11
 .set SYS_write,  16
+.set SYS_nanosleep, 162

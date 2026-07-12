@@ -89,6 +89,7 @@ void exit(int status) __attribute__((noreturn));
 void sleep(void *chan);
 void wakeup(void *chan);
 void sleep_ticks(unsigned int nticks);
+void sleep_deadline(unsigned int deadline);
 void sched_tick(void);
 void preempt_check(void);
 

@@ -6,7 +6,28 @@
 #include "proc.h"
 #include "syscall.h"
 #include "execve.h"
+#include "timer.h"
 #include "x86.h"
+
+#define NSEC_PER_SEC  1000000000u
+#define NSEC_PER_TICK (NSEC_PER_SEC / TIMER_HZ)
+
+static unsigned int timespec_to_ticks(const struct timespec *ts)
+{
+	uint64 ticks;
+
+	if (ts->tv_sec == 0 && ts->tv_nsec == 0)
+		return 0;
+
+	/* 分 sec/nsec 换算，避免 (tv_sec * 1e9) 在 32 位下溢出 */
+	ticks = (uint64)ts->tv_sec * TIMER_HZ;
+	ticks += ((uint64)ts->tv_nsec + NSEC_PER_TICK - 1) / NSEC_PER_TICK;
+	if (ticks == 0)
+		ticks = 1;
+	if (ticks > 0xffffffffu)
+		return 0xffffffffu;
+	return (unsigned int)ticks;
+}
 
 int sys_getpid(struct trapframe *tf)
 {
@@ -21,6 +42,38 @@ int sys_exit(struct trapframe *tf)
 	if (argint(tf, 0, &status) < 0)
 		status = -1;
 	exit(status);
+}
+
+int sys_nanosleep(struct trapframe *tf)
+{
+	struct proc *p = myproc();
+	struct timespec req, rem;
+	uint ureq, urem;
+	unsigned int nticks;
+
+	if (!p || !p->pagetable)
+		return -1;
+	if (argaddr(tf, 0, &ureq) < 0 || ureq == 0)
+		return -1;
+	if (copyin(p->pagetable, &req, ureq, sizeof(req)) < 0)
+		return -1;
+	if (req.tv_nsec >= NSEC_PER_SEC)
+		return -1;
+
+	nticks = timespec_to_ticks(&req);
+	if (nticks > 0) {
+		unsigned int now = timer_ticks();
+
+		sleep_deadline(now + nticks);
+	}
+
+	if (argaddr(tf, 1, &urem) == 0 && urem != 0) {
+		rem.tv_sec = 0;
+		rem.tv_nsec = 0;
+		if (copyout(p->pagetable, urem, &rem, sizeof(rem)) < 0)
+			return -1;
+	}
+	return 0;
 }
 
 int sys_write(struct trapframe *tf)
