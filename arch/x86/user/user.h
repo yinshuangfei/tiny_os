@@ -14,4 +14,6 @@ int getpid(void);
 int nanosleep(const struct timespec *req, struct timespec *rem);
 int write(int, const void *, int);
 
+int printf(const char *fmt, ...);
+
 #endif

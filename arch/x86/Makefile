@@ -88,7 +88,7 @@ AS_OBJS = \
 
 INITCODE_BIN=$(USERDIR)/initcode.bin
 LOADER_BIN=$(USERDIR)/loader.bin
-INITCODE_OBJS=$(USERDIR)/start.o $(USERDIR)/initcode.o $(USERDIR)/usys.o
+INITCODE_OBJS=$(USERDIR)/start.o $(USERDIR)/initcode.o $(USERDIR)/usys.o $(USERDIR)/printf.o
 
 OBJS = $(C_OBJS) $(AS_OBJS)
 
@@ -102,6 +102,9 @@ $(LOADER_BIN): $(USERDIR)/loader.o
 	@$(OBJCOPY) -O binary -j .text -j .rodata $(USERDIR)/loader.elf $@
 
 $(USERDIR)/initcode.o: $(USERDIR)/initcode.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(USERDIR)/printf.o: $(USERDIR)/printf.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/usys.o: $(USERDIR)/usys.S
@@ -168,6 +171,6 @@ clean:
 	setup.elf setup.bin kernel_body.elf kernel_body.bin \
 	$(BOOTDIR)/*.o $(BOOTDIR)/*.bin \
 	$(USERDIR)/initcode.o $(USERDIR)/initcode.elf $(USERDIR)/initcode.bin \
-	$(USERDIR)/usys.o $(USERDIR)/start.o \
+	$(USERDIR)/printf.o $(USERDIR)/usys.o $(USERDIR)/start.o \
 	$(USERDIR)/loader.o $(USERDIR)/loader.elf $(USERDIR)/loader.bin \
 	$(OBJS)
