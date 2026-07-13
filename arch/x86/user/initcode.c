@@ -1,5 +1,5 @@
 /*
- * 用户态 init（类似 Linux pid 1）：
+ * 用户态 init（pid 1，由 kernel_execve 加载）：
  *   - 常驻，不 exit
  *   - fork 子进程干活
  *   - waitpid 收僵尸

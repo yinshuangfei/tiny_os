@@ -1,11 +1,10 @@
 /*
- * init 内核线程（pid 1）：拉起用户 init，yield 让出 CPU，并作为后备收尸。
+ * init 内核线程（pid 1）：类似 Linux kernel_init，kernel_execve 后变为用户态 init。
  */
 #include "types.h"
 #include "defs.h"
 #include "proc.h"
-
-void kernel_test(void);
+#include "execve.h"
 
 static void init_main(void *arg)
 {
@@ -13,12 +12,9 @@ static void init_main(void *arg)
 
 	printf("init: kernel pid=%d starting\n", myproc()->pid);
 
-	uthread_create_init();
-
-	for (;;) {
-		yield();
-		init_wait_children();
-	}
+	/* 加载 initcode 并 iret 进入 ring3；成功则不返回 */
+	kernel_execve(myproc(), "initcode");
+	panic("init: kernel_execve initcode failed");
 }
 
 void init_start(void)

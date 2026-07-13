@@ -8,6 +8,7 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "proc.h"
+#include "execve.h"
 #include "x86.h"
 #include "gdt.h"
 
@@ -135,4 +136,29 @@ int execve(struct proc *p, struct trapframe *tf, const char *path)
 		return -1;
 	}
 	return exec_load(p, tf, bin->blob, bin->size, bin->name);
+}
+
+/*
+ * 内核路径 execve（类似 Linux kernel_execve）：
+ * 当前 task 在内核态调用，加载用户映像后 iret 进 ring3，不返回。
+ */
+void kernel_execve(struct proc *p, const char *path)
+{
+	struct trapframe *tf;
+
+	if (!p || !p->kstack)
+		panic("kernel_execve: bad proc");
+
+	tf = (struct trapframe *)((char *)p->kstack + KSTACKSIZE -
+				  sizeof(struct trapframe));
+	memset(tf, 0, sizeof(*tf));
+
+	if (execve(p, tf, path) < 0)
+		panic("kernel_execve: exec failed");
+
+	p->kframe = tf;
+	p->entry = 0;
+	p->entry_arg = 0;
+
+	user_enter_ring3(p);
 }
