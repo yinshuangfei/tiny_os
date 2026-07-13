@@ -32,7 +32,7 @@ struct trapframe {
 	uint32 cs;	// esp+44 代码段选择子
 	uint32 eflags;	// esp+48 标志寄存器
 	// ring3 硬件压栈的用户 esp；内核态 trap 时无效
-	uint32 esp;	// esp+52 栈顶指针
+	uint32 esp;	// esp+52 栈顶指针（陷入瞬间的用户栈指针）
 	// ring3 硬件压栈的用户 ss；内核态 trap 时无效
 	uint32 ss;	// esp+56 栈段选择子 (最先压入，最后弹出)
 
