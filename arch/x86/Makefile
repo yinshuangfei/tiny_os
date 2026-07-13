@@ -88,7 +88,10 @@ AS_OBJS = \
 
 INITCODE_BIN=$(USERDIR)/initcode.bin
 LOADER_BIN=$(USERDIR)/loader.bin
-INITCODE_OBJS=$(USERDIR)/start.o $(USERDIR)/initcode.o $(USERDIR)/usys.o $(USERDIR)/printf.o
+SH_BIN=$(USERDIR)/sh.bin
+USER_LIB_OBJS=$(USERDIR)/start.o $(USERDIR)/usys.o $(USERDIR)/printf.o
+INITCODE_OBJS=$(USER_LIB_OBJS) $(USERDIR)/initcode.o
+SH_OBJS=$(USER_LIB_OBJS) $(USERDIR)/sh.o
 
 OBJS = $(C_OBJS) $(AS_OBJS)
 
@@ -97,11 +100,18 @@ $(INITCODE_BIN): $(INITCODE_OBJS)
 	@$(LD) -m elf_i386 -N -e _start -Ttext 0x00400000 -o $(USERDIR)/initcode.elf $(INITCODE_OBJS)
 	@$(OBJCOPY) -O binary -j .text -j .rodata $(USERDIR)/initcode.elf $@
 
+$(SH_BIN): $(SH_OBJS)
+	@$(LD) -m elf_i386 -N -e _start -Ttext 0x00400000 -o $(USERDIR)/sh.elf $(SH_OBJS)
+	@$(OBJCOPY) -O binary -j .text -j .rodata $(USERDIR)/sh.elf $@
+
 $(LOADER_BIN): $(USERDIR)/loader.o
 	@$(LD) -m elf_i386 -N -e start -Ttext 0x00400000 -o $(USERDIR)/loader.elf $(USERDIR)/loader.o
 	@$(OBJCOPY) -O binary -j .text -j .rodata $(USERDIR)/loader.elf $@
 
 $(USERDIR)/initcode.o: $(USERDIR)/initcode.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(USERDIR)/sh.o: $(USERDIR)/sh.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/printf.o: $(USERDIR)/printf.c
@@ -116,7 +126,7 @@ $(USERDIR)/start.o: $(USERDIR)/start.S
 $(USERDIR)/loader.o: $(USERDIR)/loader.S
 	$(AS) --32 $< -o $@
 
-$(KDIR)/userbins.o: $(KDIR)/userbins.inc.S $(INITCODE_BIN) $(LOADER_BIN)
+$(KDIR)/userbins.o: $(KDIR)/userbins.inc.S $(INITCODE_BIN) $(LOADER_BIN) $(SH_BIN)
 	$(AS) --32 $(KDIR)/userbins.inc.S -o $@
 
 $(KDIR)/trap.o: $(KDIR)/trap.S
@@ -171,6 +181,7 @@ clean:
 	setup.elf setup.bin kernel_body.elf kernel_body.bin \
 	$(BOOTDIR)/*.o $(BOOTDIR)/*.bin \
 	$(USERDIR)/initcode.o $(USERDIR)/initcode.elf $(USERDIR)/initcode.bin \
+	$(USERDIR)/sh.o $(USERDIR)/sh.elf $(USERDIR)/sh.bin \
 	$(USERDIR)/printf.o $(USERDIR)/usys.o $(USERDIR)/start.o \
 	$(USERDIR)/loader.o $(USERDIR)/loader.elf $(USERDIR)/loader.bin \
 	$(OBJS)

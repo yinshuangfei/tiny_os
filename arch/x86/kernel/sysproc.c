@@ -106,6 +106,29 @@ int sys_nanosleep(struct trapframe *tf)
 	return 0;
 }
 
+int sys_read(struct trapframe *tf)
+{
+	int fd, n, i;
+	uint uaddr;
+	struct proc *p = myproc();
+	char c;
+
+	if (argint(tf, 0, &fd) < 0 || argaddr(tf, 1, &uaddr) < 0 ||
+	    argint(tf, 2, &n) < 0)
+		return -1;
+	if (fd != 0 || n < 0)
+		return -1;
+	if (!p || !p->pagetable)
+		return -1;
+
+	for (i = 0; i < n; i++) {
+		c = (char)uart_getc();
+		if (copyout(p->pagetable, uaddr + i, &c, 1) < 0)
+			return -1;
+	}
+	return n;
+}
+
 int sys_write(struct trapframe *tf)
 {
 	int fd, n, i;

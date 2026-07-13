@@ -47,3 +47,11 @@ void uart_puts(const char *s)
 	while (*s)
 		uart_putc(*s++);
 }
+
+/* 阻塞读一字节（LSR bit0 = 接收就绪） */
+int uart_getc(void)
+{
+	while ((inb(SERIAL_COM1_LSR) & 1) == 0)
+		;
+	return inb(SERIAL_COM1_RBR) & 0xff;
+}

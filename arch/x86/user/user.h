@@ -14,6 +14,7 @@ int fork(void);
 int getpid(void);
 int nanosleep(const struct timespec *req, struct timespec *rem);
 int waitpid(int pid, int *status, int options);
+int read(int fd, void *buf, int n);
 int write(int, const void *, int);
 
 int printf(const char *fmt, ...);

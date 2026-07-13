@@ -16,6 +16,8 @@ extern char initcode[];
 extern char initcode_end[];
 extern char loader[];
 extern char loader_end[];
+extern char sh[];
+extern char sh_end[];
 
 struct userbin {
 	const char *name;
@@ -26,6 +28,7 @@ struct userbin {
 static struct userbin userbins[] = {
 	{ "loader",   loader,   0 },
 	{ "initcode", initcode, 0 },
+	{ "sh",       sh,       0 },
 };
 
 static int streq(const char *a, const char *b)
@@ -53,6 +56,8 @@ static const struct userbin *userbin_lookup(const char *path)
 				userbins[i].size = (uint)(loader_end - loader);
 			else if (userbins[i].blob == initcode)
 				userbins[i].size = (uint)(initcode_end - initcode);
+			else if (userbins[i].blob == sh)
+				userbins[i].size = (uint)(sh_end - sh);
 		}
 		if (streq(name, userbins[i].name))
 			return &userbins[i];

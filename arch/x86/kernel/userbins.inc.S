@@ -14,3 +14,9 @@ loader_end:
 initcode:
 .incbin "user/initcode.bin"
 initcode_end:
+
+.global sh
+.global sh_end
+sh:
+.incbin "user/sh.bin"
+sh_end:

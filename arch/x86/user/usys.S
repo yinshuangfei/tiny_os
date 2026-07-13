@@ -40,6 +40,15 @@ write:
 	int $0x80
 	ret
 
+.globl read
+read:
+	movl 4(%esp), %ebx
+	movl 8(%esp), %ecx
+	movl 12(%esp), %edx
+	movl $SYS_read, %eax
+	int $0x80
+	ret
+
 .globl nanosleep
 nanosleep:
 	movl 4(%esp), %ebx

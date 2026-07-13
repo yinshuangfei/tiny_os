@@ -15,15 +15,15 @@
  */
 #define WEXITSTATUS(s)	((s) & 0xff)
 
-/* 类似 getty：fork 一个子进程（此处模拟 shell） */
+/* 类似 getty：fork + execve 拉起 shell */
 static void spawn_shell(void)
 {
 	int pid = fork();
 
 	if (pid == 0) {
-		/* 子进程：干活后 exit，由 init waitpid 收尸 */
-		printf("sh: pid=%d running\n", getpid());
-		exit(0);
+		execve("sh", 0, 0);
+		printf("init: exec sh failed\n");
+		exit(1);
 	}
 	if (pid < 0)
 		printf("init: fork failed\n");
