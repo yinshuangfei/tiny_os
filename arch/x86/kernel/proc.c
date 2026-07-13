@@ -1,6 +1,7 @@
 /*
  * 进程 / 内核线程：PCB、就绪队列、scheduler + swtch 切换。
  */
+#include "printk.h"
 #include "types.h"
 #include "defs.h"
 #include "param.h"
@@ -798,6 +799,7 @@ void scheduler(void)
 			prepare_context(p);
 			release(&proc_lock);
 
+			printk(KERN_DEBUG "scheduler: switching to pid=%d\n", p->pid);
 			context_switch(&c->context, &p->context);
 
 			c->proc = 0;
@@ -812,6 +814,7 @@ void scheduler(void)
 			}
 			c->last_sched = 0;
 		} else {
+			printk(KERN_DEBUG "scheduler: no process to switch to, halting\n");
 			release(&proc_lock);
 			halt();
 		}

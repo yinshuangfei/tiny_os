@@ -17,8 +17,6 @@
 #define SERIAL_COM1_MSR (SERIAL_COM1 + 6) // Modem Status Register
 #define SERIAL_COM1_SCR (SERIAL_COM1 + 7) // Scratch Register
 
-extern void serial_putc(char c);
-
 void serial_init(void)
 {
 	// 写 IER（中断使能），0x00 = 关闭所有串口中断
@@ -37,9 +35,12 @@ void serial_init(void)
 	outb(SERIAL_COM1_MCR, 0x0b);
 }
 
+/* 阻塞写一字节（LSR bit5 = THR 空） */
 void uart_putc(char c)
 {
-	serial_putc(c);
+	while ((inb(SERIAL_COM1_LSR) & 0x20) == 0)
+		;
+	outb(SERIAL_COM1_THR, c);
 }
 
 void uart_puts(const char *s)
@@ -51,7 +52,7 @@ void uart_puts(const char *s)
 /* 阻塞读一字节（LSR bit0 = 接收就绪） */
 int uart_getc(void)
 {
-	while ((inb(SERIAL_COM1_LSR) & 1) == 0)
+	while ((inb(SERIAL_COM1_LSR) & 0x01) == 0)
 		;
 	return inb(SERIAL_COM1_RBR) & 0xff;
 }

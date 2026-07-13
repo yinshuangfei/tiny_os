@@ -1,24 +1,5 @@
 .code32
-
-.macro SERIAL_PUTC
-serial_putc:
-	movb 4(%esp), %al
-	movb %al, %ah
-
-wait_tx_ready:
-	movw $0x3fd, %dx
-	inb %dx, %al
-	testb $0x20, %al
-	je wait_tx_ready
-	movb %ah, %al
-	movw $0x3f8, %dx
-	outb %al, %dx
-	ret
-.endm
-
 .section .text
-.globl serial_putc
-SERIAL_PUTC
 
 .globl _start
 .type _start, @function
