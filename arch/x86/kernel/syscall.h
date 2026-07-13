@@ -1,7 +1,7 @@
 #ifndef __SYSCALL_H__
 #define __SYSCALL_H__
 
-#include "../user/syscall.h"
+#include "../user/include/syscall.h"
 #include "trap.h"
 
 void syscall(struct trapframe *tf);

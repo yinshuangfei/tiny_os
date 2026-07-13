@@ -12,7 +12,7 @@ KERNEL_CFLAGS = [
     "-c",
 ]
 
-USER_CFLAGS = KERNEL_CFLAGS + ["-Iuser", "-fno-builtin"]
+USER_CFLAGS = KERNEL_CFLAGS + ["-Iuser/include", "-fno-builtin"]
 
 KERNEL_SOURCES = [
     "kernel/main.c", "kernel/mem.c", "kernel/serial.c", "kernel/timer.c",
@@ -24,7 +24,7 @@ KERNEL_SOURCES = [
     "test/kernel_test.c",
 ]
 
-USER_SOURCES = ["user/initcode.c"]
+USER_SOURCES = ["user/init.c", "user/lib/printf.c"]
 
 
 def entry(rel_path, cflags):

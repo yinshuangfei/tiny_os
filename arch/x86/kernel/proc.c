@@ -66,8 +66,6 @@ const char *procstate_str[] = {
 
 extern void swtch(struct context *old, struct context *new);
 extern void user_enter(struct trapframe *tf, pagetable_t pgdir) __attribute__((noreturn));
-extern char loader[];
-extern char loader_end[];
 extern char end[];
 extern void trap_user_return(void);
 

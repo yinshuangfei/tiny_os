@@ -3,11 +3,6 @@
  */
 .section .rodata
 .align 4
-.global loader
-.global loader_end
-loader:
-.incbin "user/loader.bin"
-loader_end:
 
 .global initcode
 .global initcode_end

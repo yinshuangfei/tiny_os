@@ -15,8 +15,6 @@
 
 extern char initcode[];
 extern char initcode_end[];
-extern char loader[];
-extern char loader_end[];
 extern char sh[];
 extern char sh_end[];
 
@@ -27,7 +25,6 @@ struct userbin {
 };
 
 static struct userbin userbins[] = {
-	{ "loader",   loader,   0 },
 	{ "initcode", initcode, 0 },
 	{ "sh",       sh,       0 },
 };
@@ -53,9 +50,7 @@ static const struct userbin *userbin_lookup(const char *path)
 
 	for (i = 0; i < sizeof(userbins) / sizeof(userbins[0]); i++) {
 		if (userbins[i].size == 0) {
-			if (userbins[i].blob == loader)
-				userbins[i].size = (uint)(loader_end - loader);
-			else if (userbins[i].blob == initcode)
+			if (userbins[i].blob == initcode)
 				userbins[i].size = (uint)(initcode_end - initcode);
 			else if (userbins[i].blob == sh)
 				userbins[i].size = (uint)(sh_end - sh);
@@ -138,7 +133,7 @@ int execve(struct proc *p, struct trapframe *tf, const char *path)
 
 	bin = userbin_lookup(path);
 	if (bin == 0) {
-		printf("execve: pid=%d unknown program '%s'\n", p->pid, path);
+		printk(KERN_ERR "execve: pid=%d unknown program '%s'\n", p->pid, path);
 		return -1;
 	}
 	return exec_load(p, tf, bin->blob, bin->size, bin->name);

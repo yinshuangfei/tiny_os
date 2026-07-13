@@ -1,6 +1,6 @@
 /*
  * 简易用户态 shell：从 stdin（串口）读命令，内置 help/pid/exit，
- * 其它名称经 fork + execve + waitpid 执行（loader、sh 等）。
+ * 其它名称经 fork + execve + waitpid 执行（如 sh）。
  */
 #include "user.h"
 
@@ -78,7 +78,7 @@ static int run_builtin(const char *cmd)
 		return 1;
 	if (streq(cmd, "help")) {
 		printf("commands: help, pid, exit\n");
-		printf("programs: loader, sh\n");
+		printf("programs: sh\n");
 		return 1;
 	}
 	if (streq(cmd, "pid")) {

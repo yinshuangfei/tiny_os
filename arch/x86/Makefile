@@ -23,7 +23,7 @@ QEMUOPTS += -serial stdio -monitor none
 
 CFLAGS := -m32 -ffreestanding -fno-pic -fno-stack-protector -nostdlib -Wall
 CFLAGS += -fno-asynchronous-unwind-tables -fno-unwind-tables
-USER_CFLAGS := $(CFLAGS) -I$(USERDIR) -ffreestanding -fno-builtin
+USER_CFLAGS := $(CFLAGS) -I$(USERDIR)/include -ffreestanding -fno-builtin
 
 ifeq ($(K),1)
 QEMUOPTS += -kernel kernel.elf
@@ -87,10 +87,9 @@ AS_OBJS = \
 	$(KDIR)/userbins.o \
 
 INITCODE_BIN=$(USERDIR)/initcode.bin
-LOADER_BIN=$(USERDIR)/loader.bin
 SH_BIN=$(USERDIR)/sh.bin
-USER_LIB_OBJS=$(USERDIR)/start.o $(USERDIR)/usys.o $(USERDIR)/printf.o
-INITCODE_OBJS=$(USER_LIB_OBJS) $(USERDIR)/initcode.o
+USER_LIB_OBJS=$(USERDIR)/lib/start.o $(USERDIR)/lib/usys.o $(USERDIR)/lib/printf.o
+INITCODE_OBJS=$(USER_LIB_OBJS) $(USERDIR)/init.o
 SH_OBJS=$(USER_LIB_OBJS) $(USERDIR)/sh.o
 
 OBJS = $(C_OBJS) $(AS_OBJS)
@@ -104,29 +103,22 @@ $(SH_BIN): $(SH_OBJS)
 	@$(LD) -m elf_i386 -N -e _start -Ttext 0x00400000 -o $(USERDIR)/sh.elf $(SH_OBJS)
 	@$(OBJCOPY) -O binary -j .text -j .rodata $(USERDIR)/sh.elf $@
 
-$(LOADER_BIN): $(USERDIR)/loader.o
-	@$(LD) -m elf_i386 -N -e start -Ttext 0x00400000 -o $(USERDIR)/loader.elf $(USERDIR)/loader.o
-	@$(OBJCOPY) -O binary -j .text -j .rodata $(USERDIR)/loader.elf $@
-
-$(USERDIR)/initcode.o: $(USERDIR)/initcode.c
+$(USERDIR)/init.o: $(USERDIR)/init.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/sh.o: $(USERDIR)/sh.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-$(USERDIR)/printf.o: $(USERDIR)/printf.c
+$(USERDIR)/lib/printf.o: $(USERDIR)/lib/printf.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-$(USERDIR)/usys.o: $(USERDIR)/usys.S
+$(USERDIR)/lib/usys.o: $(USERDIR)/lib/usys.S
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-$(USERDIR)/start.o: $(USERDIR)/start.S
+$(USERDIR)/lib/start.o: $(USERDIR)/lib/start.S
 	$(AS) --32 $< -o $@
 
-$(USERDIR)/loader.o: $(USERDIR)/loader.S
-	$(AS) --32 $< -o $@
-
-$(KDIR)/userbins.o: $(KDIR)/userbins.inc.S $(INITCODE_BIN) $(LOADER_BIN) $(SH_BIN)
+$(KDIR)/userbins.o: $(KDIR)/userbins.inc.S $(INITCODE_BIN) $(SH_BIN)
 	$(AS) --32 $(KDIR)/userbins.inc.S -o $@
 
 $(KDIR)/trap.o: $(KDIR)/trap.S
@@ -180,8 +172,8 @@ clean:
 	rm -f *.o *.elf *.bin *.img *.map *.vmdk *.tmp main.s test64.* \
 	setup.elf setup.bin kernel_body.elf kernel_body.bin \
 	$(BOOTDIR)/*.o $(BOOTDIR)/*.bin \
-	$(USERDIR)/initcode.o $(USERDIR)/initcode.elf $(USERDIR)/initcode.bin \
+	$(USERDIR)/init.o $(USERDIR)/initcode.o $(USERDIR)/initcode.elf $(USERDIR)/initcode.bin \
 	$(USERDIR)/sh.o $(USERDIR)/sh.elf $(USERDIR)/sh.bin \
+	$(USERDIR)/lib/printf.o $(USERDIR)/lib/usys.o $(USERDIR)/lib/start.o \
 	$(USERDIR)/printf.o $(USERDIR)/usys.o $(USERDIR)/start.o \
-	$(USERDIR)/loader.o $(USERDIR)/loader.elf $(USERDIR)/loader.bin \
 	$(OBJS)
