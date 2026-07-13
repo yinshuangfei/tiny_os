@@ -119,11 +119,29 @@ static void run_cmd(char *line)
 		run_external(cmd);
 }
 
+static void print_banner(void)
+{
+	printf("\n");
+	printf("========================================\n");
+	printf("    _______                ____  _____\n");
+	printf("   /_  __(_)___  __  __   / __ \\/ ___/\n");
+	printf("    / / / / __ \\/ / / /  / / / /\\__ \\\n");
+	printf("   / / / / / / / /_/ /  / /_/ /___/ /\n");
+	printf("  /_/ /_/_/ /_/\\__, /   \\____//____/\n");
+	printf("              /____/\n");
+	printf("\n");
+	printf("        Welcome to Tiny-OS shell\n");
+	printf("        type 'help' for commands\n");
+	printf("\n");
+	printf("========================================\n");
+	printf("\n");
+}
+
 int main(void)
 {
 	char line[BUFSZ];
 
-	printf("tiny-sh pid=%d\n", getpid());
+	print_banner();
 	for (;;) {
 		printf("$ ");
 		if (readline(line, sizeof(line)) < 0)

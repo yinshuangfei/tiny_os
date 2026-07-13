@@ -2,6 +2,7 @@
  * execve：将当前进程映像替换为内核嵌入的 flat binary。
  * 尚无文件系统，按程序名查表（见 userbins[]）。
  */
+#include "printk.h"
 #include "types.h"
 #include "defs.h"
 #include "param.h"
@@ -123,7 +124,7 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 	current_user_pgdir = newpg;
 	uvmfree(oldpg);
 
-	printf("execve: pid=%d name=%s eip=0x%x\n", p->pid, p->name, tf->eip);
+	printk(KERN_DEBUG "execve: pid=%d name=%s eip=0x%x\n", p->pid, p->name, tf->eip);
 	return 0;
 
 bad:

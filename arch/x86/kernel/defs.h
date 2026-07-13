@@ -22,7 +22,8 @@ unsigned int pmm_nr_free_pages(void);
 void cpu_init(void);
 
 
-/** printf.c */
+/** printf.c / printk */
+#include "printk.h"
 void printf(char *fmt, ...);
 void printfinit(void);
 void panic(char *s);

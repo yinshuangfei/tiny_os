@@ -326,7 +326,7 @@ void user_enter_ring3(struct proc *p)
 	current_user_pgdir = p->pagetable;
 	tss_set_esp0((uint)p->kstack + KSTACKSIZE);
 
-	printf("user_start: pid=%d eip=0x%x esp=0x%x pgdir=%p\n",
+	printk(KERN_DEBUG "user_start: pid=%d eip=0x%x esp=0x%x pgdir=%p\n",
 	       p->pid, p->kframe->eip, p->kframe->esp, p->pagetable);
 
 	user_enter(p->kframe, p->pagetable);

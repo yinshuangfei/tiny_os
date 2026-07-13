@@ -2,10 +2,14 @@
 
 #include "types.h"
 #include "defs.h"
+#include "printk.h"
 #include "x86.h"
 #include "spinlock.h"
 
 volatile int panicked = 0;
+
+/* 默认 INFO：打印 <= INFO 的消息，过滤 DEBUG */
+int console_loglevel = LOGLEVEL_INFO;
 
 static struct {
 	struct spinlock lock;
@@ -75,21 +79,13 @@ static void printptr(uint64 x)
 		consputc(digits[x >> (sizeof(uint64) * 8 - 4)]);
 }
 
-void printf(char *fmt, ...)
+static void vprintf(const char *fmt, va_list ap)
 {
-	va_list ap;
 	int i, c, c2;
-	int locking;
 	char *s;
-
-	locking = pr.locking;
-	if (locking)
-		acquire(&pr.lock);
 
 	if (fmt == 0)
 		panic("null fmt");
-
-	va_start(ap, fmt);
 
 	for (i = 0; (c = fmt[i] & 0xff) != 0; i++) {
 		if (c != '%') {
@@ -102,9 +98,6 @@ void printf(char *fmt, ...)
 			break;
 
 		switch (c) {
-		// case 'c':
-		// 	consputc(va_arg(ap, int));
-		// 	break;
 		case 'o':
 			printint(va_arg(ap, int), 8, 1);
 			break;
@@ -125,7 +118,6 @@ void printf(char *fmt, ...)
 			} else {
 				consputc(c);
 			}
-
 			break;
 		case 'p':
 			printptr(va_arg(ap, uint64));
@@ -140,14 +132,68 @@ void printf(char *fmt, ...)
 			consputc('%');
 			break;
 		default:
-			// Print unknown % sequence to draw attention.
 			consputc('%');
 			consputc(c);
 			break;
 		}
 	}
+}
+
+void printf(char *fmt, ...)
+{
+	va_list ap;
+	int locking;
+
+	locking = pr.locking;
+	if (locking)
+		acquire(&pr.lock);
+
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
+
 	if (locking)
 		release(&pr.lock);
+}
+
+/*
+ * 解析 Linux 风格前缀 "<n>"，返回日志级别，并通过 *fmtp 跳过前缀。
+ * 无前缀时默认 LOGLEVEL_INFO。
+ */
+static int printk_get_level(const char **fmtp)
+{
+	const char *fmt = *fmtp;
+
+	if (fmt[0] == '<' && fmt[1] >= '0' && fmt[1] <= '7' && fmt[2] == '>') {
+		*fmtp = fmt + 3;
+		return fmt[1] - '0';
+	}
+	return LOGLEVEL_INFO;
+}
+
+int printk(const char *fmt, ...)
+{
+	va_list ap;
+	int level, locking;
+
+	if (!fmt)
+		return 0;
+
+	level = printk_get_level(&fmt);
+	if (level > console_loglevel)
+		return 0;
+
+	locking = pr.locking;
+	if (locking)
+		acquire(&pr.lock);
+
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
+
+	if (locking)
+		release(&pr.lock);
+	return 0;
 }
 
 void panic(char *s)

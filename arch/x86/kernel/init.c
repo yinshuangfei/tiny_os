@@ -13,7 +13,7 @@ static void kernel_init(void *arg)
 {
 	(void)arg;
 
-	printf("init: kernel pid=%d starting\n", myproc()->pid);
+	printk(KERN_INFO "init: kernel pid=%d starting\n", myproc()->pid);
 
 	/* 加载 initcode 并 iret 进入 ring3；成功则不返回 */
 	kernel_execve(myproc(), "initcode");
@@ -32,12 +32,12 @@ void rest_init(void)
 	if (!initproc)
 		panic("rest_init: create init failed");
 	initproc->parent = swapper;
-	printf("init: created pid=%d, parent=swapper\n", initproc->pid);
+	printk(KERN_INFO "init: created pid=%d, parent=swapper\n", initproc->pid);
 
 	kthreadd_task = kthread_create(kthreadd, 0, "kthreadd");
 	if (!kthreadd_task)
 		panic("rest_init: create kthreadd failed");
 	kthreadd_task->parent = swapper;
-	printf("kthreadd: created pid=%d, parent=swapper\n",
+	printk(KERN_INFO "kthreadd: created pid=%d, parent=swapper\n",
 	       kthreadd_task->pid);
 }

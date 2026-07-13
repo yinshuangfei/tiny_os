@@ -34,7 +34,6 @@ int main(void)
 	int status;
 	int pid;
 
-	printf("init: user pid=%d starting\n", getpid());
 	spawn_shell();
 
 	for (;;) {
