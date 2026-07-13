@@ -13,6 +13,8 @@ int exit(int) __attribute__((noreturn));
 int fork(void);
 int getpid(void);
 int nanosleep(const struct timespec *req, struct timespec *rem);
+unsigned int sleep(unsigned int seconds);
+int usleep(unsigned int usec);
 int waitpid(int pid, int *status, int options);
 int read(int fd, void *buf, int n);
 int write(int, const void *, int);

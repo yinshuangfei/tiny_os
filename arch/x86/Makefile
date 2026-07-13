@@ -89,10 +89,15 @@ AS_OBJS = \
 	$(KDIR)/swtch.o \
 	$(KDIR)/userbins.o \
 
+USER_LIB_OBJS = \
+	$(USERDIR)/lib/start.o \
+	$(USERDIR)/lib/usys.o \
+	$(USERDIR)/lib/printf.o \
+	$(USERDIR)/lib/sleep.o \
+
 INITCODE_BIN=$(USERDIR)/init.bin
-SH_BIN=$(USERDIR)/sh.bin
-USER_LIB_OBJS=$(USERDIR)/lib/start.o $(USERDIR)/lib/usys.o $(USERDIR)/lib/printf.o
 INITCODE_OBJS=$(USER_LIB_OBJS) $(USERDIR)/init.o
+SH_BIN=$(USERDIR)/sh.bin
 SH_OBJS=$(USER_LIB_OBJS) $(USERDIR)/sh.o
 
 OBJS = $(C_OBJS) $(AS_OBJS)
@@ -113,6 +118,9 @@ $(USERDIR)/sh.o: $(USERDIR)/sh.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/lib/printf.o: $(USERDIR)/lib/printf.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(USERDIR)/lib/sleep.o: $(USERDIR)/lib/sleep.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/lib/usys.o: $(USERDIR)/lib/usys.S
@@ -179,4 +187,5 @@ clean:
 	setup.elf setup.bin kernel_body.elf kernel_body.bin \
 	$(BOOTDIR)/*.o $(BOOTDIR)/*.bin \
 	$(USERDIR)/*.o $(USERDIR)/*.elf $(USERDIR)/*.bin \
+	$(USERDIR)/lib/*.o \
 	$(OBJS)
