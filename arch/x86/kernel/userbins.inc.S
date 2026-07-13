@@ -4,11 +4,11 @@
 .section .rodata
 .align 4
 
-.global initcode
-.global initcode_end
-initcode:
-.incbin "user/initcode.bin"
-initcode_end:
+.global init
+.global init_end
+init:
+.incbin "user/init.bin"
+init_end:
 
 .global sh
 .global sh_end

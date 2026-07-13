@@ -15,9 +15,9 @@ static void kernel_init(void *arg)
 
 	printk(KERN_INFO "init: kernel pid=%d starting\n", myproc()->pid);
 
-	/* 加载 initcode 并 iret 进入 ring3；成功则不返回 */
-	kernel_execve(myproc(), "initcode");
-	panic("init: kernel_execve initcode failed");
+	/* 加载 init 并 iret 进入 ring3；成功则不返回 */
+	kernel_execve(myproc(), "init");
+	panic("init: kernel_execve init failed");
 }
 
 void rest_init(void)

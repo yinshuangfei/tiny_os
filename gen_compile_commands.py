@@ -96,13 +96,30 @@ def main() -> int:
     for arch_dir in arch_make_dirs():
         arch_cc = make_var(arch_dir, "cc")
         arch_cflags = make_var(arch_dir, "cflags").split()
+        try:
+            arch_user_cflags = make_var(arch_dir, "user-cflags").split()
+        except subprocess.CalledProcessError:
+            arch_user_cflags = arch_cflags
         arch_srcs = arch_sources(arch_dir)
+        kernel_srcs = [
+            s for s in arch_srcs if "/user/" not in s.replace("\\", "/")
+        ]
+        user_srcs = [
+            s for s in arch_srcs if "/user/" in s.replace("\\", "/")
+        ]
         add_entries(
             db,
             directory=arch_dir,
             cc=arch_cc,
             cflags=arch_cflags,
-            sources=arch_srcs,
+            sources=kernel_srcs,
+        )
+        add_entries(
+            db,
+            directory=arch_dir,
+            cc=arch_cc,
+            cflags=arch_user_cflags,
+            sources=user_srcs,
         )
     path = os.path.join(ROOT, "compile_commands.json")
     with open(path, "w", encoding="utf-8") as f:

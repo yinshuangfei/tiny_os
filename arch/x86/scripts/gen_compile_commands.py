@@ -24,7 +24,12 @@ KERNEL_SOURCES = [
     "test/kernel_test.c",
 ]
 
-USER_SOURCES = ["user/init.c", "user/lib/printf.c"]
+USER_SOURCES = [
+    "user/init.c",
+    "user/sh.c",
+    "user/test.c",
+    "user/lib/printf.c",
+]
 
 
 def entry(rel_path, cflags):

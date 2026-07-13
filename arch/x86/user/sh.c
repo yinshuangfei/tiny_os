@@ -119,7 +119,7 @@ static void run_cmd(char *line)
 		run_external(cmd);
 }
 
-static void print_banner(void)
+void print_banner(void)
 {
 	printf("\n");
 	printf("========================================\n");
@@ -141,7 +141,7 @@ int main(void)
 {
 	char line[BUFSZ];
 
-	print_banner();
+	// print_banner();
 	for (;;) {
 		printf("$ ");
 		if (readline(line, sizeof(line)) < 0)

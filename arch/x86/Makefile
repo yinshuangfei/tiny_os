@@ -86,7 +86,7 @@ AS_OBJS = \
 	$(KDIR)/swtch.o \
 	$(KDIR)/userbins.o \
 
-INITCODE_BIN=$(USERDIR)/initcode.bin
+INITCODE_BIN=$(USERDIR)/init.bin
 SH_BIN=$(USERDIR)/sh.bin
 USER_LIB_OBJS=$(USERDIR)/lib/start.o $(USERDIR)/lib/usys.o $(USERDIR)/lib/printf.o
 INITCODE_OBJS=$(USER_LIB_OBJS) $(USERDIR)/init.o
@@ -96,8 +96,8 @@ OBJS = $(C_OBJS) $(AS_OBJS)
 
 # -j .rodata 保存常量字符串
 $(INITCODE_BIN): $(INITCODE_OBJS)
-	@$(LD) -m elf_i386 -N -e _start -Ttext 0x00400000 -o $(USERDIR)/initcode.elf $(INITCODE_OBJS)
-	@$(OBJCOPY) -O binary -j .text -j .rodata $(USERDIR)/initcode.elf $@
+	@$(LD) -m elf_i386 -N -e _start -Ttext 0x00400000 -o $(USERDIR)/init.elf $(INITCODE_OBJS)
+	@$(OBJCOPY) -O binary -j .text -j .rodata $(USERDIR)/init.elf $@
 
 $(SH_BIN): $(SH_OBJS)
 	@$(LD) -m elf_i386 -N -e _start -Ttext 0x00400000 -o $(USERDIR)/sh.elf $(SH_OBJS)
@@ -165,6 +165,9 @@ print-cc:
 print-cflags:
 	@echo $(CFLAGS)
 
+print-user-cflags:
+	@echo $(USER_CFLAGS)
+
 compile_commands.json:
 	@python3 scripts/gen_compile_commands.py
 
@@ -172,8 +175,5 @@ clean:
 	rm -f *.o *.elf *.bin *.img *.map *.vmdk *.tmp main.s test64.* \
 	setup.elf setup.bin kernel_body.elf kernel_body.bin \
 	$(BOOTDIR)/*.o $(BOOTDIR)/*.bin \
-	$(USERDIR)/init.o $(USERDIR)/initcode.o $(USERDIR)/initcode.elf $(USERDIR)/initcode.bin \
-	$(USERDIR)/sh.o $(USERDIR)/sh.elf $(USERDIR)/sh.bin \
-	$(USERDIR)/lib/printf.o $(USERDIR)/lib/usys.o $(USERDIR)/lib/start.o \
-	$(USERDIR)/printf.o $(USERDIR)/usys.o $(USERDIR)/start.o \
+	$(USERDIR)/*.o $(USERDIR)/*.elf $(USERDIR)/*.bin \
 	$(OBJS)

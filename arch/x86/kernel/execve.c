@@ -13,8 +13,8 @@
 #include "x86.h"
 #include "gdt.h"
 
-extern char initcode[];
-extern char initcode_end[];
+extern char init[];
+extern char init_end[];
 extern char sh[];
 extern char sh_end[];
 
@@ -25,8 +25,8 @@ struct userbin {
 };
 
 static struct userbin userbins[] = {
-	{ "initcode", initcode, 0 },
-	{ "sh",       sh,       0 },
+	{ "init", init, 0 },
+	{ "sh", sh, 0 },
 };
 
 static int streq(const char *a, const char *b)
@@ -50,8 +50,8 @@ static const struct userbin *userbin_lookup(const char *path)
 
 	for (i = 0; i < sizeof(userbins) / sizeof(userbins[0]); i++) {
 		if (userbins[i].size == 0) {
-			if (userbins[i].blob == initcode)
-				userbins[i].size = (uint)(initcode_end - initcode);
+			if (userbins[i].blob == init)
+				userbins[i].size = (uint)(init_end - init);
 			else if (userbins[i].blob == sh)
 				userbins[i].size = (uint)(sh_end - sh);
 		}
