@@ -78,6 +78,9 @@ C_OBJS = \
 	$(KDIR)/syscall.o \
 	$(KDIR)/sysproc.o \
 	$(KDIR)/execve.o \
+	$(KDIR)/fs/ramfs.o \
+	$(KDIR)/fs/file.o \
+	$(KDIR)/fs/sysfile.o \
 	$(TESTDIR)/kernel_test.o \
 
 AS_OBJS = \

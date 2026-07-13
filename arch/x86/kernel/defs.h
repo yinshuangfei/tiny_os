@@ -43,4 +43,7 @@ void uart_puts(const char *s);
 /** syscall */
 #include "syscall.h"
 
+/** fs */
+void fs_init(void);
+
 #endif

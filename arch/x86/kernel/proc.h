@@ -7,6 +7,8 @@
 #include "vm.h"
 #include "trap.h"
 
+struct file;
+
 /* 用 X-Macro 维护一份 PROCSTATE_LIST */
 #define PROCSTATE_LIST \
 	X(UNUSED) \
@@ -51,7 +53,7 @@ struct proc {
 	enum procstate state;
 	int pid;
 	struct proc *parent;
-	void *chan;
+	void *chan;			/* 睡眠通道 */
 	unsigned int wakeup_tick;	/* 唤醒时间戳 */
 	int killed;
 	int xstate;			/* 退出状态 */
@@ -59,12 +61,13 @@ struct proc {
 	pagetable_t pagetable;		/* 用户页表 */
 	struct trapframe *kframe;	/* 指向内核栈的栈顶的 trapframe */
 	struct context context;		/* 进程上下文 */
-	void *kstack;			/* 内核栈（用户态及内核态） */
+	void *kstack;			/* 内核栈（用户线程及内核线程） */
 	void (*entry)(void *);
 	void *entry_arg;
 	uint sz;			/* 用户虚拟空间大小 */
 	char name[NNAME];
 	int swtched;			/* 1: context 由 sched 保存，可 swtch 恢复 */
+	struct file *ofile[NOFILE];	/* 打开文件表 */
 };
 
 extern struct cpu cpus[NCPU];

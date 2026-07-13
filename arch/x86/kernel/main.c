@@ -33,6 +33,8 @@ void main(void)
 	kvm_init();
 	// 初始化进程表
 	procinit();
+	// 内存文件系统
+	fs_init();
 	// printf 自旋锁（须在 sti 之前，避免定时器 IRQ 交错输出）
 	printfinit();
 	// 初始化时钟

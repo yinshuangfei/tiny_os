@@ -71,3 +71,18 @@ waitpid:
 	movl $SYS_waitpid, %eax
 	int $0x80
 	ret
+
+.globl open
+open:
+	movl 4(%esp), %ebx
+	movl 8(%esp), %ecx
+	movl $SYS_open, %eax
+	int $0x80
+	ret
+
+.globl close
+close:
+	movl 4(%esp), %ebx
+	movl $SYS_close, %eax
+	int $0x80
+	ret

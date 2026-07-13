@@ -15,6 +15,7 @@
 #include "x86.h"
 #include "debug.h"
 #include "gdt.h"
+#include "fs/fs.h"
 
 /* 进程表 */
 struct proc *proc_table;
@@ -142,6 +143,8 @@ void exit(int status)
 
 	if (p == initproc)
 		panic("init exiting");	/* pid 1 不能 exit（用户态 init 亦同） */
+
+	fd_closeall(p);
 
 	if (p->pagetable) {
 		if (current_user_pgdir == p->pagetable)
@@ -869,6 +872,8 @@ int fork_copy(struct trapframe *tf)
 	}
 	ntf->eax = 0;	/* 子进程 fork 返回 0 */
 	np->kframe = ntf;
+
+	fd_copy(np, p);
 
 	fork_user_ctx_init(np);
 

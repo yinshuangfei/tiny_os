@@ -16,6 +16,8 @@ int nanosleep(const struct timespec *req, struct timespec *rem);
 int waitpid(int pid, int *status, int options);
 int read(int fd, void *buf, int n);
 int write(int, const void *, int);
+int open(const char *path, int flags);
+int close(int fd);
 
 int printf(const char *fmt, ...);
 

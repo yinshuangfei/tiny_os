@@ -12,6 +12,7 @@
 #include "execve.h"
 #include "x86.h"
 #include "gdt.h"
+#include "fs/fs.h"
 
 extern char init[];
 extern char init_end[];
@@ -160,6 +161,9 @@ void kernel_execve(struct proc *p, const char *path)
 	p->kframe = tf;
 	p->entry = 0;
 	p->entry_arg = 0;
+
+	if (!p->ofile[0])
+		fd_install_stdio(p);
 
 	user_enter_ring3(p);
 }

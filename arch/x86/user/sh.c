@@ -71,14 +71,41 @@ static int readline(char *buf, int n)
 	return i;
 }
 
-/* 执行内置命令 */
-static int run_builtin(const char *cmd)
+/* 执行内置命令；返回 1 表示已处理 */
+static int run_builtin(char *line)
 {
-	if (*cmd == '\0')
+	char cmd[BUFSZ];
+	char path[BUFSZ];
+	char buf[64];
+	int fd, n;
+	char *p;
+
+	firstword(line, cmd, sizeof(cmd));
+	if (cmd[0] == '\0')
 		return 1;
 	if (streq(cmd, "help")) {
-		printf("commands: help, pid, exit\n");
+		printf("commands: help, pid, cat, exit\n");
 		printf("programs: sh\n");
+		return 1;
+	}
+	if (streq(cmd, "cat")) {
+		p = skipsp(line);
+		while (*p && !is_space(*p))
+			p++;
+		p = skipsp(p);
+		firstword(p, path, sizeof(path));
+		if (path[0] == '\0') {
+			printf("usage: cat <path>\n");
+			return 1;
+		}
+		fd = open(path, O_RDONLY);
+		if (fd < 0) {
+			printf("cat: cannot open %s\n", path);
+			return 1;
+		}
+		while ((n = read(fd, buf, sizeof(buf))) > 0)
+			write(1, buf, n);
+		close(fd);
 		return 1;
 	}
 	if (streq(cmd, "pid")) {
@@ -114,9 +141,10 @@ static void run_cmd(char *line)
 {
 	char cmd[BUFSZ];
 
+	if (run_builtin(line))
+		return;
 	firstword(line, cmd, sizeof(cmd));
-	if (!run_builtin(cmd))
-		run_external(cmd);
+	run_external(cmd);
 }
 
 void print_banner(void)
