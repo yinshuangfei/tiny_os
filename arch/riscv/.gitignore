@@ -1,0 +1,15 @@
+.vscode/
+compile_commands.json
+*.o
+*.d
+kernel/kernel
+kernel.asm
+kernel.sym
+fs.img
+mkfs/mkfs
+*.sym
+*.asm
+_*
+lib/usys.S
+.cache
+.clangd
