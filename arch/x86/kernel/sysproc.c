@@ -35,6 +35,36 @@ int sys_getpid(struct trapframe *tf)
 	return myproc()->pid;
 }
 
+int sys_fork(struct trapframe *tf)
+{
+	return fork_copy(tf);
+}
+
+int sys_waitpid(struct trapframe *tf)
+{
+	int pid, options, st, reaped;
+	uint ustatus;
+	struct proc *p = myproc();
+
+	if (!p || !p->pagetable)
+		return -1;
+	if (argint(tf, 0, &pid) < 0)
+		return -1;
+	if (argint(tf, 2, &options) < 0)
+		options = 0;
+	(void)options;
+
+	reaped = wait_child(pid, &st, p);
+	if (reaped < 0)
+		return -1;
+
+	if (argaddr(tf, 1, &ustatus) == 0 && ustatus != 0) {
+		if (copyout(p->pagetable, ustatus, &st, sizeof(st)) < 0)
+			return -1;
+	}
+	return reaped;
+}
+
 int sys_exit(struct trapframe *tf)
 {
 	int status;

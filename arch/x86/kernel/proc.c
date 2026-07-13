@@ -18,6 +18,7 @@
 
 struct proc *proc_table;
 struct proc *initproc;
+struct proc *userinit;	/* 用户态 init（类似 Linux pid 1），孤儿收养目标 */
 
 /* trap 路径在返回 ring3 前据此恢复用户 CR3 */
 pagetable_t current_user_pgdir;
@@ -43,7 +44,10 @@ extern void swtch(struct context *old, struct context *new);
 extern void user_enter(struct trapframe *tf, pagetable_t pgdir) __attribute__((noreturn));
 extern char loader[];
 extern char loader_end[];
+extern char initcode[];
+extern char initcode_end[];
 extern char end[];
+extern void trap_user_return(void);
 
 static int esp_on_kstack(struct proc *p, uint esp);
 
@@ -93,30 +97,32 @@ static void zombie_reap_locked(struct proc *p)
 	p->name[0] = '\0';
 }
 
-static void zombie_reap(struct proc *p)
+/* 孤儿进程的收养者：优先用户 init，否则内核 init（类似 Linux reparent 到 pid 1） */
+static struct proc *child_reaper(void)
 {
-	acquire(&proc_lock);
-	zombie_reap_locked(p);
-	release(&proc_lock);
+	if (userinit && userinit->state != UNUSED && userinit->state != ZOMBIE)
+		return userinit;
+	return initproc;
 }
 
-/* 将子进程的父进程设置为 init */
+/* 将子进程的父进程改挂到 init（用户或内核） */
 static void reparent(struct proc *p)
 {
 	int i;
-	struct proc *cp;	/* child proc */
+	struct proc *cp;
+	struct proc *reaper = child_reaper();
 
 	for (i = 0; i < NPROC; i++) {
 		cp = &proc_table[i];
 		if (cp->parent == p && cp->state != UNUSED)
-			cp->parent = initproc;
+			cp->parent = reaper;
 	}
 }
 
 /*
- * 终止当前进程；不返回。资源由 exit 与 scheduler 分阶段释放：
- *   exit      — 用户页表、ZOMBIE 状态、唤醒父进程
- *   scheduler — 回收 kstack 与 PCB
+ * 终止当前进程；不返回。资源分阶段释放：
+ *   exit      — 用户页表、ZOMBIE 状态、reparent 孤儿、唤醒父进程
+ *   wait      — 父进程 waitpid / init_wait_children 回收 kstack 与 PCB
  */
 void exit(int status)
 {
@@ -125,6 +131,8 @@ void exit(int status)
 
 	if (p == initproc)
 		panic("init exiting");
+	if (p == userinit)
+		panic("user init exiting");	/* 类似 Linux：pid 1 不能 exit */
 
 	if (p->pagetable) {
 		if (current_user_pgdir == p->pagetable)
@@ -372,6 +380,9 @@ static int context_sane(struct proc *p)
 		return 0;
 	if (eip == (uint)user_start_trampoline)
 		return 1;
+	/* fork 子进程：esp 指向 kframe，eip 为 trap_user_return */
+	if (eip == (uint)trap_user_return)
+		return p->kframe != 0 && context_on_kstack(p);
 	if (!on_kernel_text(eip))
 		return 0;
 	retaddr = *(uint *)p->context.esp;
@@ -650,6 +661,9 @@ void scheduler(void)
 			c->proc = p;
 			if (p->kstack)
 				tss_set_esp0((uint)p->kstack + KSTACKSIZE);
+			/* fork 子进程首次调度时尚未经过 ring3 trap，须在此更新 */
+			if (p->pagetable)
+				current_user_pgdir = p->pagetable;
 
 			prepare_context(p);
 			release(&proc_lock);
@@ -659,9 +673,11 @@ void scheduler(void)
 			c->proc = 0;
 			prev = c->last_sched;
 			if (prev) {
-				if (prev->state == ZOMBIE)
-					zombie_reap(prev);
-				else if (prev->state == UNUSED)
+				/*
+				 * 用户进程 ZOMBIE 由父进程 wait 回收（类似 Linux）；
+				 * 内核线程退出为 UNUSED，在此回收 kstack。
+				 */
+				if (prev->state == UNUSED)
 					kthread_reap(prev);
 			}
 			c->last_sched = 0;
@@ -672,10 +688,21 @@ void scheduler(void)
 	}
 }
 
+/* fork 子进程首次调度：swtch 到 trap_user_return，iret 恢复 trapframe */
+static void fork_user_ctx_init(struct proc *p)
+{
+	memset(&p->context, 0, sizeof(p->context));
+	p->context.eip = (uint)trap_user_return;
+	/* esp 须指向 trapframe 起点（非其下方的伪造返回地址） */
+	p->context.esp = (uint)p->kframe;
+	p->swtched = 1;
+}
+
 /*
- * 创建第一个用户子进程并入就绪队列；由 scheduler 经 user_start 进入 ring3。
+ * 创建用户 init（pid 通常为 2）：直接加载 initcode，常驻 fork/wait 循环。
+ * 由内核 init 线程调用一次；之后由 scheduler 经 user_start 进入 ring3。
  */
-void uthread_create(void)
+void uthread_create_init(void)
 {
 	struct proc *p;
 	struct trapframe *tf;
@@ -684,52 +711,48 @@ void uthread_create(void)
 
 	p = proc_alloc();
 	if (!p)
-		panic("uthread_create: proc_alloc");
+		panic("uthread_create_init: proc_alloc");
 
-	proc_name_set(p->name, "loader");
+	proc_name_set(p->name, "init");
 	p->parent = initproc;
 
-	/* 创建进程内核栈, 范围是 [p->kstack, p->kstack+PGSIZE) */
-	/* kstack 靠 kvm_init() 的全局恒等映射, 已经可访问, 不需要重新映射 */
+	/* 创建进程内核栈，范围 [p->kstack, p->kstack+PGSIZE)；靠恒等映射，无需再映射 */
 	p->kstack = alloc_page();
 	if (!p->kstack)
-		panic("uthread_create: kstack");
+		panic("uthread_create_init: kstack");
 
 	/* 创建用户页表 */
 	p->pagetable = uvmcreate();
 	if (!p->pagetable)
-		panic("uthread_create: uvmcreate");
+		panic("uthread_create_init: uvmcreate");
 
-	init_sz = (uint)(loader_end - loader);
-	if (loaduvm(p->pagetable, USERBASE, loader, init_sz) < 0)
-		panic("uthread_create: loaduvm");
+	init_sz = (uint)(initcode_end - initcode);
+	if (loaduvm(p->pagetable, USERBASE, initcode, init_sz) < 0)
+		panic("uthread_create_init: loaduvm");
 
-	/* 创建用户栈 */
+	/* 创建并映射用户栈 [USERSTACK-PGSIZE, USERSTACK) */
 	ustack = alloc_page();
 	if (!ustack)
-		panic("uthread_create: ustack");
+		panic("uthread_create_init: ustack");
 
-	/* 映射用户栈 */
 	if (uvmmap(p->pagetable, USERSTACK - PGSIZE, (uint)ustack,
 		   PGSIZE, PTE_W | PTE_P) < 0)
-		panic("uthread_create: uvmmap stack");
+		panic("uthread_create_init: uvmmap stack");
 
 	p->sz = USERSTACK;
 
-	/* trapframe 位于内核栈的栈顶的 */
+	/* trapframe 位于内核栈顶，供首次 iret 与后续 syscall 使用 */
 	tf = (struct trapframe *)((char *)p->kstack + KSTACKSIZE -
 				  sizeof(struct trapframe));
 	memset(tf, 0, sizeof(*tf));
-
-	/* 设置 trapframe 的 eip 为 USERBASE，即用户程序的入口地址 */
-	tf->eip = USERBASE;
+	tf->eip = USERBASE;	/* 用户程序入口 */
 	tf->cs = SEG_UCODE | DPL_USER;
 	tf->esp = USERINITESP;
 	tf->ss = SEG_UDATA | DPL_USER;
 	tf->eflags = 0x202;
 	p->kframe = tf;
 
-	/* 初始化用户进程的 context */
+	/* 初始化用户进程 context，首次调度走 user_start_trampoline */
 	user_ctx_init(p);
 
 	acquire(&proc_lock);
@@ -737,11 +760,116 @@ void uthread_create(void)
 	task_queue_enqueue_locked(p);
 	release(&proc_lock);
 
-	printf("uthread_create: pid=%d loader queued\n", p->pid);
+	userinit = p;
+	printf("uthread_create_init: pid=%d user init queued\n", p->pid);
 }
 
 /*
- * 等待子进程退出并回收 ZOMBIE；无存活子进程时返回。
+ * fork 系统调用核心：复制页表与 trapframe，子进程 eax=0。
+ * 父进程返回子 pid；子进程经 fork_user_ctx_init → trap_user_return 回到用户态。
+ */
+int fork_copy(struct trapframe *tf)
+{
+	struct proc *p = myproc();
+	struct proc *np;
+	struct trapframe *ntf;
+
+	if (!p || !p->pagetable || !tf)
+		return -1;
+
+	np = proc_alloc();
+	if (!np)
+		return -1;
+
+	np->pagetable = uvmcreate();
+	if (!np->pagetable)
+		goto bad;
+
+	if (uvmcopy(p->pagetable, np->pagetable, p->sz) < 0)
+		goto bad;
+
+	np->sz = p->sz;
+	np->parent = p;
+	proc_name_set(np->name, p->name);
+
+	np->kstack = alloc_page();
+	if (!np->kstack)
+		goto bad;
+
+	ntf = (struct trapframe *)((char *)np->kstack + KSTACKSIZE -
+				   sizeof(struct trapframe));
+	{
+		uint n;
+		char *d = (char *)ntf;
+		char *s = (char *)tf;
+
+		for (n = 0; n < sizeof(*ntf); n++)
+			d[n] = s[n];
+	}
+	ntf->eax = 0;	/* 子进程 fork 返回 0 */
+	np->kframe = ntf;
+
+	fork_user_ctx_init(np);
+
+	acquire(&proc_lock);
+	np->state = RUNNABLE;
+	task_queue_enqueue_locked(np);
+	release(&proc_lock);
+
+	return np->pid;
+
+bad:
+	proc_free(np);
+	return -1;
+}
+
+/*
+ * waitpid 内核实现：扫描 parent 的子进程，回收 ZOMBIE 并返回 pid。
+ * pid==-1 表示任意子进程；无子进程返回 -1；有子进程但未退出则 sleep(parent)。
+ */
+int wait_child(int pid, int *status, struct proc *parent)
+{
+	struct proc *np;
+	int i, havekids, found, xst;
+
+	if (!parent)
+		return -1;
+
+	for (;;) {
+		acquire(&proc_lock);
+		found = 0;
+		havekids = 0;
+		for (i = 0; i < NPROC; i++) {
+			np = &proc_table[i];
+			if (np->parent != parent)
+				continue;
+			if (np->state == UNUSED)
+				continue;
+			havekids = 1;
+			if (np->state != ZOMBIE)
+				continue;
+			if (pid != -1 && np->pid != pid)
+				continue;
+			found = np->pid;
+			xst = np->xstate;
+			zombie_reap_locked(np);
+			release(&proc_lock);
+			if (status)
+				*status = xst;
+			return found;
+		}
+		if (!havekids) {
+			release(&proc_lock);
+			return -1;
+		}
+		release(&proc_lock);
+		sleep(parent);
+	}
+}
+
+/*
+ * 内核 init 线程等待子进程退出并回收 ZOMBIE；无存活子进程时返回。
+ * 子进程 exit() 通过 wakeup(initproc) 唤醒；用户 init 子进程由其自身 waitpid 回收。
  */
 void init_wait_children(void)
 {

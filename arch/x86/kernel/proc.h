@@ -72,6 +72,7 @@ struct cpu *mycpu(void);
 extern const char *procstate_str[];
 extern struct proc *proc_table;
 extern struct proc *initproc;
+extern struct proc *userinit;
 
 /* 当前运行在 ring3 的进程页表；trap 返回用户态前写回 CR3 */
 extern pagetable_t current_user_pgdir;
@@ -101,8 +102,10 @@ void scheduler(void) __attribute__((noreturn));
 struct proc *kthread_create(void (*fn)(void *), void *arg, const char *name);
 void kthread_exit(void);
 
-void uthread_create(void);
+void uthread_create_init(void);
 void init_wait_children(void);
+int fork_copy(struct trapframe *tf);
+int wait_child(int pid, int *status, struct proc *parent);
 
 /** 打印就绪队列 */
 void dump_runqueue(void);

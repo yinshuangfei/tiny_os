@@ -236,6 +236,43 @@ void uvmcopy_kernel(pagetable_t pgdir)
 	}
 }
 
+/*
+ * 复制父进程用户映射到子进程页表（fork）。
+ * 仅复制 [USERBASE, sz) 内已映射的用户页，权限与父进程一致。
+ */
+int uvmcopy(pagetable_t old, pagetable_t new, uint sz)
+{
+	pte_t *pte;
+	uint va, pa, i;
+	char *mem;
+	int perm;
+
+	if (old == 0 || new == 0 || sz < USERBASE)
+		return -1;
+	if (sz > USEREND)
+		sz = USEREND;
+
+	for (va = USERBASE; va < sz; va += PGSIZE) {
+		pte = walk(old, va, 0, 0);
+		if (pte == 0 || !(*pte & PTE_P))
+			continue;
+		mem = alloc_page();
+		if (mem == 0)
+			return -1;
+		pa = PTE_ADDR(*pte);
+		for (i = 0; i < PGSIZE; i++)
+			mem[i] = ((char *)pa)[i];
+		perm = PTE_U | PTE_P;
+		if (*pte & PTE_W)
+			perm |= PTE_W;
+		if (uvmmap(new, va, (uint)mem, PGSIZE, perm) < 0) {
+			free_page(mem);
+			return -1;
+		}
+	}
+	return 0;
+}
+
 int uvmmap(pagetable_t pgdir, uint va, uint pa, uint size, int perm)
 {
 	if (pgdir == 0)

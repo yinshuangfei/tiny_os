@@ -47,3 +47,18 @@ nanosleep:
 	movl $SYS_nanosleep, %eax
 	int $0x80
 	ret
+
+.globl fork
+fork:
+	movl $SYS_fork, %eax
+	int $0x80
+	ret
+
+.globl waitpid
+waitpid:
+	movl 4(%esp), %ebx
+	movl 8(%esp), %ecx
+	movl 12(%esp), %edx
+	movl $SYS_waitpid, %eax
+	int $0x80
+	ret

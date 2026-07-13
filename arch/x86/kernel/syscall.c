@@ -66,8 +66,10 @@ int argstr(struct trapframe *tf, int n, char *buf, int max)
 static int (*syscalls[])(struct trapframe *tf) = {
 	[SYS_exit] = sys_exit,
 	[SYS_execve] = sys_execve,
+	[SYS_waitpid] = sys_waitpid,
 	[SYS_getpid] = sys_getpid,
 	[SYS_write] = sys_write,
+	[SYS_fork] = sys_fork,
 	[SYS_nanosleep] = sys_nanosleep,
 };
 

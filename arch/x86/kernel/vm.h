@@ -25,6 +25,7 @@ int uvminit(pagetable_t pgdir, uint va, const void *src, uint sz);
 int loaduvm(pagetable_t pgdir, uint va, const void *src, uint sz);
 void uvmfree(pagetable_t pgdir);
 void uvmcopy_kernel(pagetable_t pgdir);
+int uvmcopy(pagetable_t old, pagetable_t new, uint sz);
 
 uint walkaddr(pagetable_t pgdir, uint va);
 int copyin(pagetable_t pgdir, void *dst, uint srcva, uint n);

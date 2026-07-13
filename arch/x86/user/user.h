@@ -10,8 +10,10 @@ struct timespec;
 
 int execve(const char *, char *const *, char *const *);
 int exit(int) __attribute__((noreturn));
+int fork(void);
 int getpid(void);
 int nanosleep(const struct timespec *req, struct timespec *rem);
+int waitpid(int pid, int *status, int options);
 int write(int, const void *, int);
 
 int printf(const char *fmt, ...);

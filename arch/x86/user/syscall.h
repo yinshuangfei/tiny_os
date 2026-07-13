@@ -5,10 +5,12 @@
 #ifndef __USER_SYSCALL_H__
 #define __USER_SYSCALL_H__
 
-#define SYS_exit	2
-#define SYS_execve	3
-#define SYS_getpid	11
-#define SYS_write	16
+#define SYS_exit	1
+#define SYS_fork	2
+#define SYS_write	4
+#define SYS_waitpid	7
+#define SYS_execve	11
+#define SYS_getpid	20
 #define SYS_nanosleep	162	/* Linux i386 __NR_nanosleep */
 
 #ifndef __ASSEMBLER__

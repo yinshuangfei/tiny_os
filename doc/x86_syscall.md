@@ -64,3 +64,14 @@ syscall            ; 触发系统调用
 | 超过6个参数 | 不支持 (32位最多6个参数) | 超过6个的参数压入用户栈 |
 | 返回值 | `eax` | `rax` |
 
+
+# syscall waitpid
+在 Linux 里, waitpid 的第二个参数不是“裸的 exit code”，而是一个 status word（状态字），
+低 8 位存退出码，高位还可能有“是否正常退出、是否被信号杀死”等信息。POSIX 提供了若干宏来
+解析它，例如：
+|宏|	含义|
+|:---|:---|
+|WIFEXITED(status)|子进程是否正常调用 exit() 退出|
+|WEXITSTATUS(status)|若正常退出，取出退出码（0–255）|
+|WIFSIGNALED(status)|是否被信号杀死|
+|WTERMSIG(status)|若是信号杀死，取出信号编号|

@@ -1,5 +1,5 @@
 /*
- * init 内核线程（pid 1）：创建用户子进程、yield 让出 CPU、wait/reap 回收。
+ * init 内核线程（pid 1）：拉起用户 init，yield 让出 CPU，并作为后备收尸。
  */
 #include "types.h"
 #include "defs.h"
@@ -7,32 +7,17 @@
 
 void kernel_test(void);
 
-// static void ttt(void *arg)
-// {
-// 	(void)arg;
-
-// 	while (1) {
-// 		kernel_test();
-// 		sleep_ticks(150);
-// 	}
-// }
-
 static void init_main(void *arg)
 {
 	(void)arg;
 
-	printf("init: pid=%d starting\n", myproc()->pid);
+	printf("init: kernel pid=%d starting\n", myproc()->pid);
 
-	// struct proc *t = kthread_create(ttt, 0, "ttt");
-	// if (!t)
-	// 	panic("ttt: kthread_create failed");
+	uthread_create_init();
 
 	for (;;) {
-		printf("init: launching user program\n");
-		uthread_create();
-		yield();		/* 入就绪队列，让 scheduler 调度 loader */
+		yield();
 		init_wait_children();
-		printf("init: all children exited\n");
 	}
 }
 

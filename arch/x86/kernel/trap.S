@@ -253,3 +253,11 @@ timer_from_kernel:
 	IRQSTACK_RESTORE
 	call preempt_check
 	iret
+
+/* --------------------------------------------------------------------------
+ * fork 子进程首次返回用户态：iret 恢复 kframe 中的 trapframe
+ * -------------------------------------------------------------------------- */
+
+.globl trap_user_return
+trap_user_return:
+	TRAP_USER_RETURN
