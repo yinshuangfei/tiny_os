@@ -1,12 +1,15 @@
 /*
- * init 内核线程（pid 1）：类似 Linux kernel_init，kernel_execve 后变为用户态 init。
+ * init / kthreadd 启动（类似 Linux rest_init）：
+ *   rest_init()   — 依次创建 PID1(init)、PID2(kthreadd)
+ *   kernel_init() — PID1 线程体，kernel_execve 后变为用户态 init
+ *   kthreadd()    — PID2，消费内核线程创建请求（见 proc.c）
  */
 #include "types.h"
 #include "defs.h"
 #include "proc.h"
 #include "execve.h"
 
-static void init_main(void *arg)
+static void kernel_init(void *arg)
 {
 	(void)arg;
 
@@ -17,11 +20,24 @@ static void init_main(void *arg)
 	panic("init: kernel_execve initcode failed");
 }
 
-void init_start(void)
+void rest_init(void)
 {
-	initproc = kthread_create(init_main, 0, "init");
+	struct proc *swapper = &proc_table[0];
+
+	/*
+	 * 先创建 init，保证拿到 pid 1；再创建 kthreadd 拿 pid 2。
+	 * 二者都由 swapper 拉起（此时 kthreadd_task 尚未置位，走同步创建）。
+	 */
+	initproc = kthread_create(kernel_init, 0, "init");
 	if (!initproc)
-		panic("init_start: kthread_create failed");
-	initproc->parent = &proc_table[0];
+		panic("rest_init: create init failed");
+	initproc->parent = swapper;
 	printf("init: created pid=%d, parent=swapper\n", initproc->pid);
+
+	kthreadd_task = kthread_create(kthreadd, 0, "kthreadd");
+	if (!kthreadd_task)
+		panic("rest_init: create kthreadd failed");
+	kthreadd_task->parent = swapper;
+	printf("kthreadd: created pid=%d, parent=swapper\n",
+	       kthreadd_task->pid);
 }

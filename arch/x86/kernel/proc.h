@@ -72,6 +72,7 @@ struct cpu *mycpu(void);
 extern const char *procstate_str[];
 extern struct proc *proc_table;
 extern struct proc *initproc;
+extern struct proc *kthreadd_task;
 
 void user_enter_ring3(struct proc *p) __attribute__((noreturn));
 
@@ -81,7 +82,7 @@ extern pagetable_t current_user_pgdir;
 struct proc *myproc(void);
 
 void procinit(void);
-void init_start(void);
+void rest_init(void);
 struct proc *proc_alloc(void);
 void proc_free(struct proc *p);
 struct proc *proc_find(int pid);
@@ -100,6 +101,7 @@ void context_switch(struct context *old, struct context *new);
 void yield(void);
 void scheduler(void) __attribute__((noreturn));
 
+void kthreadd(void *arg);
 struct proc *kthread_create(void (*fn)(void *), void *arg, const char *name);
 void kthread_exit(void);
 

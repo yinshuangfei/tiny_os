@@ -40,6 +40,6 @@ void main(void)
 	// 开启中断
 	sti();
 
-	init_start();
+	rest_init();
 	scheduler();
 }

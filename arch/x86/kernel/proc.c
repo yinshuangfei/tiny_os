@@ -16,14 +16,39 @@
 #include "debug.h"
 #include "gdt.h"
 
+/* 进程表 */
 struct proc *proc_table;
+/* init 进程 */
 struct proc *initproc;
+/* kthreadd 进程 */
+struct proc *kthreadd_task;
 
 /* trap 路径在返回 ring3 前据此恢复用户 CR3 */
 pagetable_t current_user_pgdir;
 
+/* 进程表锁 */
 struct spinlock proc_lock;
+/* 下一个 pid */
 static int nextpid = 1;
+
+/*
+ * kthreadd 创建请求队列（类似 Linux kthread_create → kthreadd）。
+ * 用 proc_lock 保护；调用方 sleep(info) 等待创建完成。
+ */
+struct kthread_create_info {
+	struct list_head list;
+	void (*threadfn)(void *);
+	void *arg;
+	char name[NNAME];
+	struct proc *result;	/* 创建的进程 */
+	int done;		/* 创建是否完成 */
+};
+
+/* kthreadd 创建请求队列, struct kthread_create_info 的链表头 */
+static struct list_head kthread_create_list;
+
+/* kthreadd 创建请求队列是否已初始化 */
+static int kthread_create_inited;
 
 struct cpu cpus[NCPU];
 
@@ -414,6 +439,10 @@ void procinit(void)
 
 	initlock(&proc_lock, "proc");
 	task_queue_init();
+
+	INIT_LIST_HEAD(&kthread_create_list);
+	kthread_create_inited = 1;
+
 	proc_table = kcalloc(NPROC, sizeof(struct proc));
 	if (!proc_table)
 		panic("procinit: out of memory");
@@ -558,8 +587,9 @@ void proc_free(struct proc *p)
 	release(&proc_lock);
 }
 
-/* 创建内核线程 */
-struct proc *kthread_create(void (*fn)(void *), void *arg, const char *name)
+/* 同步创建内核线程（boot / kthreadd 内部使用） */
+static struct proc *kthread_create_sync(void (*fn)(void *), void *arg,
+					const char *name, struct proc *parent)
 {
 	struct proc *p;
 
@@ -575,11 +605,10 @@ struct proc *kthread_create(void (*fn)(void *), void *arg, const char *name)
 
 	p->entry = fn;
 	p->entry_arg = arg;
-
 	if (name)
 		proc_name_set(p->name, name);
-	if (initproc)
-		p->parent = initproc;
+	if (parent)
+		p->parent = parent;
 
 	kthread_ctx_init(p);
 
@@ -590,6 +619,116 @@ struct proc *kthread_create(void (*fn)(void *), void *arg, const char *name)
 	return p;
 }
 
+/*
+ * 经 kthreadd 异步创建：入队请求，唤醒 kthreadd，sleep 等待结果。
+ * parent 设为 kthreadd（与 Linux 一致）。
+ *
+ * 在 proc_lock 下等待 done，避免「创建已完成却尚未 sleep」的丢失唤醒。
+ */
+static struct proc *kthread_create_via_kthreadd(void (*fn)(void *), void *arg,
+					       const char *name)
+{
+	struct kthread_create_info *info;
+	struct proc *p, *cur;
+
+	info = kmalloc(sizeof(*info));
+	if (!info)
+		return 0;
+
+	memset(info, 0, sizeof(*info));
+	INIT_LIST_HEAD(&info->list);
+
+	info->threadfn = fn;
+	info->arg = arg;
+	if (name)
+		proc_name_set(info->name, name);
+
+	acquire(&proc_lock);
+	list_add_tail(&info->list, &kthread_create_list);
+	/* 若 kthreadd 在睡，先唤醒（持锁外 wakeup 也可，这里先放锁） */
+	release(&proc_lock);
+	wakeup(&kthread_create_list);
+
+	/* 等待创建完成 */
+	cur = myproc();
+	acquire(&proc_lock);
+	while (!info->done) {
+		cur->chan = info;
+		cur->wakeup_tick = 0;
+		cur->swtched = 1;
+		cur->state = SLEEPING;
+		release(&proc_lock);
+		sched();
+		acquire(&proc_lock);
+	}
+	p = info->result;
+	release(&proc_lock);
+
+	kfree(info);
+	return p;
+}
+
+/* kthreadd（pid 2）：消费创建请求，类似 Linux kthreadd */
+void kthreadd(void *arg)
+{
+	(void)arg;
+
+	printf("kthreadd: pid=%d starting\n", myproc()->pid);
+
+	for (;;) {
+		struct kthread_create_info *info;
+		struct proc *p;
+
+		acquire(&proc_lock);
+		if (list_empty(&kthread_create_list)) {
+			release(&proc_lock);
+			sleep(&kthread_create_list);
+			continue;
+		}
+		info = list_first_entry(&kthread_create_list,
+					struct kthread_create_info, list);
+		list_del(&info->list);
+		release(&proc_lock);
+
+		p = kthread_create_sync(info->threadfn, info->arg,
+					info->name[0] ? info->name : 0,
+					kthreadd_task);
+
+		acquire(&proc_lock);
+		info->result = p;
+		info->done = 1;
+		/* 唤醒等待该请求的创建者（chan == info） */
+		{
+			int i;
+			struct proc *w;
+
+			for (i = 0; i < NPROC; i++) {
+				w = &proc_table[i];
+				if (w->state == SLEEPING && w->chan == info) {
+					w->state = RUNNABLE;
+					w->chan = 0;
+					w->wakeup_tick = 0;
+					task_queue_enqueue_locked(w);
+				}
+			}
+		}
+		release(&proc_lock);
+	}
+}
+
+/* 创建内核线程：kthreadd 就绪后走创建队列，否则同步创建（boot 路径） */
+struct proc *kthread_create(void (*fn)(void *), void *arg, const char *name)
+{
+	struct proc *parent;
+
+	if (kthreadd_task)
+		return kthread_create_via_kthreadd(fn, arg, name);
+
+	/* boot：init / kthreadd 自身；parent 由调用方再设 */
+	parent = initproc ? initproc : 0;
+	return kthread_create_sync(fn, arg, name, parent);
+}
+
 /* 退出内核线程 */
 void kthread_exit(void)
 {
@@ -597,6 +736,8 @@ void kthread_exit(void)
 
 	if (p == initproc)
 		panic("init exiting");
+	if (p == kthreadd_task)
+		panic("kthreadd exiting");
 
 	acquire(&proc_lock);
 	p->entry = 0;
