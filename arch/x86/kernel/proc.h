@@ -40,7 +40,7 @@ struct cpu {
 	struct proc *proc;	/* 当前运行进程, 内核态及用户态 */
 	struct proc *last_sched;/* 最近一次 sched() 的进程，供回收 ZOMBIE */
 	struct context context;	/* scheduler 上下文，swtch 回到此处 */
-	int noff;
+	int noff;		/* 中断嵌套层数 */
 	int intena;
 	int need_resched;	/* 定时器 tick 请求抢占 */
 };

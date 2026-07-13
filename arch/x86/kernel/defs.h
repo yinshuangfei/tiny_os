@@ -33,6 +33,7 @@ void serial_init(void);
 void uart_putc(char c);
 int uart_getc(void);
 void uart_puts(const char *s);
+void uart_intr(void);
 
 #include "proc.h"
 #include "spinlock.h"

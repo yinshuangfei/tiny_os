@@ -50,8 +50,8 @@ void pic_init(void)
 	// ICW4: 8086 模式
 	outb(PIC1_DATA, 0x01);
 	outb(PIC2_DATA, 0x01);
-	// 仅打开定时器 IRQ0
-	outb(PIC1_DATA, 0xfe);
+	// 打开定时器 IRQ0、串口 COM1 IRQ4
+	outb(PIC1_DATA, 0xee);
 	outb(PIC2_DATA, 0xff);
 
 	// TODO: 选择性配置 IOAPIC/LAPIC

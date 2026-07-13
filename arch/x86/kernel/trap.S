@@ -23,6 +23,7 @@
 .globl isr_simd_fp
 .globl isr_syscall
 .globl isr_timer
+.globl isr_serial
 
 .extern divide_error_handler
 .extern device_not_available_handler
@@ -33,6 +34,7 @@
 .extern syscall_handler
 .extern timer_handler
 .extern timer_trap_user
+.extern uart_intr
 .extern preempt_check
 .extern kernel_pgdir
 .extern current_user_pgdir
@@ -252,6 +254,24 @@ timer_from_kernel:
 	call timer_handler
 	IRQSTACK_RESTORE
 	call preempt_check
+	iret
+
+/* --------------------------------------------------------------------------
+ * 串口 COM1 IRQ4
+ * -------------------------------------------------------------------------- */
+
+isr_serial:
+	testl $3, HW_CS(%esp)
+	jz serial_from_kernel
+
+	TRAP_RING3_ENTER
+	call uart_intr
+	TRAP_USER_RETURN
+
+serial_from_kernel:
+	IRQSTACK_SWITCH
+	call uart_intr
+	IRQSTACK_RESTORE
 	iret
 
 /* --------------------------------------------------------------------------

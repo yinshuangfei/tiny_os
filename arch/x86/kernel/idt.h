@@ -4,6 +4,7 @@
 #include "types.h"
 
 #define IRQ_TIMER		0x20	// Timer Interrupt
+#define IRQ_COM1		0x24	// COM1 (IRQ4)
 #define EXC_DIVIDE_ERROR	0x00	// Divide Error
 #define EXC_INVALID_OPCODE	0x06	// #UD Invalid Opcode
 #define EXC_DEVICE_NOT_AVAILABLE 0x07	// #NM Device Not Available
