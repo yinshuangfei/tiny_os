@@ -220,6 +220,8 @@ void *alloc_pages(unsigned int order)
 	page = __alloc_pages(order);
 	if (!page) {
 		release(&pmm_lock);
+		printk(KERN_ERR "alloc_pages: failed to allocate %d pages\n",
+			order);
 		return 0;
 	}
 	addr = page_to_addr(page);

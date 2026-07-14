@@ -94,6 +94,8 @@ USER_LIB_OBJS = \
 	$(USERDIR)/lib/usys.o \
 	$(USERDIR)/lib/printf.o \
 	$(USERDIR)/lib/sleep.o \
+	$(USERDIR)/lib/string.o \
+	$(USERDIR)/lib/ansi.o \
 
 INITCODE_BIN=$(USERDIR)/init.bin
 INITCODE_OBJS=$(USER_LIB_OBJS) $(USERDIR)/init.o
@@ -102,14 +104,14 @@ SH_OBJS=$(USER_LIB_OBJS) $(USERDIR)/sh.o
 
 OBJS = $(C_OBJS) $(AS_OBJS)
 
-# -j .rodata 保存常量字符串
-$(INITCODE_BIN): $(INITCODE_OBJS)
-	@$(LD) -m elf_i386 -N -e _start -Ttext 0x00400000 -o $(USERDIR)/init.elf $(INITCODE_OBJS)
-	@$(OBJCOPY) -O binary -j .text -j .rodata $(USERDIR)/init.elf $@
+# 用户程序：user.ld 连续布局（含 .bss）；objcopy 将 .bss 标成可装载并填 0
+$(INITCODE_BIN): $(INITCODE_OBJS) $(USERDIR)/user.ld
+	@$(LD) -m elf_i386 -T $(USERDIR)/user.ld -o $(USERDIR)/init.elf $(INITCODE_OBJS)
+	@$(OBJCOPY) --set-section-flags .bss=alloc,load,contents -O binary $(USERDIR)/init.elf $@
 
-$(SH_BIN): $(SH_OBJS)
-	@$(LD) -m elf_i386 -N -e _start -Ttext 0x00400000 -o $(USERDIR)/sh.elf $(SH_OBJS)
-	@$(OBJCOPY) -O binary -j .text -j .rodata $(USERDIR)/sh.elf $@
+$(SH_BIN): $(SH_OBJS) $(USERDIR)/user.ld
+	@$(LD) -m elf_i386 -T $(USERDIR)/user.ld -o $(USERDIR)/sh.elf $(SH_OBJS)
+	@$(OBJCOPY) --set-section-flags .bss=alloc,load,contents -O binary $(USERDIR)/sh.elf $@
 
 $(USERDIR)/init.o: $(USERDIR)/init.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
@@ -121,6 +123,12 @@ $(USERDIR)/lib/printf.o: $(USERDIR)/lib/printf.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/lib/sleep.o: $(USERDIR)/lib/sleep.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(USERDIR)/lib/string.o: $(USERDIR)/lib/string.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(USERDIR)/lib/ansi.o: $(USERDIR)/lib/ansi.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/lib/usys.o: $(USERDIR)/lib/usys.S

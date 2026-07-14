@@ -390,7 +390,8 @@ int copyout(pagetable_t pgdir, uint dstva, const void *src, uint n)
 }
 
 /*
- * 将 src（长度 sz）按页拷贝到 va 起连续用户页；代码段只读 PTE_P。
+ * 将 src（长度 sz）按页拷贝到 va 起连续用户页。
+ * 权限：用户可读写（flat binary 含 .data/.bss，须可写；教学实现不区分 RX/RW）。
  * va 须页对齐；va+sz 不得超过 USEREND。
  */
 int loaduvm(pagetable_t pgdir, uint va, const void *src, uint sz)
@@ -414,7 +415,7 @@ int loaduvm(pagetable_t pgdir, uint va, const void *src, uint sz)
 		for (a = 0; a < n; a++)
 			mem[a] = ((const char *)src + off)[a];
 		a = va + off;
-		if (uvmmap(pgdir, a, (uint)mem, PGSIZE, PTE_P) < 0) {
+		if (uvmmap(pgdir, a, (uint)mem, PGSIZE, PTE_P | PTE_W) < 0) {
 			free_page(mem);
 			return -1;
 		}

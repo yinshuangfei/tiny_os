@@ -634,8 +634,10 @@ static struct proc *kthread_create_via_kthreadd(void (*fn)(void *), void *arg,
 	struct proc *p, *cur;
 
 	info = kmalloc(sizeof(*info));
-	if (!info)
+	if (!info) {
+		printk(KERN_ERR "kthread_create_via_kthreadd: out of memory");
 		return 0;
+	}
 
 	memset(info, 0, sizeof(*info));
 	INIT_LIST_HEAD(&info->list);

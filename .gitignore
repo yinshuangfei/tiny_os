@@ -13,3 +13,4 @@ _*
 lib/usys.S
 .cache
 .clangd
+__pycache__

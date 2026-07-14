@@ -162,7 +162,6 @@ void serial_init(void)
 /* IRQ4：串口中断处理 */
 void uart_intr(void)
 {
-	printf("uart_intr\n");
 	int got_rx = 0;
 	int put_tx = 0;
 

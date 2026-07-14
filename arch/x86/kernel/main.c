@@ -10,38 +10,38 @@
 
 void main(void)
 {
-	// 初始化串口
+	/* 初始化串口 */
 	serial_init();
 	printk(KERN_INFO "Tiny-OS (%d.%d.%d) booting ...\n\r",
 		MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION);
-
-	// 初始化 GDT
+	/* 初始化 GDT */
 	gdt_init();
-	// 初始化 IDT
+	/* 初始化 IDT */
 	idt_init();
-	// 检测并开启 SSE（须在可能生成 SSE 指令的代码之前）
+	/* 检测并开启 SSE（须在可能生成 SSE 指令的代码之前） */
 	cpu_init();
-	// 探测物理内存大小（须在 pmm_init / kvm_init 之前）
+	/* 探测物理内存大小（须在 pmm_init / kvm_init 之前） */
 	mem_probe();
-	// 初始化 PIC/APIC
+	/* 初始化 PIC/APIC */
 	pic_init();
-	// 初始化物理页分配器
+	/* 初始化物理页分配器 */
 	pmm_init();
-	// 内核小对象堆（PCB 等动态结构）
+	/* 内核小对象堆（PCB 等动态结构） */
 	kmem_init();
-	// 初始化页表并开启分页
+	/* 初始化页表并开启分页 */
 	kvm_init();
-	// 初始化进程表
+	/* 初始化进程表 */
 	procinit();
-	// 内存文件系统
+	/* 内存文件系统 */
 	fs_init();
-	// printf 自旋锁（须在 sti 之前，避免定时器 IRQ 交错输出）
+	/* printf 自旋锁（须在 sti 之前，避免定时器 IRQ 交错输出） */
 	printfinit();
-	// 初始化时钟
+	/* 初始化时钟 */
 	pit_init();
-	// 开启中断
+	/* 开启中断 */
 	sti();
-
+	/* 初始化内核线程 */
 	rest_init();
+	/* 启动内核线程调度器 */
 	scheduler();
 }

@@ -1,6 +1,6 @@
 /*
- * execve：将当前进程映像替换为内核嵌入的 flat binary。
- * 尚无文件系统，按程序名查表（见 userbins[]）。
+ * execve：将当前进程映像替换为内核嵌入的 flat binary
+ *（含 .text/.rodata/.data/.bss，由 user/user.ld 布局）。
  */
 #include "printk.h"
 #include "types.h"
