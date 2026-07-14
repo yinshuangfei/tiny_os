@@ -1,6 +1,7 @@
 /*
  * 终端 ANSI 颜色（与 Linux 控制台 / bash PS1 常用序列一致）。
  * 串口本身无颜色；对端终端解释这些转义序列。
+ * ANSI 的全称是 American National Standards Institute，中文译为“美国国家标准学会”。
  *
  * 全局开关 ansi_color：1 输出转义序列，0 输出纯文本。
  * C_* 为运行时表达式，须用 %s 打印，例如：
@@ -37,6 +38,12 @@
 /* 背景色（少用） */
 #define ANSI_BG_RED		ANSI_ESC "41m"		/* 红色 */
 #define ANSI_BG_GREEN		ANSI_ESC "42m"		/* 绿色 */
+
+/* 光标 / 清屏（bash readline clear-screen、clear(1) 常用序列） */
+#define ANSI_HOME		ANSI_ESC "H"		/* 光标到左上角 */
+#define ANSI_ED			ANSI_ESC "2J"		/* 清除整个屏幕 */
+#define ANSI_CLEAR		ANSI_HOME ANSI_ED	/* 回原点并清屏 */
+#define ANSI_CUB		"\b"			/* 光标左移一格（同 CUB），0x08 */
 
 /* 1=开（默认），0=关；由 color 内置命令等修改 */
 extern int ansi_color;
