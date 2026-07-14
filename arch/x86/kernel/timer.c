@@ -55,7 +55,7 @@ void pic_init(void)
 	outb(PIC2_DATA, 0xff);
 
 	// TODO: 选择性配置 IOAPIC/LAPIC
-	printf("system pic(8259) initialized\n");
+	printk(KERN_INFO "pic: system pic(8259) initialized\n");
 }
 
 /** 配置 8254 可编程间隔定时器 */
@@ -79,7 +79,7 @@ void pit_init(void)
 	outb(PIT_CH0, divisor & 0xff);
 	outb(PIT_CH0, (divisor >> 8) & 0xff);
 
-	printf("system pit(8254) initialized, timer frequency: %d Hz\n", TIMER_HZ);
+	printk(KERN_INFO "pit: system pit(8254) initialized, timer frequency: %d Hz\n", TIMER_HZ);
 }
 
 void timer_handler(void)

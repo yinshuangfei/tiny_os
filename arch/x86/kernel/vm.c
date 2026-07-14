@@ -176,7 +176,7 @@ void kvm_init(void)
 	/* CPU 在写入 CR3 时，会自动刷新整个 TLB，使旧的虚拟到物理的映射失效 */
 	w_cr3((uint)kernel_pgdir);
 	w_cr0(r_cr0() | CR0_PG);
-	printf("operating system paging enabled, kernel pgdir: %p\n", kernel_pgdir);
+	printk(KERN_INFO "vm: operating system paging enabled, kernel pgdir: %p\n", kernel_pgdir);
 
 	// for (int i = 0; i < MAX_KERNEL_PT; i++) {
 	// 	if (kernel_pgdir[i] != 0)

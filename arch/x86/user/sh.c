@@ -193,8 +193,8 @@ static void hist_touch(char *buf, int len, char *draft, int *viewing)
 static void print_prompt(void)
 {
 	printf("%s@%s:%s%s ",
-	       C_GREEN("root"), C_GREEN("tiny"),
-	       C_BLUE("/"), C_GREEN("$"));
+	       C_BLUE("root"), C_BLUE("tiny"),
+	       C_GREEN("/"), C_BLUE("$"));
 }
 
 /*

@@ -58,6 +58,15 @@ static inline void outb(unsigned short port, unsigned char val)
 	__asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
 }
 
+/** inw */
+static inline unsigned short inw(unsigned short port)
+{
+	unsigned short val;
+
+	__asm__ volatile ("inw %1, %0" : "=a"(val) : "Nd"(port));
+	return val;
+}
+
 /** outw */
 static inline void outw(unsigned short val, unsigned short port)
 {

@@ -34,6 +34,8 @@ void main(void)
 	procinit();
 	/* 内存文件系统 */
 	fs_init();
+	/* IDE 硬盘（ATA PIO，依赖 QEMU -drive if=ide） */
+	ide_init();
 	/* printf 自旋锁（须在 sti 之前，避免定时器 IRQ 交错输出） */
 	printfinit();
 	/* 初始化时钟 */

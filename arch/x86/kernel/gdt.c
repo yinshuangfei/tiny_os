@@ -67,7 +67,7 @@ void gdt_init(void)
 
 	gdt_load();
 	tss_load();
-	printf("system gdt loaded\n");
+	printk(KERN_INFO "gdt: system gdt loaded\n");
 }
 
 void tss_init(void)

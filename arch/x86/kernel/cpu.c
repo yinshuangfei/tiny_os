@@ -45,5 +45,5 @@ void cpu_init(void)
 	cr4 |= CR4_OSFXSR | CR4_OSXMMEXCPT;
 	w_cr4(cr4);
 
-	printf("cpu: SSE enabled\n");
+	printk(KERN_INFO "cpu: SSE enabled\n");
 }

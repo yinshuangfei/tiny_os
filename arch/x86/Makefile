@@ -21,6 +21,14 @@ QEMU = qemu-system-x86_64
 QEMUOPTS = -machine q35 -m $(MEM) -smp $(CPUS) -display none
 QEMUOPTS += -serial stdio -monitor none
 
+# 第二块盘：经 PIIX IDE 挂到主通道 master（端口 0x1F0），供 ATA PIO 驱动使用。
+# q35 默认是 AHCI，if=ide 不会出现在 0x1F0，故显式加 piix3-ide。
+HD_IMG = hd.img
+HD_SIZE_MB ?= 8 	# 8 MB
+QEMUOPTS += -device piix3-ide,id=ide
+QEMUOPTS += -drive file=$(HD_IMG),format=raw,if=none,id=hd0
+QEMUOPTS += -device ide-hd,drive=hd0,bus=ide.0
+
 CFLAGS := -m32 -ffreestanding -fno-pic -fno-stack-protector -nostdlib -Wall
 CFLAGS += -fno-asynchronous-unwind-tables -fno-unwind-tables
 USER_CFLAGS := $(CFLAGS) -I$(USERDIR)/include -ffreestanding -fno-builtin
@@ -33,8 +41,12 @@ endif
 
 .PHONY: qemu clean print-cc print-cflags compile_commands.json
 
-qemu: $(if $(filter 1,$(K)),kernel.elf,boot.img)
+qemu: $(HD_IMG) $(if $(filter 1,$(K)),kernel.elf,boot.img)
 	@$(QEMU) $(QEMUOPTS)
+
+$(HD_IMG):
+	@dd if=/dev/zero of=$@ bs=1M count=$(HD_SIZE_MB) status=none
+	@echo "created $(HD_IMG) ($(HD_SIZE_MB) MiB)"
 
 $(BOOTDIR)/entry_kernel.o: $(BOOTDIR)/entry.S
 	$(AS) --32 -defsym KERNEL=1 $< -o $@
@@ -81,6 +93,7 @@ C_OBJS = \
 	$(KDIR)/fs/ramfs.o \
 	$(KDIR)/fs/file.o \
 	$(KDIR)/fs/sysfile.o \
+	$(KDIR)/ide.o \
 	$(TESTDIR)/kernel_test.o \
 
 AS_OBJS = \
@@ -192,7 +205,7 @@ compile_commands.json:
 
 clean:
 	rm -f *.o *.elf *.bin *.img *.map *.vmdk *.tmp main.s test64.* \
-	setup.elf setup.bin kernel_body.elf kernel_body.bin \
+	setup.elf setup.bin kernel_body.elf kernel_body.bin $(HD_IMG) \
 	$(BOOTDIR)/*.o $(BOOTDIR)/*.bin \
 	$(USERDIR)/*.o $(USERDIR)/*.elf $(USERDIR)/*.bin \
 	$(USERDIR)/lib/*.o \

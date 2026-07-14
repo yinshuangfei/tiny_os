@@ -52,7 +52,7 @@ void idt_init(void)
 	idt_set_gate(INT_SYSCALL, isr_syscall, SEG_KCODE, IDT_ATTR_USER);	// DPL=3，用户态可 int 0x80
 
 	idt_load();
-	printf("system idt loaded\n");
+	printk(KERN_INFO "idt: system idt loaded\n");
 }
 
 uint32 idt_table_addr(void)

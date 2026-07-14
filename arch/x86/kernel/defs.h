@@ -47,4 +47,10 @@ void uart_intr(void);
 /** fs */
 void fs_init(void);
 
+/** ide.c — ATA PIO 硬盘 */
+void ide_init(void);
+int ide_read(uint lba, void *buf);
+int ide_write(uint lba, const void *buf);
+uint ide_nsectors(void);
+
 #endif

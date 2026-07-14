@@ -4,7 +4,14 @@
 .set BOOT_PARAMS, 0x7DF0	/* boot.S 写入的扇区数，物理地址固定 */
 .set CODE_SEL, 0x08
 .set DATA_SEL, 0x10
-.set ENTRY_OFFSET, 0x17	/* _start - KERNBASE，与 kernel_body.elf 一致 */
+/*
+ * kernel_body 被搬到 STAGE2_LOAD 后，由此偏移跳入 _start。
+ * _start 在 kernel_body 的 .text 起始（链接地址 0x100000），必须为 0。
+ * 若误写成 0x17，会跳进 _start 内部的 `rep stosb`（清 BSS 循环体）：
+ *   此时 ecx 常为 0（上一指令 rep movsl 用尽），stos 变成空操作，再落入 call main，
+ *   看起来“能启动”，但 .bss 从未清零；链接进更多 .o（如 ide.o）改变内存残渣后即崩。
+ * QEMU -kernel 不走本路径，直接按 ELF 入口进 _start，故不易暴露此问题。
+ */
 .set BOOT_INFO, 0x5000
 .set BOOT_INFO_MAGIC, 0x544f4d53	/* 'TOMS' */
 .set E820_BUF, 0x5100
@@ -127,8 +134,8 @@ protected_mode:
 	shrl $2, %ecx			# rep movsl，长度向上取整到 4 字节
 	rep movsl
 
-	movl $(STAGE2_LOAD + ENTRY_OFFSET), %eax
-	jmp *%eax			# 跳入 _start（链接地址 0x100017）
+	movl $(STAGE2_LOAD), %eax
+	jmp *%eax			# 跳入 _start（链接地址 0x100000）
 
 	.align 8			# GDT 表 8 字节对齐
 gdt:
