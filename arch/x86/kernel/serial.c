@@ -218,8 +218,17 @@ static int uart_getc_busy(void)
 	return inb(SERIAL_COM1_RBR) & 0xff;
 }
 
+/*
+ * 写一字节到 COM1。
+ * 原始串口终端（Xshell / 多数 VT）需要 CRLF；只发 \\n 会呈「楼梯」状换行。
+ * 在驱动层把 \\n 转成 \\r\\n，内核/用户 printf 仍写 \\n 即可。
+ */
 void uart_putc(char c)
 {
+	if (c == '\n') {
+		uart_putc('\r');
+	}
+
 	/*
 	 * 持有 spinlock / 中断上下文 / 尚无进程时不能 sleep：
 	 * 回退为 LSR 忙等直写（printf 路径走这里）。
