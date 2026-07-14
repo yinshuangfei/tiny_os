@@ -115,6 +115,7 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 	tf->esp = USERINITESP;
 	tf->cs = SEG_UCODE | DPL_USER;
 	tf->ss = SEG_UDATA | DPL_USER;
+	tf->ds = SEG_UDATA | DPL_USER;	/* trap_user_return / 中断返回时 pop %ds */
 	tf->eflags = 0x202;
 
 	current_user_pgdir = newpg;
