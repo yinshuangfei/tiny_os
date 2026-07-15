@@ -1,10 +1,12 @@
 /*
  * 打开文件表与进程 fd 表。
+ * 设备号从 f->ip（类 Linux f_inode / i_rdev）读取，不缓存在 struct file。
  */
 #include "../types.h"
 #include "../defs.h"
 #include "../param.h"
 #include "../proc.h"
+#include "../block/blk.h"
 #include "fs.h"
 
 /* 全局文件描述符表 */
@@ -31,7 +33,6 @@ struct file *filealloc(void)
 			ftable[i].writable = 0;
 			ftable[i].ip = 0;
 			ftable[i].off = 0;
-			ftable[i].major = 0;
 			return &ftable[i];
 		}
 	}
@@ -59,10 +60,99 @@ void fileclose(struct file *f)
 	f->ref--;
 	if (f->ref > 0)
 		return;
-	if (f->type == FD_INODE || f->type == FD_DEVICE)
+	if (f->type == FD_INODE || f->type == FD_CHAR || f->type == FD_BLOCK)
 		fs_iput(f->ip);
 	f->type = FD_NONE;
 	f->ip = 0;
+}
+
+/*
+ * 块设备按字节偏移读写（内部按扇区；非对齐走 bounce）。
+ * 成功返回已传输字节数；失败且无进度返回 -1。
+ * do_write: 1 写，0 读。
+ * 设备号从 f->ip（类 Linux i_rdev）读取。
+ */
+static int file_blk_rw(struct file *f, char *buf, int n, int do_write)
+{
+	struct gendisk *gd;
+	uchar sect[BLOCK_SECTOR_SIZE];
+	uint64 off;
+	int done, chunk, i;
+	sector_t sec;
+	uint sec_off;
+
+	if (!f || !f->ip || !buf || n < 0)
+		return -1;
+	gd = blk_lookup_dev(f->ip->rdev);
+	if (!gd)
+		return -1;
+
+	off = f->off;
+	done = 0;
+	while (done < n) {
+		sec = (sector_t)(off / BLOCK_SECTOR_SIZE);
+		sec_off = (uint)(off % BLOCK_SECTOR_SIZE);
+		if (sec >= gd->capacity)
+			break;
+
+		/* 计算当前扇区剩余字节数 */
+		chunk = BLOCK_SECTOR_SIZE - (int)sec_off;
+		/* 如果当前扇区剩余字节数大于本次仍需传输的字节数，则取后者 */
+		if (chunk > n - done)
+			chunk = n - done;
+
+		if (do_write) {
+			/*
+			 * 写起点不在扇区开头，或写不满一个扇区：
+			 * 不能整扇区覆盖，须先读出扇区再改写（RMW）。
+			 */
+			if (sec_off != 0 || chunk != BLOCK_SECTOR_SIZE) {
+				if (blkdev_read_sect(gd, sec, sect) < 0)
+					return done ? done : -1;
+				for (i = 0; i < chunk; i++)
+					sect[sec_off + i] = (uchar)buf[done + i];
+				if (blkdev_write_sect(gd, sec, sect) < 0)
+					return done ? done : -1;
+			} else {
+				if (blkdev_write_sect(gd, sec, buf + done) < 0)
+					return done ? done : -1;
+			}
+		} else {
+			if (blkdev_read_sect(gd, sec, sect) < 0)
+				return done ? done : -1;
+			for (i = 0; i < chunk; i++)
+				buf[done + i] = (char)sect[sec_off + i];
+		}
+
+		done += chunk;
+		off += (uint64)chunk;
+	}
+	f->off = (uint)off;
+	return done;
+}
+
+/* 字符设备读（目前仅 console） */
+static int file_char_read(struct file *f, char *dst, int n)
+{
+	int i;
+
+	if (!f->ip || MAJOR(f->ip->rdev) != CONSOLE_MAJOR)
+		return -1;
+	for (i = 0; i < n; i++)
+		dst[i] = (char)uart_getc();
+	return n;
+}
+
+/* 字符设备写（目前仅 console） */
+static int file_char_write(struct file *f, char *src, int n)
+{
+	int i;
+
+	if (!f->ip || MAJOR(f->ip->rdev) != CONSOLE_MAJOR)
+		return -1;
+	for (i = 0; i < n; i++)
+		uart_putc(src[i]);
+	return n;
 }
 
 /* 从文件读取数据 */
@@ -72,15 +162,10 @@ int fileread(struct file *f, char *dst, int n)
 
 	if (!f || !f->readable || n < 0)
 		return -1;
-	if (f->type == FD_DEVICE) {
-		int i;
-
-		if (f->major != DEV_CONSOLE)
-			return -1;
-		for (i = 0; i < n; i++)
-			dst[i] = (char)uart_getc();
-		return n;
-	}
+	if (f->type == FD_BLOCK)
+		return file_blk_rw(f, dst, n, 0);
+	if (f->type == FD_CHAR)
+		return file_char_read(f, dst, n);
 	if (f->type == FD_INODE) {
 		r = fs_readi(f->ip, dst, f->off, (uint)n);
 		if (r > 0)
@@ -97,15 +182,10 @@ int filewrite(struct file *f, char *src, int n)
 
 	if (!f || !f->writable || n < 0)
 		return -1;
-	if (f->type == FD_DEVICE) {
-		int i;
-
-		if (f->major != DEV_CONSOLE)
-			return -1;
-		for (i = 0; i < n; i++)
-			uart_putc(src[i]);
-		return n;
-	}
+	if (f->type == FD_BLOCK)
+		return file_blk_rw(f, src, n, 1);
+	if (f->type == FD_CHAR)
+		return file_char_write(f, src, n);
 	if (f->type == FD_INODE) {
 		r = fs_writei(f->ip, src, f->off, (uint)n);
 		if (r > 0)
@@ -156,9 +236,8 @@ static struct file *open_console(int readable, int writable)
 		fs_iput(ip);
 		return 0;
 	}
-	f->type = FD_DEVICE;
+	f->type = FD_CHAR;
 	f->ip = ip;
-	f->major = ip->major;
 	f->readable = readable;
 	f->writable = writable;
 	f->off = 0;

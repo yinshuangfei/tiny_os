@@ -233,7 +233,7 @@ static void ide_submit_bio(struct request_queue *q, struct bio *bio)
 		bio->bi_end_io(bio);
 }
 
-/* 将 ATA 盘注册为 gendisk（hda/hdb/…，major=IDE_MAJOR） */
+/* 将 ATA 盘注册为 gendisk（hda/hdb/…，major=HD_MAJOR） */
 static int ide_add_gendisk(struct ide_disk *d)
 {
 	struct gendisk *gd;
@@ -243,7 +243,7 @@ static int ide_add_gendisk(struct ide_disk *d)
 	if (!gd)
 		return -1;
 
-	gd->major = IDE_MAJOR;
+	gd->major = HD_MAJOR;
 	gd->first_minor = d->drive;
 	snprintf(name, sizeof(name), "hd%c", 'a' + (d->drive % 26));
 	snprintf(gd->disk_name, sizeof(gd->disk_name), "%s", name);

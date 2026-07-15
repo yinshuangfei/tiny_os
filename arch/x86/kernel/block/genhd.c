@@ -5,6 +5,7 @@
 #include "blk.h"
 #include "../defs.h"
 #include "../printk.h"
+#include "../fs/fs.h"
 
 /* 全局通用磁盘链表 */
 static struct list_head gendisk_list;
@@ -108,6 +109,25 @@ sector_t get_capacity(struct gendisk *disk)
 	return disk ? disk->capacity : 0;
 }
 
+/* 在 /dev 下为 gendisk 创建块设备节点（如 /dev/hda） */
+static int register_disk_devnode(struct gendisk *disk)
+{
+	char path[40];
+	struct inode *ip;
+
+	snprintf(path, sizeof(path), "/dev/%s", disk->disk_name);
+	ip = fs_mknod(path, T_BLK, (unsigned int)disk->major,
+		      (unsigned int)disk->first_minor);
+	if (!ip) {
+		printk(KERN_ERR "block: mknod %s failed\n", path);
+		return -1;
+	}
+	ip->size = (uint)disk->capacity * BLOCK_SECTOR_SIZE;
+	fs_iput(ip);
+	printk(KERN_INFO "block: created %s\n", path);
+	return 0;
+}
+
 /* 添加通用磁盘 */
 void add_disk(struct gendisk *disk)
 {
@@ -128,6 +148,8 @@ void add_disk(struct gendisk *disk)
 	       disk->disk_name, disk->major, disk->first_minor,
 	       (unsigned int)disk->capacity,
 	       (unsigned int)(disk->capacity / 2));
+
+	register_disk_devnode(disk);
 }
 
 /* 删除通用磁盘 */

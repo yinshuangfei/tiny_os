@@ -42,12 +42,12 @@ int sys_open(struct trapframe *tf)
 		return -1;
 	}
 
-	if (ip->type == T_DEV) {
-		f->type = FD_DEVICE;
-		f->major = ip->major;
-	} else {
+	if (ip->type == T_CHAR)
+		f->type = FD_CHAR;
+	else if (ip->type == T_BLK)
+		f->type = FD_BLOCK;
+	else
 		f->type = FD_INODE;
-	}
 	f->ip = ip;
 	f->off = 0;
 	f->readable = !(flags & O_WRONLY);
@@ -62,8 +62,10 @@ static unsigned short inode_to_mode(short type)
 		return S_IFDIR;
 	case T_FILE:
 		return S_IFREG;
-	case T_DEV:
+	case T_CHAR:
 		return S_IFCHR;
+	case T_BLK:
+		return S_IFBLK;
 	default:
 		return 0;
 	}

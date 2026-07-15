@@ -20,8 +20,10 @@ static unsigned char inode_to_dtype(short type)
 		return DT_DIR;
 	case T_FILE:
 		return DT_REG;
-	case T_DEV:
+	case T_CHAR:
 		return DT_CHR;
+	case T_BLK:
+		return DT_BLK;
 	default:
 		return DT_UNKNOWN;
 	}
@@ -63,7 +65,7 @@ static struct inode *ialloc(short type)
 			ip->data = 0;
 			ip->dents = 0;
 			ip->parent = 0;
-			ip->major = 0;
+			ip->rdev = 0;
 			return ip;
 		}
 	}
@@ -344,6 +346,24 @@ struct inode *fs_create(const char *path, short type)
 	return ip;
 }
 
+/*
+ * 创建设备特殊文件（对齐 Linux mknod）。
+ * type 为 T_CHAR / T_BLK；设备号写入 inode（类 i_rdev）。
+ */
+struct inode *fs_mknod(const char *path, short type,
+		       unsigned int major, unsigned int minor)
+{
+	struct inode *ip;
+
+	if (type != T_CHAR && type != T_BLK)
+		return 0;
+	ip = fs_create(path, type);
+	if (!ip)
+		return 0;
+	ip->rdev = MKDEV(major, minor);
+	return ip;
+}
+
 /* 从目录 inode 按 struct dirent 记录顺序读取（对齐 Linux getdents 记录语义） */
 static int fs_readdir(struct inode *ip, char *dst, uint off, uint n)
 {
@@ -480,10 +500,10 @@ void fs_init(void)
 		panic("fs_init: /dev");
 	fs_iput(dev);
 
-	console = ialloc(T_DEV);
+	console = ialloc(T_CHAR);
 	if (!console)
 		panic("fs_init: console");
-	console->major = DEV_CONSOLE;
+	console->rdev = MKDEV(CONSOLE_MAJOR, CONSOLE_MINOR);
 	if (dirlink(dev, "console", console) < 0)
 		panic("fs_init: /dev/console");
 	fs_iput(console);
@@ -491,5 +511,5 @@ void fs_init(void)
 	seed_file("/hello", "Hello from Tiny-OS ramfs!\n");
 
 	fileinit();
-	printk(KERN_INFO "fs: ramfs ready (root, /dev/console, /hello)\n");
+	printk(KERN_INFO "fs: ramfs ready (root, /dev, /hello)\n");
 }

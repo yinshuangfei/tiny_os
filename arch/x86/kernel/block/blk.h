@@ -17,23 +17,13 @@
 #include "../types.h"
 #include "../list.h"
 #include "../spinlock.h"
+#include "../major.h"
 
 /* 逻辑块大小（与 ATA 扇区一致） */
 #define BLOCK_SECTOR_SIZE	512
 #define SECTOR_SHIFT		9
 
 typedef uint32 sector_t;
-typedef uint32 dev_t;
-
-/* 旧式 8+8 major/minor（教学用；Linux 现为 12+20） */
-#define MINORBITS		8
-#define MINORMASK		((1u << MINORBITS) - 1)
-#define MKDEV(ma, mi)		(((dev_t)(ma) << MINORBITS) | ((mi) & MINORMASK))
-#define MAJOR(dev)		((unsigned int)((dev) >> MINORBITS))
-#define MINOR(dev)		((unsigned int)((dev) & MINORMASK))
-
-/* IDE 主设备号（与 Linux IDE major 3 对齐） */
-#define IDE_MAJOR		3
 
 /* bio / 请求操作码（对齐 Linux REQ_OP_* 子集） */
 #define REQ_OP_READ		0		/* 读 */
