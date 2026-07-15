@@ -3,8 +3,10 @@
 /*
  * MBR：把 kernel.bin（setup + body）读到 0x7e00，再跳转 setup。
  *
- * 软盘 INT 13h 走 ISA DMA，单次传输不得跨越物理 64KB 边界。
- * 因此按「本页剩余扇区」分块读；地址连续，读完后仍是一份完整镜像。
+ * 软盘 INT 13h 走 ISA DMA，单次传输不得跨越物理 64KB 边界；
+ * 且 CHS 读不得跨越磁道（QEMU 常容忍 multitrack，VMware 会 VERIFY 失败）。
+ * 因此每次分块取三者之小：剩余扇区 / 本 DMA 页剩余 / 本磁道剩余。
+ * 地址连续，读完后仍是一份完整镜像。
  */
 
 .set STAGE2_TMP, 0x7e00
@@ -43,55 +45,61 @@ _boot:
 
 	xorw %si, %si			# si = 已读扇区数
 
-	# 从第 2 扇区起读取 STAGE2_SECTORS 个扇区到 0x7e00（按 DMA 页分块）
+	# 从第 2 扇区起读取 STAGE2_SECTORS 个扇区到 0x7e00
 read_loop:
 	cmpw $STAGE2_SECTORS, %si
 	jae load_done
 
 	# di = 剩余扇区
-	movw $STAGE2_SECTORS, %ax
-	subw %si, %ax
-	movw %ax, %di
+	movw $STAGE2_SECTORS, %di
+	subw %si, %di
 
 	# ES:BX = STAGE2_TMP + si*512
 	# 起点扇区对齐 → BX 恒为 0，ES = (STAGE2_TMP>>4) + si*32
 	movw %si, %ax
-	shlw $5, %ax		# 将 si 左移 5 位，相当于乘以 32
+	shlw $5, %ax			# 将 si 左移 5 位，相当于乘以 32
 	addw $(STAGE2_TMP >> 4), %ax
 	movw %ax, %es
 	xorw %bx, %bx
 
-	# 本 DMA 页还能放多少扇区（phys_lo==0 → 整页 128）
+	# cx = min(剩余, 本 DMA 页可容纳扇区)；phys_lo==0 → 整页 128
 	shlw $4, %ax			# ax = phys & 0xffff
 	movw $128, %cx
 	testw %ax, %ax
-	jz dma_room_ready
+	jz 1f
 	negw %ax
 	shrw $9, %ax
 	movw %ax, %cx
-dma_room_ready:
+1:
 	cmpw %di, %cx
-	jbe chunk_size_ready
+	jbe 2f
 	movw %di, %cx			# 不超过剩余扇区
-chunk_size_ready:
-	movb %cl, nsect			# 本次读取扇区数
-
+2:
 	# LBA = LBA0 + si → CHS（1.44MB：18 扇区/道，2 磁头）
 	#   sector = (lba % SPT) + 1
 	#   temp   = lba / SPT
 	#   head   = temp % HEADS
 	#   cyl    = temp / HEADS
+	# 同时 cx = min(cx, 本道剩余) = min(cx, SPT - lba%SPT)
 	movw %si, %ax
 	addw $LBA0, %ax			# 当前逻辑块地址（跳过 MBR）
 	xorw %dx, %dx
-	movw $SPT, %cx
-	# 被除数默认 32 位，存放在 DX:AX 寄存器对中，除数 16 位，存放在 CX 寄存器中
-	divw %cx			# ax=temp, dx=lba%SPT
+	movw $SPT, %bx
+	# 被除数默认 32 位，存放在 DX:AX 寄存器对中，除数 16 位
+	divw %bx			# ax=temp, dx=lba%SPT
 	movw %dx, %di
 	incw %di			# di = sector (1..SPT)
+	movw $SPT, %bx
+	subw %dx, %bx			# bx = 本道剩余扇区
+	cmpw %bx, %cx
+	jbe 3f
+	movw %bx, %cx
+3:
+	movb %cl, nsect			# 本次读取扇区数（随后 CH 编码会占用 cx）
+
 	xorw %dx, %dx
-	movw $HEADS, %cx
-	divw %cx			# ax=cylinder, dx=head
+	movw $HEADS, %bx
+	divw %bx			# ax=cylinder, dx=head
 
 	# 填 INT 13h AH=02 的 CHS 寄存器：
 	#   DH = head
