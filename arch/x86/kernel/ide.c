@@ -10,6 +10,7 @@
 #include "x86.h"
 #include "spinlock.h"
 #include "printk.h"
+#include "block/blk.h"
 
 /* 相对通道基址的寄存器偏移（主通道基址 0x1F0，次通道 0x170） */
 #define IDE_DATA	0	/* 数据寄存器 */
@@ -81,9 +82,11 @@ struct ide_disk {
 	ushort iobase;		/* 通道数据口基址 */
 	ushort altport;		/* 备用状态口 */
 	int unit;		/* 0=master, 1=slave */
+	int drive;		/* 逻辑盘号（ide_tab 下标） */
 	uint sectors;		/* 总扇区数（LBA28） */
 	char model[41];		/* IDENTIFY 型号字符串 */
 	char slot[24];		/* 如 ide1.0-master，仅日志 */
+	struct gendisk *gd;	/* block 层整盘 */
 };
 
 static struct spinlock ide_lock;
@@ -172,6 +175,88 @@ uint ide_nsectors(int drive)
 	struct ide_disk *d = ide_get(drive);
 
 	return d ? d->sectors : 0;
+}
+
+struct gendisk *ide_gendisk(int drive)
+{
+	struct ide_disk *d = ide_get(drive);
+
+	return d ? d->gd : 0;
+}
+
+/*
+ * Linux 风格 make_request_fn：处理 bio（可多扇区），同步 PIO 完成。
+ * 由 submit_bio → d->gd->queue->make_request_fn 调用。
+ */
+static void ide_submit_bio(struct request_queue *q, struct bio *bio)
+{
+	struct ide_disk *d;
+	sector_t sec;
+	unsigned int left;
+	char *p;
+	unsigned int op;
+	int r;
+
+	d = q->queuedata;
+	if (!d || !bio) {
+		if (bio) {
+			bio->bi_status = BLK_STS_IOERR;
+			if (bio->bi_end_io)
+				bio->bi_end_io(bio);
+		}
+		return;
+	}
+
+	sec = bio->bi_sector;
+	left = bio->bi_size;
+	p = bio->bi_data;
+	op = bio->bi_opf & REQ_OP_MASK;
+	bio->bi_status = BLK_STS_OK;
+
+	while (left >= (unsigned int)SECTSIZE) {
+		if (op == REQ_OP_WRITE)
+			r = ide_write(d->drive, (uint)sec, p);
+		else
+			r = ide_read(d->drive, (uint)sec, p);
+		if (r < 0) {
+			bio->bi_status = BLK_STS_IOERR;
+			break;
+		}
+		sec++;
+		p += SECTSIZE;
+		left -= SECTSIZE;
+	}
+	if (left != 0 && bio->bi_status == BLK_STS_OK)
+		bio->bi_status = BLK_STS_IOERR;
+
+	if (bio->bi_end_io)
+		bio->bi_end_io(bio);
+}
+
+/* 将 ATA 盘注册为 gendisk（hda/hdb/…，major=IDE_MAJOR） */
+static int ide_add_gendisk(struct ide_disk *d)
+{
+	struct gendisk *gd;
+	char name[8];
+
+	gd = alloc_disk(1);
+	if (!gd)
+		return -1;
+
+	gd->major = IDE_MAJOR;
+	gd->first_minor = d->drive;
+	snprintf(name, sizeof(name), "hd%c", 'a' + (d->drive % 26));
+	snprintf(gd->disk_name, sizeof(gd->disk_name), "%s", name);
+	gd->private_data = d;
+	set_capacity(gd, d->sectors);
+
+	gd->queue->queuedata = d;
+	blk_queue_logical_block_size(gd->queue, SECTSIZE);
+	blk_queue_make_request(gd->queue, ide_submit_bio);
+
+	d->gd = gd;
+	add_disk(gd);
+	return 0;
 }
 
 /* 从磁盘读取数据 */
@@ -280,15 +365,24 @@ static int ide_identify(struct ide_disk *d)
  * 切勿在 init 里写低号扇区——VMware/真机上 primary master 常是启动盘，
  * 写 LBA1 会毁掉引导/内核，表现为「串口再也没有输出」。
  */
+/* 经 block 层读 LBA0，验证 gendisk → bio → ide_submit_bio 通路 */
 static void ide_smoke_read(int drive)
 {
+	struct gendisk *gd;
 	uchar rbuf[SECTSIZE];
 
-	if (ide_read(drive, 0, rbuf) < 0) {
-		printk(KERN_ERR "ide: smoke read drive=%d LBA0 failed\n", drive);
+	gd = ide_gendisk(drive);
+	if (!gd) {
+		printk(KERN_ERR "ide: smoke: no gendisk for drive=%d\n", drive);
 		return;
 	}
-	printk(KERN_INFO "ide: smoke read drive=%d LBA0 ok\n", drive);
+	if (blkdev_read_sect(gd, 0, rbuf) < 0) {
+		printk(KERN_ERR "ide: smoke read %s LBA0 failed\n",
+		       gd->disk_name);
+		return;
+	}
+	printk(KERN_INFO "ide: smoke read %s LBA0 ok (via bio)\n",
+	       gd->disk_name);
 }
 
 /* 把已探测磁盘挂入动态表（表本身随数量 kmalloc 增长） */
@@ -353,7 +447,9 @@ static void ide_probe_slot(const struct ide_ctl_desc *ctl, int chan, int unit)
 		printk(KERN_ERR "ide: kmalloc disk for %s failed\n", probe.slot);
 		return;
 	}
-	*d = probe;
+	*d = probe;		/* 把 probe 的内容拷贝进这块堆内存 */
+	d->gd = 0;
+	d->drive = ide_ndisk;	/* 即将占用的下标 */
 
 	if (ide_register(d) < 0) {
 		kfree(d);
@@ -361,12 +457,17 @@ static void ide_probe_slot(const struct ide_ctl_desc *ctl, int chan, int unit)
 	}
 
 	printk(KERN_INFO "ide: drive%d %s model (%s), %d sectors (%d KiB)\n",
-	       ide_ndisk - 1, d->slot,
+	       d->drive, d->slot,
 	       d->model[0] ? d->model : "(unknown)",
 	       d->sectors,
 	       d->sectors / 2);
 
-	ide_smoke_read(ide_ndisk - 1);
+	if (ide_add_gendisk(d) < 0) {
+		printk(KERN_ERR "ide: add_disk failed for drive%d\n", d->drive);
+		return;
+	}
+
+	ide_smoke_read(d->drive);
 }
 
 static void ide_probe_controller(const struct ide_ctl_desc *ctl)

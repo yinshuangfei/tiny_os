@@ -52,6 +52,9 @@ void uart_intr(void);
 /** fs */
 void fs_init(void);
 
+/** block/ — Linux 风格块设备层 */
+void blk_init(void);
+
 /** ide.c — ATA PIO（多控制器扫描；drive 为逻辑盘号） */
 void ide_init(void);
 int ide_ndisks(void);

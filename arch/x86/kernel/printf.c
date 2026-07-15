@@ -147,16 +147,25 @@ static void vprintf_to(printf_putc_t put, void *arg, const char *fmt, va_list ap
 		}
 
 		switch (c) {
+		case 'c':
+			pad_to(put, arg, width, 1, ' ');
+			put((char)va_arg(ap, int), arg);
+			break;
 		case 'o':
 			printint_to(put, arg, va_arg(ap, int), 8, 1, width,
 				    zeropad);
 			break;
 		case 'd':
+		case 'i':
 			printint_to(put, arg, va_arg(ap, int), 10, 1, width,
 				    zeropad);
 			break;
+		case 'u':
+			printint_to(put, arg, va_arg(ap, int), 10, 0, width,
+				    zeropad);
+			break;
 		case 'x':
-			printint_to(put, arg, va_arg(ap, int), 16, 1, width,
+			printint_to(put, arg, va_arg(ap, int), 16, 0, width,
 				    zeropad);
 			break;
 		case 'l':

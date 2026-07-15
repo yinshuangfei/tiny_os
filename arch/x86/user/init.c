@@ -39,8 +39,6 @@ int main(void)
 	for (;;) {
 		pid = waitpid(-1, &status, 0);
 		if (pid < 0) {
-			/* 当前无子进程可收，稍等再拉起，避免空转打满进程表 */
-			sleep(1);
 			spawn_shell();
 			continue;
 		}

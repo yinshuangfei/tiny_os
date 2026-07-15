@@ -113,6 +113,9 @@ C_OBJS = \
 	$(KDIR)/fs/ramfs.o \
 	$(KDIR)/fs/file.o \
 	$(KDIR)/fs/sysfile.o \
+	$(KDIR)/block/genhd.o \
+	$(KDIR)/block/bio.o \
+	$(KDIR)/block/blk-core.o \
 	$(KDIR)/ide.o \
 	$(TESTDIR)/kernel_test.o \
 

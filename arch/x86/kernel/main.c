@@ -34,7 +34,9 @@ void main(void)
 	procinit();
 	/* 内存文件系统 */
 	fs_init();
-	/* IDE 设备初始化 */
+	/* 块设备层（须在 IDE 等驱动注册 gendisk 之前） */
+	blk_init();
+	/* IDE 设备初始化（探测后注册 hda/hdb/…） */
 	ide_init();
 	/* printf 自旋锁（须在 sti 之前，避免定时器 IRQ 交错输出） */
 	printfinit();

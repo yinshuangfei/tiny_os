@@ -1056,12 +1056,10 @@ int main(void)
 {
 	char line[BUFSZ];
 
-	/* print_banner(); */
+	print_banner();
 	for (;;) {
 		print_prompt();
 		if (readline(line, sizeof(line)) < 0) {
-			/* 串口暂无输入时不退出，避免 init 反复 fork */
-			sleep(1);
 			continue;
 		}
 		hist_add(line);
