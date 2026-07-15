@@ -1,7 +1,7 @@
 #ifndef __MMU_H__
 #define __MMU_H__
 
-#include "types.h"
+#include "../types.h"
 
 /** page directory / page table index, 10 bits */
 /** 页目录索引，32 位虚拟地址的高 10 位 */

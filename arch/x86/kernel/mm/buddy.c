@@ -19,12 +19,12 @@
  * 数据段、内核栈等）的内存从可用内存池中扣除。
  * (3)随后，内核才会将剩余的物理内存页交给伙伴系统（Buddy System）等通用分配器进行管理。
  */
-#include "types.h"
-#include "defs.h"
+#include "../types.h"
+#include "../defs.h"
 #include "memlayout.h"
-#include "list.h"
-#include "spinlock.h"
-#include "utils.h"
+#include "../list.h"
+#include "../spinlock.h"
+#include "../utils.h"
 
 extern char end[];	/* kernel.ld: .bss 结束后的第一个地址 */
 

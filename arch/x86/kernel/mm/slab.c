@@ -2,12 +2,12 @@
  * 内核堆：按 2 的幂次 size-class 管理，底层向 buddy 申请整页并切分。
  * 大于最大 class 且不超过一页的请求直接占用一整物理页。
  */
-#include "types.h"
-#include "defs.h"
+#include "../types.h"
+#include "../defs.h"
 #include "memlayout.h"
-#include "list.h"
+#include "../list.h"
 #include "slab.h"
-#include "spinlock.h"
+#include "../spinlock.h"
 
 #define KMAGIC       0x4b4d454d	/* 'KMEM' */
 #define KFLAG_PAGE   0x80000000u	/* size 字段标记：整页分配 */

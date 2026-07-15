@@ -3,10 +3,10 @@
  *   1. QEMU fw_cfg（-kernel 路径，读 -m 参数）
  *   2. boot_info（MBR 路径，setup 通过 BIOS E820 写入）
  */
-#include "types.h"
-#include "defs.h"
+#include "../types.h"
+#include "../defs.h"
 #include "memlayout.h"
-#include "x86.h"
+#include "../x86.h"
 
 uint physmem_top;
 

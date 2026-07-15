@@ -9,11 +9,11 @@
  * └────────────────────────┴─────┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
  */
 
-#include "types.h"
-#include "defs.h"
+#include "../types.h"
+#include "../defs.h"
 #include "memlayout.h"
 #include "mmu.h"
-#include "x86.h"
+#include "../x86.h"
 
 /* 内核页目录, 所有内核线程共享。和 Linux 一样：内核页表是全局共用的 */
 pagetable_t kernel_pgdir;

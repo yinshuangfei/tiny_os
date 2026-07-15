@@ -2,7 +2,7 @@
 #include "../kernel/x86.h"
 #include "../kernel/gdt.h"
 #include "../kernel/idt.h"
-#include "../kernel/memlayout.h"
+#include "../kernel/mm/memlayout.h"
 #include "../kernel/timer.h"
 #include "../kernel/debug.h"
 

@@ -3,12 +3,12 @@
 
 #include "types.h"
 #include "utils.h"
-#include "vm.h"
-#include "slab.h"
+#include "mm/vm.h"
+#include "mm/slab.h"
 #include "proc.h"
 #include "spinlock.h"
 
-/** buddy.c — Linux-style buddy page allocator */
+/** mm/ — 物理探测、buddy、slab、页表（对齐 Linux mm/） */
 void *memset(void *dst, int c, uint n);
 void pmm_init(void);
 void mem_probe(void);

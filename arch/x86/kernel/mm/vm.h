@@ -1,7 +1,7 @@
 #ifndef __VM_H__
 #define __VM_H__
 
-#include "types.h"
+#include "../types.h"
 
 extern pagetable_t kernel_pgdir;
 

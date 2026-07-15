@@ -1,7 +1,7 @@
 #include "types.h"
 #include "defs.h"
 #include "gdt.h"
-#include "memlayout.h"
+#include "mm/memlayout.h"
 #include "x86.h"
 
 static struct gdt_entry gdt[GDT_ENTRIES] __attribute__((aligned(8)));

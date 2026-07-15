@@ -1,5 +1,5 @@
 #include "types.h"
-#include "memlayout.h"
+#include "mm/memlayout.h"
 
 /* 内核主栈（main/普通内核代码）
  * scheduler 跑在 kernel_stack 上

@@ -4,7 +4,7 @@
 #include "types.h"
 #include "param.h"
 #include "list.h"
-#include "vm.h"
+#include "mm/vm.h"
 #include "trap.h"
 
 struct file;

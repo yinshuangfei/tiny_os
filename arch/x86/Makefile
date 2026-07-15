@@ -89,7 +89,6 @@ $(BOOTDIR)/boot.bin: $(BOOTDIR)/boot.o
 
 C_OBJS = \
 	$(KDIR)/main.o \
-	$(KDIR)/mem.o \
 	$(KDIR)/serial.o \
 	$(KDIR)/timer.o \
 	$(KDIR)/gdt.o \
@@ -99,9 +98,10 @@ C_OBJS = \
 	$(KDIR)/spinlock.o \
 	$(KDIR)/printf.o \
 	$(KDIR)/utils.o \
-	$(KDIR)/buddy.o \
-	$(KDIR)/slab.o \
-	$(KDIR)/vm.o \
+	$(KDIR)/mm/mem.o \
+	$(KDIR)/mm/buddy.o \
+	$(KDIR)/mm/slab.o \
+	$(KDIR)/mm/vm.o \
 	$(KDIR)/proc.o \
 	$(KDIR)/task_queue.o \
 	$(KDIR)/init.o \

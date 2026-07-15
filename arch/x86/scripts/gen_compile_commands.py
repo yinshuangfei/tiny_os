@@ -15,10 +15,11 @@ KERNEL_CFLAGS = [
 USER_CFLAGS = KERNEL_CFLAGS + ["-Iuser/include", "-fno-builtin"]
 
 KERNEL_SOURCES = [
-    "kernel/main.c", "kernel/mem.c", "kernel/serial.c", "kernel/timer.c",
+    "kernel/main.c", "kernel/serial.c", "kernel/timer.c",
     "kernel/gdt.c", "kernel/idt.c", "kernel/trapstack.c", "kernel/cpu.c",
     "kernel/spinlock.c", "kernel/printf.c", "kernel/utils.c",
-    "kernel/buddy.c", "kernel/slab.c",     "kernel/vm.c", "kernel/proc.c", "kernel/task_queue.c",
+    "kernel/mm/mem.c", "kernel/mm/buddy.c", "kernel/mm/slab.c", "kernel/mm/vm.c",
+    "kernel/proc.c", "kernel/task_queue.c",
     "kernel/init.c", "kernel/debug.c", "kernel/exception.c",
     "kernel/syscall.c", "kernel/sysproc.c", "kernel/execve.c",
     "test/kernel_test.c",

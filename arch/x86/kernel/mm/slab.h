@@ -1,7 +1,7 @@
 #ifndef __SLAB_H__
 #define __SLAB_H__
 
-#include "types.h"
+#include "../types.h"
 
 /*
  * 内核小对象堆（基于 alloc_page 的 size-class 分配器）。
