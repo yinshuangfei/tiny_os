@@ -1,5 +1,5 @@
 /*
- * 打开文件表与进程 fd 表。
+ * VFS：打开文件表与进程 fd（对齐 Linux fs/file.c）。
  * 设备号从 f->ip（类 Linux f_inode / i_rdev）读取，不缓存在 struct file。
  */
 #include "../types.h"
@@ -7,7 +7,7 @@
 #include "../param.h"
 #include "../proc.h"
 #include "../block/blk.h"
-#include "fs.h"
+#include "vfs.h"
 
 /* 全局文件描述符表 */
 static struct file ftable[NFILE];

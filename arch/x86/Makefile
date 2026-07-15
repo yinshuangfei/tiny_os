@@ -110,6 +110,8 @@ C_OBJS = \
 	$(KDIR)/syscall.o \
 	$(KDIR)/sysproc.o \
 	$(KDIR)/execve.o \
+	$(KDIR)/fs/inode.o \
+	$(KDIR)/fs/namei.o \
 	$(KDIR)/fs/ramfs.o \
 	$(KDIR)/fs/file.o \
 	$(KDIR)/fs/sysfile.o \

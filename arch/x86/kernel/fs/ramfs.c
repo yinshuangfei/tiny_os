@@ -1,16 +1,39 @@
 /*
- * 最小内存文件系统（ramfs）：单棵目录树，无磁盘。
- * 路径解析、创建、inode 读写均在此完成。
+ * ramfs：内存文件系统后端（对齐 Linux fs/ramfs）。
+ * 只实现 inode_operations；VFS 编排见 namei.c / inode.c / file.c。
  */
 #include "../types.h"
 #include "../defs.h"
 #include "../param.h"
 #include "../printk.h"
-#include "../proc.h"
 #include "fs.h"
 
-static struct inode *root;		/* 根inode */
-static struct inode inodes[NINODE];	/* 所有inode */
+/* 内存文件系统 inode 数组 */
+static struct inode inodes[NINODE];
+
+static struct inode *ramfs_lookup(struct inode *dir, const char *name);
+static int ramfs_create(struct inode *dir, const char *name, short type,
+			struct inode **out);
+static int ramfs_mkdir(struct inode *dir, const char *name);
+static int ramfs_rmdir(struct inode *dir, const char *name);
+static int ramfs_mknod(struct inode *dir, const char *name, short type,
+		       dev_t rdev);
+static int ramfs_get_name(struct inode *dir, struct inode *child, char *name);
+static void ramfs_evict(struct inode *ip);
+static int ramfs_read(struct inode *ip, char *dst, uint off, uint n);
+static int ramfs_write(struct inode *ip, char *src, uint off, uint n);
+
+static const struct inode_operations ramfs_iops = {
+	.lookup		= ramfs_lookup,
+	.create		= ramfs_create,
+	.mkdir		= ramfs_mkdir,
+	.rmdir		= ramfs_rmdir,
+	.mknod		= ramfs_mknod,
+	.get_name	= ramfs_get_name,
+	.evict		= ramfs_evict,
+	.read		= ramfs_read,
+	.write		= ramfs_write,
+};
 
 /* inode_type → Linux dirent.d_type */
 static unsigned char inode_to_dtype(short type)
@@ -29,7 +52,6 @@ static unsigned char inode_to_dtype(short type)
 	}
 }
 
-/* 比较两个目录项名称 */
 static int namecmp(const char *a, const char *b)
 {
 	int i;
@@ -39,7 +61,6 @@ static int namecmp(const char *a, const char *b)
 	return a[i] - b[i];
 }
 
-/* 复制目录项名称 */
 static void namecpy(char *dst, const char *src)
 {
 	int i;
@@ -49,7 +70,6 @@ static void namecpy(char *dst, const char *src)
 	dst[i] = '\0';
 }
 
-/* 分配一个空闲 inode */
 static struct inode *ialloc(short type)
 {
 	int i;
@@ -66,81 +86,13 @@ static struct inode *ialloc(short type)
 			ip->dents = 0;
 			ip->parent = 0;
 			ip->rdev = 0;
+			ip->i_op = &ramfs_iops;
 			return ip;
 		}
 	}
 	return 0;
 }
 
-/* 增加 inode 引用计数 */
-struct inode *fs_idup(struct inode *ip)
-{
-	if (ip)
-		ip->ref++;
-	return ip;
-}
-
-/* 释放 inode 引用计数 */
-void fs_iput(struct inode *ip)
-{
-	if (!ip)
-		return;
-	if (ip->ref <= 0)
-		panic("fs_iput");
-
-	ip->ref--;
-	/* 教学实现：inode 不回收到空闲池以外的彻底释放，
-	 * type 保留；无引用且非根时清空数据以便复用。 */
-	if (ip->ref == 0 && ip != root) {
-		struct dentry *d, *n;
-
-		if (ip->data) {
-			kfree(ip->data);
-			ip->data = 0;
-		}
-		for (d = ip->dents; d; d = n) {
-			n = d->next;
-			fs_iput(d->ip);
-			kfree(d);
-		}
-		ip->dents = 0;
-		ip->parent = 0;
-		ip->type = 0;
-		ip->size = 0;
-		ip->inum = 0;
-	}
-}
-
-/* 从 path 取出第一个路径名（组件），返回去除 '/' 后的剩余路径；
- * 取出的组件名称写入大小为 DIRSIZ 的缓冲区 name
- */
-static const char *skipelem(const char *path, char *name)
-{
-	const char *s;
-	int len;
-
-	while (*path == '/')
-		path++;
-	if (*path == 0)
-		return 0;
-	s = path;
-	while (*path != '/' && *path != 0)
-		path++;
-	len = path - s;
-	if (len >= DIRSIZ)
-		len = DIRSIZ - 1;
-	{
-		int i;
-		for (i = 0; i < len; i++)
-			name[i] = s[i];
-		name[len] = '\0';
-	}
-	while (*path == '/')
-		path++;
-	return path;
-}
-
-/* 在父目录中查找一个目录项 */
 static struct dentry *dirlookup(struct inode *dp, const char *name)
 {
 	struct dentry *d;
@@ -154,7 +106,6 @@ static struct dentry *dirlookup(struct inode *dp, const char *name)
 	return 0;
 }
 
-/* 将一个 inode 添加到父目录的目录项链表中 */
 static int dirlink(struct inode *dp, const char *name, struct inode *ip)
 {
 	struct dentry *d;
@@ -175,196 +126,6 @@ static int dirlink(struct inode *dp, const char *name, struct inode *ip)
 	return 0;
 }
 
-/* 在父目录 dents 中查找指向 child 的名字（供 getcwd） */
-static int child_name(struct inode *parent, struct inode *child, char *name)
-{
-	struct dentry *d;
-
-	if (!parent || !child || parent->type != T_DIR)
-		return -1;
-	for (d = parent->dents; d; d = d->next) {
-		if (d->ip == child) {
-			namecpy(name, d->name);
-			return 0;
-		}
-	}
-	return -1;
-}
-
-/*
- * 解析路径。
- * - 以 '/' 开头：从 root；否则从当前进程 cwd。
- * - 支持 "." / ".."。
- * - nameiparent != 0 时返回父目录，name 为最后组件（用于 create）。
- * - nameiparent == 0 时返回目标 inode。
- */
-static struct inode *namex(const char *path, int nameiparent, char *name)
-{
-	struct inode *ip, *next;
-	struct dentry *de;
-	struct proc *p;
-	const char *s;
-
-	if (!path || path[0] == 0)
-		return 0;
-
-	if (path[0] == '/') {
-		ip = fs_idup(root);
-	} else {
-		p = myproc();
-		if (!p || !p->cwd)
-			return 0;
-		ip = fs_idup(p->cwd);
-	}
-
-	s = path;
-	while ((s = skipelem(s, name)) != 0) {
-		if (ip->type != T_DIR) {
-			fs_iput(ip);
-			return 0;
-		}
-		if (nameiparent && *s == 0) {
-			/* 停在父目录，name 已是最后组件 */
-			/* 占用父目录的 inode 引用 */
-			return ip;
-		}
-		if (namecmp(name, ".") == 0)
-			continue;
-		if (namecmp(name, "..") == 0) {
-			next = ip->parent ? ip->parent : ip;
-			next = fs_idup(next);
-			fs_iput(ip);
-			ip = next;
-			continue;
-		}
-		de = dirlookup(ip, name);
-		if (!de) {
-			fs_iput(ip);
-			return 0;
-		}
-		next = fs_idup(de->ip);
-		fs_iput(ip);
-		ip = next;
-	}
-	if (nameiparent) {
-		fs_iput(ip);
-		return 0;
-	}
-	return ip;
-}
-
-/*
- * 将当前工作目录的绝对路径写入 buf（含结尾 '\0'）。
- * 成功返回写入字节数（含 '\0'）；失败返回 -1。
- */
-int fs_getcwd(char *buf, int max)
-{
-	struct proc *p = myproc();
-	struct inode *ip, *stack[NINODE];
-	char name[DIRSIZ];
-	int nstack, i, len, nlen;
-
-	if (!buf || max < 2 || !p || !p->cwd)
-		return -1;
-
-	ip = p->cwd;
-	nstack = 0;
-	while (ip && ip != root && ip->parent && ip->parent != ip) {
-		if (nstack >= NINODE)
-			return -1;
-		stack[nstack++] = ip;
-		ip = ip->parent;
-	}
-
-	if (nstack == 0) {
-		buf[0] = '/';
-		buf[1] = '\0';
-		return 2;
-	}
-
-	len = 0;
-	for (i = nstack - 1; i >= 0; i--) {
-		if (child_name(stack[i]->parent, stack[i], name) < 0)
-			return -1;
-		nlen = 0;
-		while (name[nlen])
-			nlen++;
-		/* '/' + name */
-		if (len + 1 + nlen + 1 > max)
-			return -1;
-		buf[len++] = '/';
-		{
-			int j;
-			for (j = 0; j < nlen; j++)
-				buf[len++] = name[j];
-		}
-	}
-	buf[len++] = '\0';
-	return len;
-}
-
-/* 在指定路径查找一个 inode */
-struct inode *fs_namei(const char *path)
-{
-	char name[DIRSIZ];
-
-	return namex(path, 0, name);
-}
-
-/* 在指定路径创建一个 inode, 并添加到父目录的目录项链表中 */
-struct inode *fs_create(const char *path, short type)
-{
-	char name[DIRSIZ];
-	struct inode *dp, *ip;
-
-	dp = namex(path, 1, name);
-	if (!dp)
-		return 0;
-
-	if (name[0] == 0) {
-		fs_iput(dp);
-		return 0;
-	}
-
-	/* 目录项已存在，返回 0 */
-	if (dirlookup(dp, name)) {
-		fs_iput(dp);
-		return 0;
-	}
-
-	ip = ialloc(type);
-	if (!ip) {
-		fs_iput(dp);
-		return 0;
-	}
-	if (dirlink(dp, name, ip) < 0) {
-		fs_iput(ip);
-		fs_iput(dp);
-		return 0;
-	}
-	fs_iput(dp);
-	return ip;
-}
-
-/*
- * 创建设备特殊文件（对齐 Linux mknod）。
- * type 为 T_CHAR / T_BLK；设备号写入 inode（类 i_rdev）。
- */
-struct inode *fs_mknod(const char *path, short type,
-		       unsigned int major, unsigned int minor)
-{
-	struct inode *ip;
-
-	if (type != T_CHAR && type != T_BLK)
-		return 0;
-	ip = fs_create(path, type);
-	if (!ip)
-		return 0;
-	ip->rdev = MKDEV(major, minor);
-	return ip;
-}
-
-/* 从父目录摘除名为 name 的目录项（释放 dentry 对目标的引用） */
 static int dirunlink(struct inode *dp, const char *name)
 {
 	struct dentry *prev, *d;
@@ -376,7 +137,6 @@ static int dirunlink(struct inode *dp, const char *name)
 	for (d = dp->dents; d; prev = d, d = d->next) {
 		if (namecmp(d->name, name) != 0)
 			continue;
-		/* 从链表摘掉 d：头节点改 dents，否则改前驱的 next */
 		if (prev)
 			prev->next = d->next;
 		else
@@ -388,108 +148,130 @@ static int dirunlink(struct inode *dp, const char *name)
 	return -1;
 }
 
-/* 是否仍有进程以 ip 为 cwd */
-static int inode_is_cwd(struct inode *ip)
+/* ---------- inode_operations ---------- */
+
+static struct inode *ramfs_lookup(struct inode *dir, const char *name)
 {
-	int i;
-	struct proc *p;
-
-	if (!ip || !proc_table)
-		return 0;
-	for (i = 0; i < NPROC; i++) {
-		p = &proc_table[i];
-		if (p->state != UNUSED && p->cwd == ip)
-			return 1;
-	}
-	return 0;
-}
-
-/* mkdir：创建空目录；成功 0，失败 -1 */
-int fs_mkdir(const char *path)
-{
-	char name[DIRSIZ];
-	struct inode *dp, *ip;
-
-	if (!path || !path[0])
-		return -1;
-
-	dp = namex(path, 1, name);
-	if (!dp)
-		return -1;
-	if (name[0] == 0 ||
-	    namecmp(name, ".") == 0 ||
-	    namecmp(name, "..") == 0) {
-		fs_iput(dp);
-		return -1;
-	}
-	if (dirlookup(dp, name)) {
-		fs_iput(dp);
-		return -1;
-	}
-
-	ip = ialloc(T_DIR);
-	if (!ip) {
-		fs_iput(dp);
-		return -1;
-	}
-	if (dirlink(dp, name, ip) < 0) {
-		fs_iput(ip);
-		fs_iput(dp);
-		return -1;
-	}
-	fs_iput(ip);	/* 仅保留目录项持有的引用 */
-	fs_iput(dp);
-	return 0;
-}
-
-/*
- * rmdir：删除空目录。
- * 拒绝：非目录、非空、根、仍为某进程 cwd、名为 . / ..。
- */
-int fs_rmdir(const char *path)
-{
-	char name[DIRSIZ];
-	struct inode *dp, *ip;
 	struct dentry *de;
 
-	if (!path || !path[0])
-		return -1;
+	de = dirlookup(dir, name);
+	if (!de)
+		return 0;
+	return fs_idup(de->ip);
+}
 
-	dp = namex(path, 1, name);
-	if (!dp)
-		return -1;
-	if (name[0] == 0 ||
-	    namecmp(name, ".") == 0 ||
-	    namecmp(name, "..") == 0) {
-		fs_iput(dp);
-		return -1;
-	}
+static int ramfs_create(struct inode *dir, const char *name, short type,
+			struct inode **out)
+{
+	struct inode *ip;
 
-	de = dirlookup(dp, name);
-	if (!de) {
-		fs_iput(dp);
+	if (!out || dirlookup(dir, name))
+		return -1;
+	ip = ialloc(type);
+	if (!ip)
+		return -1;
+	if (dirlink(dir, name, ip) < 0) {
+		fs_iput(ip);	/* ref→0 → evict */
 		return -1;
 	}
-	ip = de->ip;
-	if (ip->type != T_DIR || ip == root || ip->dents || inode_is_cwd(ip)) {
-		fs_iput(dp);
-		return -1;
-	}
-
-	if (dirunlink(dp, name) < 0) {
-		fs_iput(dp);
-		return -1;
-	}
-	fs_iput(dp);
+	*out = ip;	/* 调用方持有 ialloc 的那份引用 */
 	return 0;
 }
 
-/* 从目录 inode 按 struct dirent 记录顺序读取（对齐 Linux getdents 记录语义） */
-static int fs_readdir(struct inode *ip, char *dst, uint off, uint n)
+static int ramfs_mkdir(struct inode *dir, const char *name)
+{
+	struct inode *ip;
+
+	if (dirlookup(dir, name))
+		return -1;
+	ip = ialloc(T_DIR);
+	if (!ip)
+		return -1;
+	if (dirlink(dir, name, ip) < 0) {
+		fs_iput(ip);
+		return -1;
+	}
+	fs_iput(ip);	/* 仅保留目录项引用 */
+	return 0;
+}
+
+static int ramfs_rmdir(struct inode *dir, const char *name)
+{
+	struct dentry *de;
+	struct inode *ip;
+
+	de = dirlookup(dir, name);
+	if (!de)
+		return -1;
+	ip = de->ip;
+	if (ip->type != T_DIR || ip->dents)
+		return -1;
+	return dirunlink(dir, name);
+}
+
+static int ramfs_mknod(struct inode *dir, const char *name, short type,
+		       dev_t rdev)
+{
+	struct inode *ip;
+
+	if (type != T_CHAR && type != T_BLK)
+		return -1;
+	if (dirlookup(dir, name))
+		return -1;
+	ip = ialloc(type);
+	if (!ip)
+		return -1;
+	ip->rdev = rdev;
+	if (dirlink(dir, name, ip) < 0) {
+		fs_iput(ip);
+		return -1;
+	}
+	fs_iput(ip);
+	return 0;
+}
+
+static int ramfs_get_name(struct inode *dir, struct inode *child, char *name)
+{
+	struct dentry *d;
+
+	if (!dir || !child || dir->type != T_DIR)
+		return -1;
+	for (d = dir->dents; d; d = d->next) {
+		if (d->ip == child) {
+			namecpy(name, d->name);
+			return 0;
+		}
+	}
+	return -1;
+}
+
+static void ramfs_evict(struct inode *ip)
+{
+	struct dentry *d, *n;
+
+	if (ip->data) {
+		kfree(ip->data);
+		ip->data = 0;
+	}
+	for (d = ip->dents; d; d = n) {
+		n = d->next;
+		fs_iput(d->ip);
+		kfree(d);
+	}
+	ip->dents = 0;
+	ip->parent = 0;
+	ip->i_op = 0;
+	ip->rdev = 0;
+	ip->type = 0;
+	ip->size = 0;
+	ip->inum = 0;
+}
+
+static int ramfs_readdir(struct inode *ip, char *dst, uint off, uint n)
 {
 	struct dentry *d;
 	struct dirent de;
-	uint idx, i, total;
+	uint idx, i, total, j;
 	uint esz = sizeof(struct dirent);
 
 	if (off % esz)
@@ -510,12 +292,8 @@ static int fs_readdir(struct inode *ip, char *dst, uint off, uint n)
 		de.d_off = off + total + esz;
 		de.d_type = d->ip ? inode_to_dtype(d->ip->type) : DT_UNKNOWN;
 		namecpy(de.d_name, d->name);
-		{
-			uint j;
-
-			for (j = 0; j < esz; j++)
-				dst[j] = ((char *)&de)[j];
-		}
+		for (j = 0; j < esz; j++)
+			dst[j] = ((char *)&de)[j];
 		dst += esz;
 		n -= esz;
 		total += esz;
@@ -523,15 +301,14 @@ static int fs_readdir(struct inode *ip, char *dst, uint off, uint n)
 	return (int)total;
 }
 
-/* 从 inode 的数据区读取数据（普通文件或目录） */
-int fs_readi(struct inode *ip, char *dst, uint off, uint n)
+static int ramfs_read(struct inode *ip, char *dst, uint off, uint n)
 {
 	uint i;
 
 	if (!ip)
 		return -1;
 	if (ip->type == T_DIR)
-		return fs_readdir(ip, dst, off, n);
+		return ramfs_readdir(ip, dst, off, n);
 	if (ip->type != T_FILE)
 		return -1;
 	if (off > ip->size)
@@ -545,8 +322,7 @@ int fs_readi(struct inode *ip, char *dst, uint off, uint n)
 	return (int)n;
 }
 
-/* 将数据写入 inode 的数据区 */
-int fs_writei(struct inode *ip, char *src, uint off, uint n)
+static int ramfs_write(struct inode *ip, char *src, uint off, uint n)
 {
 	uint newsize, i;
 	char *buf;
@@ -557,36 +333,27 @@ int fs_writei(struct inode *ip, char *src, uint off, uint n)
 		return 0;
 	newsize = off + n;
 
-	/* 如果文件大小不足，或者没有数据缓冲区，则分配新的缓冲区 */
 	if (newsize > ip->size || !ip->data) {
 		buf = kmalloc(newsize ? newsize : 1);
 		if (!buf)
 			return -1;
-
-		/* 将旧数据复制到新缓冲区 */
 		if (ip->data) {
 			for (i = 0; i < ip->size; i++)
 				buf[i] = ip->data[i];
 			kfree(ip->data);
 		}
-
-		/* 将新缓冲区初始化为 0 */
 		for (i = ip->size; i < newsize; i++)
 			buf[i] = 0;
-
 		ip->data = buf;
 		ip->size = newsize;
 	}
-	/* 将新数据写入缓冲区 */
 	for (i = 0; i < n; i++)
 		ip->data[off + i] = src[i];
-	/* 更新文件大小 */
 	if (off + n > ip->size)
 		ip->size = off + n;
 	return (int)n;
 }
 
-/* 在指定路径创建一个文件，并写入数据 */
 static void seed_file(const char *path, const char *text)
 {
 	struct inode *ip;
@@ -601,20 +368,18 @@ static void seed_file(const char *path, const char *text)
 	fs_iput(ip);
 }
 
-/* 初始化文件系统 */
 void fs_init(void)
 {
-	struct inode *dev, *console;
+	struct inode *root, *dev, *console;
 
 	memset(inodes, 0, sizeof(inodes));
 
-	/* 根inode */
 	root = ialloc(T_DIR);
 	if (!root)
 		panic("fs_init: root");
 	root->parent = root;
+	vfs_set_root(root);
 
-	/* /dev */
 	dev = ialloc(T_DIR);
 	if (!dev || dirlink(root, "dev", dev) < 0)
 		panic("fs_init: /dev");
@@ -631,5 +396,5 @@ void fs_init(void)
 	seed_file("/hello", "Hello from Tiny-OS ramfs!\n");
 
 	fileinit();
-	printk(KERN_INFO "fs: ramfs ready (root, /dev, /hello)\n");
+	printk(KERN_INFO "fs: VFS+ramfs ready (root, /dev, /hello)\n");
 }

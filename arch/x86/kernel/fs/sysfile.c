@@ -1,5 +1,6 @@
 /*
- * 文件相关系统调用：open / close / read / write。
+ * 文件相关系统调用（VFS 调用方）：open / close / read / write 等。
+ * 路径与读写经 VFS（namei / file / inode），不直接碰 ramfs。
  */
 #include "../types.h"
 #include "../defs.h"
