@@ -21,5 +21,7 @@ int sys_write(struct trapframe *tf);
 int sys_open(struct trapframe *tf);
 int sys_close(struct trapframe *tf);
 int sys_fstat(struct trapframe *tf);
+int sys_chdir(struct trapframe *tf);
+int sys_getcwd(struct trapframe *tf);
 
 #endif

@@ -165,6 +165,11 @@ void kernel_execve(struct proc *p, const char *path)
 
 	if (!p->ofile[0])
 		fd_install_stdio(p);
+	if (!p->cwd) {
+		p->cwd = fs_namei("/");
+		if (!p->cwd)
+			panic("kernel_execve: cwd");
+	}
 
 	user_enter_ring3(p);
 }

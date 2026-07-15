@@ -37,6 +37,7 @@ struct inode {
 	uint size;			/* 文件大小 */
 	char *data;			/* T_FILE 内容 */
 	struct dentry *dents;		/* T_DIR 子项 */
+	struct inode *parent;		/* 父目录（root->parent == root） */
 };
 
 struct file {
@@ -66,6 +67,7 @@ struct inode *fs_namei(const char *path);
 struct inode *fs_create(const char *path, short type);
 void fs_iput(struct inode *ip);
 struct inode *fs_idup(struct inode *ip);
+int fs_getcwd(char *buf, int max);
 
 int fs_readi(struct inode *ip, char *dst, uint off, uint n);
 int fs_writei(struct inode *ip, char *src, uint off, uint n);

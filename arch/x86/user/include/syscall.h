@@ -13,9 +13,11 @@
 #define SYS_close	6
 #define SYS_waitpid	7
 #define SYS_execve	11
+#define SYS_chdir	12	/* Linux i386 __NR_chdir */
 #define SYS_getpid	20
 #define SYS_fstat	28
 #define SYS_nanosleep	162	/* Linux i386 __NR_nanosleep */
+#define SYS_getcwd	183	/* Linux i386 __NR_getcwd */
 
 #ifndef __ASSEMBLER__
 struct timespec {

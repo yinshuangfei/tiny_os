@@ -8,6 +8,7 @@
 #include "trap.h"
 
 struct file;
+struct inode;
 
 /* 用 X-Macro 维护一份 PROCSTATE_LIST */
 #define PROCSTATE_LIST \
@@ -68,6 +69,7 @@ struct proc {
 	char name[NNAME];
 	int swtched;			/* 1: context 由 sched 保存，可 swtch 恢复 */
 	struct file *ofile[NOFILE];	/* 打开文件表 */
+	struct inode *cwd;		/* 当前工作目录 */
 };
 
 extern struct cpu cpus[NCPU];

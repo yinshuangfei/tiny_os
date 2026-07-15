@@ -149,6 +149,53 @@ int sys_read(struct trapframe *tf)
 	return total;
 }
 
+int sys_chdir(struct trapframe *tf)
+{
+	char path[NNAME];
+	struct inode *ip;
+	struct proc *p = myproc();
+
+	if (!p)
+		return -1;
+	if (argstr(tf, 0, path, NNAME) < 0)
+		return -1;
+	ip = fs_namei(path);
+	if (!ip)
+		return -1;
+	if (ip->type != T_DIR) {
+		fs_iput(ip);
+		return -1;
+	}
+	if (p->cwd)
+		fs_iput(p->cwd);
+	p->cwd = ip;
+	return 0;
+}
+
+/* getcwd(buf, size)：成功返回写入长度（含 '\0'），失败 -1 */
+int sys_getcwd(struct trapframe *tf)
+{
+	uint uaddr;
+	int size;
+	struct proc *p = myproc();
+	char buf[NNAME];
+	int n;
+
+	if (!p || !p->pagetable)
+		return -1;
+	if (argaddr(tf, 0, &uaddr) < 0 || argint(tf, 1, &size) < 0)
+		return -1;
+	if (size < 2)
+		return -1;
+	/* 内核栈上最多拼 NNAME；用户 size 更小时按 size 截断判断 */
+	n = fs_getcwd(buf, size < NNAME ? size : NNAME);
+	if (n < 0)
+		return -1;
+	if (copyout(p->pagetable, uaddr, buf, n) < 0)
+		return -1;
+	return n;
+}
+
 int sys_write(struct trapframe *tf)
 {
 	int fd, n;

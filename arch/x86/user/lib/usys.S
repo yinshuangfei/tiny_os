@@ -94,3 +94,18 @@ fstat:
 	movl $SYS_fstat, %eax
 	int $0x80
 	ret
+
+.globl chdir
+chdir:
+	movl 4(%esp), %ebx
+	movl $SYS_chdir, %eax
+	int $0x80
+	ret
+
+.globl getcwd
+getcwd:
+	movl 4(%esp), %ebx
+	movl 8(%esp), %ecx
+	movl $SYS_getcwd, %eax
+	int $0x80
+	ret

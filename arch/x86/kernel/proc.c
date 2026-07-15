@@ -146,6 +146,10 @@ void exit(int status)
 		panic("init exiting");	/* pid 1 不能 exit（用户态 init 亦同） */
 
 	fd_closeall(p);
+	if (p->cwd) {
+		fs_iput(p->cwd);
+		p->cwd = 0;
+	}
 
 	if (p->pagetable) {
 		if (current_user_pgdir == p->pagetable)
@@ -887,6 +891,8 @@ int fork_copy(struct trapframe *tf)
 	np->kframe = ntf;
 
 	fd_copy(np, p);
+	if (p->cwd)
+		np->cwd = fs_idup(p->cwd);
 
 	fork_user_ctx_init(np);
 

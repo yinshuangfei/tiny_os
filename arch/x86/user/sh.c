@@ -311,12 +311,20 @@ static void hist_touch(char *buf, int len, char *draft, int *viewing)
 
 /* ---------- 提示符 / 清屏 ---------- */
 
-/* 类似 bash 彩色 PS1：user@host:path$（受 ansi_color 开关控制） */
+/* 类似 bash 彩色 PS1：user@host:cwd$（受 ansi_color 开关控制） */
 static void print_prompt(void)
 {
-	printf("%s@%s:%s%s ",
-	       C_BLUE("root"), C_BLUE("tiny"),
-	       C_GREEN("/"), C_BLUE("$"));
+	char cwd[BUFSZ];
+
+	if (getcwd(cwd, sizeof(cwd)) < 0)
+		strlcpy_local(cwd, "?", sizeof(cwd));
+
+	printf("%s@%s:", C_BLUE("root"), C_BLUE("tiny"));
+	if (ansi_color)
+		printf("%s%s%s", ANSI_FG_BGREEN, cwd, ANSI_RESET);
+	else
+		printf("%s", cwd);
+	printf("%s ", C_BLUE("$"));
 }
 
 /*
@@ -714,6 +722,8 @@ static int readline(char *buf, int n)
 static int cmd_help(int argc, char **argv);
 static int cmd_echo(int argc, char **argv);
 static int cmd_cat(int argc, char **argv);
+static int cmd_cd(int argc, char **argv);
+static int cmd_pwd(int argc, char **argv);
 static int cmd_ls(int argc, char **argv);
 static int cmd_pid(int argc, char **argv);
 static int cmd_color(int argc, char **argv);
@@ -730,6 +740,8 @@ static const struct builtin builtins[] = {
 	{ "help",  "          show this message",     cmd_help },
 	{ "echo",  " [args]   print arguments",       cmd_echo },
 	{ "cat",   " <path>   print file",            cmd_cat },
+	{ "cd",    " [path]   change directory",      cmd_cd },
+	{ "pwd",   "          print working directory", cmd_pwd },
 	{ "ls",    " [path]   list directory",        cmd_ls },
 	{ "pid",   "          print shell pid",       cmd_pid },
 	{ "color", " [on|off] color switch",          cmd_color },
@@ -786,6 +798,33 @@ static int cmd_echo(int argc, char **argv)
 	return 0;
 }
 
+static int cmd_cd(int argc, char **argv)
+{
+	const char *path;
+
+	path = (argc >= 2) ? argv[1] : "/";
+	if (chdir(path) < 0) {
+		printf("%s %s: No such file or directory\n",
+		       C_RED("cd:"), path);
+		return 1;
+	}
+	return 0;
+}
+
+static int cmd_pwd(int argc, char **argv)
+{
+	char cwd[BUFSZ];
+
+	(void)argc;
+	(void)argv;
+	if (getcwd(cwd, sizeof(cwd)) < 0) {
+		printf("%s getcwd failed\n", C_RED("pwd:"));
+		return 1;
+	}
+	printf("%s\n", cwd);
+	return 0;
+}
+
 static int cmd_ls(int argc, char **argv)
 {
 	const char *path;
@@ -793,7 +832,7 @@ static int cmd_ls(int argc, char **argv)
 	struct stat st;
 	int fd, n;
 
-	path = (argc >= 2) ? argv[1] : "/";
+	path = (argc >= 2) ? argv[1] : ".";
 	fd = open(path, O_RDONLY);
 	if (fd < 0) {
 		printf("%s cannot open %s\n", C_RED("ls:"), path);

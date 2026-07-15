@@ -6,6 +6,7 @@
 #include "../defs.h"
 #include "../param.h"
 #include "../printk.h"
+#include "../proc.h"
 #include "fs.h"
 
 static struct inode *root;		/* 根inode */
@@ -61,6 +62,7 @@ static struct inode *ialloc(short type)
 			ip->size = 0;
 			ip->data = 0;
 			ip->dents = 0;
+			ip->parent = 0;
 			ip->major = 0;
 			return ip;
 		}
@@ -100,6 +102,7 @@ void fs_iput(struct inode *ip)
 			kfree(d);
 		}
 		ip->dents = 0;
+		ip->parent = 0;
 		ip->type = 0;
 		ip->size = 0;
 		ip->inum = 0;
@@ -163,13 +166,33 @@ static int dirlink(struct inode *dp, const char *name, struct inode *ip)
 		return -1;
 	namecpy(d->name, name);
 	d->ip = fs_idup(ip);
+	if (!ip->parent)
+		ip->parent = dp;
 	d->next = dp->dents;
 	dp->dents = d;
 	return 0;
 }
 
+/* 在父目录 dents 中查找指向 child 的名字（供 getcwd） */
+static int child_name(struct inode *parent, struct inode *child, char *name)
+{
+	struct dentry *d;
+
+	if (!parent || !child || parent->type != T_DIR)
+		return -1;
+	for (d = parent->dents; d; d = d->next) {
+		if (d->ip == child) {
+			namecpy(name, d->name);
+			return 0;
+		}
+	}
+	return -1;
+}
+
 /*
  * 解析路径。
+ * - 以 '/' 开头：从 root；否则从当前进程 cwd。
+ * - 支持 "." / ".."。
  * - nameiparent != 0 时返回父目录，name 为最后组件（用于 create）。
  * - nameiparent == 0 时返回目标 inode。
  */
@@ -177,26 +200,43 @@ static struct inode *namex(const char *path, int nameiparent, char *name)
 {
 	struct inode *ip, *next;
 	struct dentry *de;
-	const char *p;
+	struct proc *p;
+	const char *s;
 
-	if (!path || path[0] != '/')
+	if (!path || path[0] == 0)
 		return 0;
 
-	ip = fs_idup(root);
-	p = path;
-	while ((p = skipelem(p, name)) != 0) {
+	if (path[0] == '/') {
+		ip = fs_idup(root);
+	} else {
+		p = myproc();
+		if (!p || !p->cwd)
+			return 0;
+		ip = fs_idup(p->cwd);
+	}
+
+	s = path;
+	while ((s = skipelem(s, name)) != 0) {
 		if (ip->type != T_DIR) {
 			fs_iput(ip);
 			return 0;
 		}
-		if (nameiparent && *p == 0) {
+		if (nameiparent && *s == 0) {
 			/* 停在父目录，name 已是最后组件 */
 			/* 占用父目录的 inode 引用 */
 			return ip;
 		}
+		if (namecmp(name, ".") == 0)
+			continue;
+		if (namecmp(name, "..") == 0) {
+			next = ip->parent ? ip->parent : ip;
+			next = fs_idup(next);
+			fs_iput(ip);
+			ip = next;
+			continue;
+		}
 		de = dirlookup(ip, name);
 		if (!de) {
-			/* 目录项不存在，返回 0 */
 			fs_iput(ip);
 			return 0;
 		}
@@ -209,6 +249,56 @@ static struct inode *namex(const char *path, int nameiparent, char *name)
 		return 0;
 	}
 	return ip;
+}
+
+/*
+ * 将当前工作目录的绝对路径写入 buf（含结尾 '\0'）。
+ * 成功返回写入字节数（含 '\0'）；失败返回 -1。
+ */
+int fs_getcwd(char *buf, int max)
+{
+	struct proc *p = myproc();
+	struct inode *ip, *stack[NINODE];
+	char name[DIRSIZ];
+	int nstack, i, len, nlen;
+
+	if (!buf || max < 2 || !p || !p->cwd)
+		return -1;
+
+	ip = p->cwd;
+	nstack = 0;
+	while (ip && ip != root && ip->parent && ip->parent != ip) {
+		if (nstack >= NINODE)
+			return -1;
+		stack[nstack++] = ip;
+		ip = ip->parent;
+	}
+
+	if (nstack == 0) {
+		buf[0] = '/';
+		buf[1] = '\0';
+		return 2;
+	}
+
+	len = 0;
+	for (i = nstack - 1; i >= 0; i--) {
+		if (child_name(stack[i]->parent, stack[i], name) < 0)
+			return -1;
+		nlen = 0;
+		while (name[nlen])
+			nlen++;
+		/* '/' + name */
+		if (len + 1 + nlen + 1 > max)
+			return -1;
+		buf[len++] = '/';
+		{
+			int j;
+			for (j = 0; j < nlen; j++)
+				buf[len++] = name[j];
+		}
+	}
+	buf[len++] = '\0';
+	return len;
 }
 
 /* 在指定路径查找一个 inode */
@@ -382,6 +472,7 @@ void fs_init(void)
 	root = ialloc(T_DIR);
 	if (!root)
 		panic("fs_init: root");
+	root->parent = root;
 
 	/* /dev */
 	dev = ialloc(T_DIR);

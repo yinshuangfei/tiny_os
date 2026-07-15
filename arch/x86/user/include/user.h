@@ -22,6 +22,8 @@ int write(int, const void *, int);
 int open(const char *path, int flags);
 int close(int fd);
 int fstat(int fd, struct stat *st);
+int chdir(const char *path);
+int getcwd(char *buf, int size);
 
 int printf(const char *fmt, ...);
 int sprintf(char *buf, const char *fmt, ...);
