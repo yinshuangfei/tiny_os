@@ -14,8 +14,11 @@
 #define SYS_waitpid	7
 #define SYS_execve	11
 #define SYS_chdir	12	/* Linux i386 __NR_chdir */
+#define SYS_stat	18	/* Linux i386 __NR_oldstat（与 fstat=28 同代） */
 #define SYS_getpid	20
-#define SYS_fstat	28
+#define SYS_fstat	28	/* Linux i386 __NR_oldfstat */
+#define SYS_mkdir	39	/* Linux i386 __NR_mkdir */
+#define SYS_rmdir	40	/* Linux i386 __NR_rmdir */
 #define SYS_nanosleep	162	/* Linux i386 __NR_nanosleep */
 #define SYS_getcwd	183	/* Linux i386 __NR_getcwd */
 

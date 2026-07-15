@@ -745,6 +745,8 @@ static int cmd_echo(int argc, char **argv);
 static int cmd_cat(int argc, char **argv);
 static int cmd_cd(int argc, char **argv);
 static int cmd_pwd(int argc, char **argv);
+static int cmd_mkdir(int argc, char **argv);
+static int cmd_rmdir(int argc, char **argv);
 static int cmd_ls(int argc, char **argv);
 static int cmd_history(int argc, char **argv);
 static int cmd_pid(int argc, char **argv);
@@ -764,6 +766,8 @@ static const struct builtin builtins[] = {
 	{ "cat",     " <path>   print file",            cmd_cat },
 	{ "cd",      " [path]   change directory",      cmd_cd },
 	{ "pwd",     "          print working directory", cmd_pwd },
+	{ "mkdir",   " <path>   create directory",      cmd_mkdir },
+	{ "rmdir",   " <path>   remove empty directory", cmd_rmdir },
 	{ "ls",      " [path]   list directory",        cmd_ls },
 	{ "history", " [-c]     list/clear history",    cmd_history },
 	{ "pid",     "          print shell pid",       cmd_pid },
@@ -845,6 +849,32 @@ static int cmd_pwd(int argc, char **argv)
 		return 1;
 	}
 	printf("%s\n", cwd);
+	return 0;
+}
+
+static int cmd_mkdir(int argc, char **argv)
+{
+	if (argc < 2) {
+		printf("%s usage: mkdir <path>\n", C_RED("mkdir:"));
+		return 1;
+	}
+	if (mkdir(argv[1], 0) < 0) {
+		printf("%s %s: failed\n", C_RED("mkdir:"), argv[1]);
+		return 1;
+	}
+	return 0;
+}
+
+static int cmd_rmdir(int argc, char **argv)
+{
+	if (argc < 2) {
+		printf("%s usage: rmdir <path>\n", C_RED("rmdir:"));
+		return 1;
+	}
+	if (rmdir(argv[1]) < 0) {
+		printf("%s %s: failed\n", C_RED("rmdir:"), argv[1]);
+		return 1;
+	}
 	return 0;
 }
 

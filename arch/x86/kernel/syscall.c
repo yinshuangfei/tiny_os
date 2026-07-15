@@ -74,8 +74,11 @@ static int (*syscalls[])(struct trapframe *tf) = {
 	[SYS_open] = sys_open,
 	[SYS_close] = sys_close,
 	[SYS_fstat] = sys_fstat,
+	[SYS_stat] = sys_stat,
 	[SYS_chdir] = sys_chdir,
 	[SYS_getcwd] = sys_getcwd,
+	[SYS_mkdir] = sys_mkdir,
+	[SYS_rmdir] = sys_rmdir,
 	[SYS_nanosleep] = sys_nanosleep,
 };
 

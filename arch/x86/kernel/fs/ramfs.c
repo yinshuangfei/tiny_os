@@ -364,6 +364,126 @@ struct inode *fs_mknod(const char *path, short type,
 	return ip;
 }
 
+/* 从父目录摘除名为 name 的目录项（释放 dentry 对目标的引用） */
+static int dirunlink(struct inode *dp, const char *name)
+{
+	struct dentry *prev, *d;
+
+	if (!dp || dp->type != T_DIR || !name || !name[0])
+		return -1;
+
+	prev = 0;
+	for (d = dp->dents; d; prev = d, d = d->next) {
+		if (namecmp(d->name, name) != 0)
+			continue;
+		/* 从链表摘掉 d：头节点改 dents，否则改前驱的 next */
+		if (prev)
+			prev->next = d->next;
+		else
+			dp->dents = d->next;
+		fs_iput(d->ip);
+		kfree(d);
+		return 0;
+	}
+	return -1;
+}
+
+/* 是否仍有进程以 ip 为 cwd */
+static int inode_is_cwd(struct inode *ip)
+{
+	int i;
+	struct proc *p;
+
+	if (!ip || !proc_table)
+		return 0;
+	for (i = 0; i < NPROC; i++) {
+		p = &proc_table[i];
+		if (p->state != UNUSED && p->cwd == ip)
+			return 1;
+	}
+	return 0;
+}
+
+/* mkdir：创建空目录；成功 0，失败 -1 */
+int fs_mkdir(const char *path)
+{
+	char name[DIRSIZ];
+	struct inode *dp, *ip;
+
+	if (!path || !path[0])
+		return -1;
+
+	dp = namex(path, 1, name);
+	if (!dp)
+		return -1;
+	if (name[0] == 0 ||
+	    namecmp(name, ".") == 0 ||
+	    namecmp(name, "..") == 0) {
+		fs_iput(dp);
+		return -1;
+	}
+	if (dirlookup(dp, name)) {
+		fs_iput(dp);
+		return -1;
+	}
+
+	ip = ialloc(T_DIR);
+	if (!ip) {
+		fs_iput(dp);
+		return -1;
+	}
+	if (dirlink(dp, name, ip) < 0) {
+		fs_iput(ip);
+		fs_iput(dp);
+		return -1;
+	}
+	fs_iput(ip);	/* 仅保留目录项持有的引用 */
+	fs_iput(dp);
+	return 0;
+}
+
+/*
+ * rmdir：删除空目录。
+ * 拒绝：非目录、非空、根、仍为某进程 cwd、名为 . / ..。
+ */
+int fs_rmdir(const char *path)
+{
+	char name[DIRSIZ];
+	struct inode *dp, *ip;
+	struct dentry *de;
+
+	if (!path || !path[0])
+		return -1;
+
+	dp = namex(path, 1, name);
+	if (!dp)
+		return -1;
+	if (name[0] == 0 ||
+	    namecmp(name, ".") == 0 ||
+	    namecmp(name, "..") == 0) {
+		fs_iput(dp);
+		return -1;
+	}
+
+	de = dirlookup(dp, name);
+	if (!de) {
+		fs_iput(dp);
+		return -1;
+	}
+	ip = de->ip;
+	if (ip->type != T_DIR || ip == root || ip->dents || inode_is_cwd(ip)) {
+		fs_iput(dp);
+		return -1;
+	}
+
+	if (dirunlink(dp, name) < 0) {
+		fs_iput(dp);
+		return -1;
+	}
+	fs_iput(dp);
+	return 0;
+}
+
 /* 从目录 inode 按 struct dirent 记录顺序读取（对齐 Linux getdents 记录语义） */
 static int fs_readdir(struct inode *ip, char *dst, uint off, uint n)
 {

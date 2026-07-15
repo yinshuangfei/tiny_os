@@ -95,6 +95,14 @@ fstat:
 	int $0x80
 	ret
 
+.globl stat
+stat:
+	movl 4(%esp), %ebx
+	movl 8(%esp), %ecx
+	movl $SYS_stat, %eax
+	int $0x80
+	ret
+
 .globl chdir
 chdir:
 	movl 4(%esp), %ebx
@@ -107,5 +115,20 @@ getcwd:
 	movl 4(%esp), %ebx
 	movl 8(%esp), %ecx
 	movl $SYS_getcwd, %eax
+	int $0x80
+	ret
+
+.globl mkdir
+mkdir:
+	movl 4(%esp), %ebx
+	movl 8(%esp), %ecx
+	movl $SYS_mkdir, %eax
+	int $0x80
+	ret
+
+.globl rmdir
+rmdir:
+	movl 4(%esp), %ebx
+	movl $SYS_rmdir, %eax
 	int $0x80
 	ret

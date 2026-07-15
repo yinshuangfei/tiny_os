@@ -71,6 +71,15 @@ static unsigned short inode_to_mode(short type)
 	}
 }
 
+/* 由 inode 填充用户态 struct stat */
+static void inode_to_stat(struct inode *ip, struct stat *st)
+{
+	st->st_mode = inode_to_mode(ip->type);
+	st->st_ino = ip->inum;
+	st->st_size = ip->size;
+}
+
+/* fstat(fd, &st)：已打开文件 */
 int sys_fstat(struct trapframe *tf)
 {
 	int fd;
@@ -87,9 +96,32 @@ int sys_fstat(struct trapframe *tf)
 	if (!f || !f->ip)
 		return -1;
 
-	st.st_mode = inode_to_mode(f->ip->type);
-	st.st_ino = f->ip->inum;
-	st.st_size = f->ip->size;
+	inode_to_stat(f->ip, &st);
+	if (copyout(p->pagetable, uaddr, &st, sizeof(st)) < 0)
+		return -1;
+	return 0;
+}
+
+/* stat(path, &st)：按路径查询，无需 open */
+int sys_stat(struct trapframe *tf)
+{
+	char path[NNAME];
+	uint uaddr;
+	struct proc *p = myproc();
+	struct inode *ip;
+	struct stat st;
+
+	if (argstr(tf, 0, path, NNAME) < 0 || argaddr(tf, 1, &uaddr) < 0)
+		return -1;
+	if (!p || !p->pagetable)
+		return -1;
+
+	ip = fs_namei(path);
+	if (!ip)
+		return -1;
+
+	inode_to_stat(ip, &st);
+	fs_iput(ip);
 	if (copyout(p->pagetable, uaddr, &st, sizeof(st)) < 0)
 		return -1;
 	return 0;
@@ -172,6 +204,29 @@ int sys_chdir(struct trapframe *tf)
 		fs_iput(p->cwd);
 	p->cwd = ip;
 	return 0;
+}
+
+/* mkdir(path, mode)：mode 暂忽略（ramfs 无权限位） */
+int sys_mkdir(struct trapframe *tf)
+{
+	char path[NNAME];
+	int mode;
+
+	if (argstr(tf, 0, path, NNAME) < 0)
+		return -1;
+	if (argint(tf, 1, &mode) < 0)
+		return -1;
+	(void)mode;
+	return fs_mkdir(path);
+}
+
+int sys_rmdir(struct trapframe *tf)
+{
+	char path[NNAME];
+
+	if (argstr(tf, 0, path, NNAME) < 0)
+		return -1;
+	return fs_rmdir(path);
 }
 
 /* getcwd(buf, size)：成功返回写入长度（含 '\0'），失败 -1 */

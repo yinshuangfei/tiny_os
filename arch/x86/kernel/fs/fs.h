@@ -75,6 +75,8 @@ struct inode *fs_create(const char *path, short type);
 /* 创建设备节点（T_CHAR / T_BLK）；成功返回持有引用的 inode */
 struct inode *fs_mknod(const char *path, short type,
 		       unsigned int major, unsigned int minor);
+int fs_mkdir(const char *path);
+int fs_rmdir(const char *path);
 void fs_iput(struct inode *ip);
 struct inode *fs_idup(struct inode *ip);
 int fs_getcwd(char *buf, int max);

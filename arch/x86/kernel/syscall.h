@@ -21,7 +21,10 @@ int sys_write(struct trapframe *tf);
 int sys_open(struct trapframe *tf);
 int sys_close(struct trapframe *tf);
 int sys_fstat(struct trapframe *tf);
+int sys_stat(struct trapframe *tf);
 int sys_chdir(struct trapframe *tf);
 int sys_getcwd(struct trapframe *tf);
+int sys_mkdir(struct trapframe *tf);
+int sys_rmdir(struct trapframe *tf);
 
 #endif
