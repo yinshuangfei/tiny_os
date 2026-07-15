@@ -1,171 +1,193 @@
 /*
- * 用户态最小 printf：经 write(1, ...) 输出，无 libc 依赖。
+ * 用户态最小 printf / snprintf：经 write(1, ...) 或写缓冲，无 libc 依赖。
  */
 #include "user.h"
 #include <stdarg.h>
 
-static int putchar_fd(int fd, char c)
+typedef void (*printf_putc_t)(int c, void *arg);
+
+struct fd_ctx {
+	int fd;		/* 文件描述符 */
+	int n;		/* 已写入的字节数 */
+	int err;	/* 错误标志 */
+};
+
+static void fd_putc(int c, void *arg)
 {
-	return write(fd, &c, 1);
+	struct fd_ctx *ctx = arg;
+	char ch = (char)c;
+
+	if (ctx->err)
+		return;
+	if (write(ctx->fd, &ch, 1) < 0) {
+		ctx->err = 1;
+		return;
+	}
+	ctx->n++;
 }
 
-static int print_str(int fd, const char *s)
-{
-	int n = 0;
+struct snbuf {
+	char *buf;
+	unsigned int size;
+	unsigned int len;
+};
 
+static void sn_putc(int c, void *arg)
+{
+	struct snbuf *b = arg;
+
+	if (b->buf && b->size > 0 && b->len + 1 < b->size)
+		b->buf[b->len] = (char)c;
+	b->len++;
+}
+
+static void print_str_to(printf_putc_t put, void *arg, const char *s)
+{
 	if (!s)
 		s = "(null)";
-	while (*s) {
-		if (putchar_fd(fd, *s++) < 0)
-			return -1;
-		n++;
-	}
-	return n;
+	while (*s)
+		put(*s++, arg);
 }
 
-static int print_uint(int fd, unsigned int val, unsigned int base, int upper)
+static void print_uint_to(printf_putc_t put, void *arg, unsigned int val,
+			  unsigned int base, int upper)
 {
 	char buf[16];
 	char *p = buf + sizeof(buf);
-	int n = 0;
 	const char *digits = upper ? "0123456789ABCDEF" : "0123456789abcdef";
 
 	if (base < 2 || base > 16)
-		return -1;
+		return;
 
 	do {
 		*--p = digits[val % base];
 		val /= base;
 	} while (val > 0);
 
-	while (p < buf + sizeof(buf)) {
-		if (putchar_fd(fd, *p++) < 0)
-			return -1;
-		n++;
-	}
-	return n;
+	while (p < buf + sizeof(buf))
+		put(*p++, arg);
 }
 
-static int print_int(int fd, int val)
+static void print_int_to(printf_putc_t put, void *arg, int val)
 {
 	unsigned int u;
-	int n = 0;
 
 	if (val < 0) {
-		if (putchar_fd(fd, '-') < 0)
-			return -1;
-		n++;
+		put('-', arg);
 		u = (unsigned int)(-(val + 1)) + 1;
 	} else {
 		u = (unsigned int)val;
 	}
-	n += print_uint(fd, u, 10, 0);
-	return n;
+	print_uint_to(put, arg, u, 10, 0);
 }
 
-static int print_ptr(int fd, unsigned int val)
+static void print_ptr_to(printf_putc_t put, void *arg, unsigned int val)
 {
-	int n = 0;
-
-	if (putchar_fd(fd, '0') < 0)
-		return -1;
-	if (putchar_fd(fd, 'x') < 0)
-		return -1;
-	n = 2;
-	n += print_uint(fd, val, 16, 0);
-	return n;
+	put('0', arg);
+	put('x', arg);
+	print_uint_to(put, arg, val, 16, 0);
 }
 
-static int vprintf_fd(int fd, const char *fmt, va_list ap)
+static void vprintf_to(printf_putc_t put, void *arg, const char *fmt, va_list ap)
 {
-	int n = 0;
-
 	for (; *fmt; fmt++) {
 		if (*fmt != '%') {
-			if (putchar_fd(fd, *fmt) < 0)
-				return -1;
-			n++;
+			put(*fmt, arg);
 			continue;
 		}
 
 		fmt++;
 		switch (*fmt) {
 		case '%':
-			if (putchar_fd(fd, '%') < 0)
-				return -1;
-			n++;
+			put('%', arg);
 			break;
-		case 'c': {
-			int c = va_arg(ap, int);
-
-			if (putchar_fd(fd, (char)c) < 0)
-				return -1;
-			n++;
+		case 'c':
+			put((char)va_arg(ap, int), arg);
 			break;
-		}
-		case 's': {
-			const char *s = va_arg(ap, const char *);
-			int m = print_str(fd, s);
-
-			if (m < 0)
-				return -1;
-			n += m;
+		case 's':
+			print_str_to(put, arg, va_arg(ap, const char *));
 			break;
-		}
 		case 'd':
-		case 'i': {
-			int m = print_int(fd, va_arg(ap, int));
-
-			if (m < 0)
-				return -1;
-			n += m;
+		case 'i':
+			print_int_to(put, arg, va_arg(ap, int));
 			break;
-		}
-		case 'u': {
-			int m = print_uint(fd, va_arg(ap, unsigned int), 10, 0);
-
-			if (m < 0)
-				return -1;
-			n += m;
+		case 'u':
+			print_uint_to(put, arg, va_arg(ap, unsigned int), 10, 0);
 			break;
-		}
 		case 'x':
-		case 'X': {
-			int m = print_uint(fd, va_arg(ap, unsigned int), 16,
-					   *fmt == 'X');
-
-			if (m < 0)
-				return -1;
-			n += m;
+		case 'X':
+			print_uint_to(put, arg, va_arg(ap, unsigned int), 16,
+				      *fmt == 'X');
 			break;
-		}
-		case 'p': {
-			int m = print_ptr(fd, (unsigned int)va_arg(ap, void *));
-
-			if (m < 0)
-				return -1;
-			n += m;
+		case 'p':
+			print_ptr_to(put, arg,
+				     (unsigned int)va_arg(ap, void *));
 			break;
-		}
 		default:
-			if (putchar_fd(fd, '%') < 0)
-				return -1;
-			if (putchar_fd(fd, *fmt) < 0)
-				return -1;
-			n += 2;
+			put('%', arg);
+			put(*fmt, arg);
 			break;
 		}
 	}
+}
+
+int vsnprintf(char *buf, unsigned int size, const char *fmt, va_list ap)
+{
+	struct snbuf b;
+
+	b.buf = buf;
+	b.size = size;
+	b.len = 0;
+	vprintf_to(sn_putc, &b, fmt, ap);
+	if (buf && size > 0) {
+		if (b.len < size)
+			buf[b.len] = '\0';
+		else
+			buf[size - 1] = '\0';
+	}
+	return (int)b.len;
+}
+
+int snprintf(char *buf, unsigned int size, const char *fmt, ...)
+{
+	va_list ap;
+	int n;
+
+	va_start(ap, fmt);
+	n = vsnprintf(buf, size, fmt, ap);
+	va_end(ap);
+	return n;
+}
+
+/* 无边界检查；调用方须保证 buf 足够大。优先用 snprintf。 */
+int vsprintf(char *buf, const char *fmt, va_list ap)
+{
+	return vsnprintf(buf, (unsigned int)-1, fmt, ap);
+}
+
+int sprintf(char *buf, const char *fmt, ...)
+{
+	va_list ap;
+	int n;
+
+	va_start(ap, fmt);
+	n = vsprintf(buf, fmt, ap);
+	va_end(ap);
 	return n;
 }
 
 int printf(const char *fmt, ...)
 {
 	va_list ap;
-	int n;
+	struct fd_ctx ctx;
+
+	ctx.fd = 1;
+	ctx.n = 0;
+	ctx.err = 0;
 
 	va_start(ap, fmt);
-	n = vprintf_fd(1, fmt, ap);
+	vprintf_to(fd_putc, &ctx, fmt, ap);
 	va_end(ap);
-	return n;
+
+	return ctx.err ? -1 : ctx.n;
 }

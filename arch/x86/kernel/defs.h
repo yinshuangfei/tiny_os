@@ -24,7 +24,12 @@ void cpu_init(void);
 
 /** printf.c / printk */
 #include "printk.h"
+#include <stdarg.h>
 void printf(char *fmt, ...);
+int sprintf(char *buf, const char *fmt, ...);
+int vsprintf(char *buf, const char *fmt, va_list ap);
+int snprintf(char *buf, uint size, const char *fmt, ...);
+int vsnprintf(char *buf, uint size, const char *fmt, va_list ap);
 void printfinit(void);
 void panic(char *s);
 
@@ -47,10 +52,11 @@ void uart_intr(void);
 /** fs */
 void fs_init(void);
 
-/** ide.c — ATA PIO 硬盘 */
+/** ide.c — ATA PIO（多控制器扫描；drive 为逻辑盘号） */
 void ide_init(void);
-int ide_read(uint lba, void *buf);
-int ide_write(uint lba, const void *buf);
-uint ide_nsectors(void);
+int ide_ndisks(void);
+int ide_read(int drive, uint lba, void *buf);
+int ide_write(int drive, uint lba, const void *buf);
+uint ide_nsectors(int drive);
 
 #endif

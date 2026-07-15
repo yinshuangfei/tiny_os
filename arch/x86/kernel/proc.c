@@ -558,6 +558,8 @@ struct proc *proc_alloc(void)
 		return p;
 	}
 	release(&proc_lock);
+
+	printk(KERN_ERR "proc alloc failed, no free proc\n");
 	return 0;
 }
 
@@ -596,11 +598,17 @@ static struct proc *kthread_create_sync(void (*fn)(void *), void *arg,
 	struct proc *p;
 
 	p = proc_alloc();
-	if (!p)
+	if (!p) {
+		printk(KERN_ERR "kthread_create: no free PCB for '%s'\n",
+		       name ? name : "?");
 		return 0;
+	}
 
 	p->kstack = alloc_page();
 	if (!p->kstack) {
+		printk(KERN_ERR
+		       "kthread_create: no kstack page for '%s' (free=%d)\n",
+		       name ? name : "?", pmm_nr_free_pages());
 		proc_free(p);
 		return 0;
 	}

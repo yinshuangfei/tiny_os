@@ -34,16 +34,20 @@ void main(void)
 	procinit();
 	/* 内存文件系统 */
 	fs_init();
-	/* IDE 硬盘（ATA PIO，依赖 QEMU -drive if=ide） */
+	/* IDE 设备初始化 */
 	ide_init();
 	/* printf 自旋锁（须在 sti 之前，避免定时器 IRQ 交错输出） */
 	printfinit();
-	/* 初始化时钟 */
+	/* 初始化时钟（尚未 sti，不会抢占） */
 	pit_init();
-	/* 开启中断 */
-	sti();
-	/* 初始化内核线程 */
+	/*
+	 * 先创建 init/kthreadd，再开中断。
+	 * 若先 sti，定时器可能在 rest_init 中途打断；虽然 swapper 无 kstack
+	 * 通常不会被 preempt，但 boot 阶段持锁/分配时开中断仍不安全，
+	 * 且曾出现偶发「init 创建成功、kthreadd 分配失败」。
+	 */
 	rest_init();
+	sti();
 	/* 启动内核线程调度器 */
 	scheduler();
 }

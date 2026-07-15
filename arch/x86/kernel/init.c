@@ -35,8 +35,12 @@ void rest_init(void)
 	printk(KERN_INFO "init: created pid=%d, parent=swapper\n", initproc->pid);
 
 	kthreadd_task = kthread_create(kthreadd, 0, "kthreadd");
-	if (!kthreadd_task)
+	if (!kthreadd_task) {
+		printk(KERN_ERR
+		       "rest_init: kthreadd create failed (free_pages=%d)\n",
+		       pmm_nr_free_pages());
 		panic("rest_init: create kthreadd failed");
+	}
 	kthreadd_task->parent = swapper;
 	printk(KERN_INFO "kthreadd: created pid=%d, parent=swapper\n",
 	       kthreadd_task->pid);

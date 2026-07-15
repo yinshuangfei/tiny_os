@@ -23,13 +23,16 @@ void consputc(int c)
 
 static char digits[] = "0123456789abcdef";
 
-static void printint(int xx, int base, int sign)
+/* 输出回调：控制台或 snprintf 缓冲 */
+typedef void (*printf_putc_t)(int c, void *arg);
+
+static void printint_to(printf_putc_t put, void *arg, int xx, int base, int sign)
 {
 	char buf[16];
 	int i;
 	uint x;
 
-	if(sign && (sign = xx < 0))
+	if (sign && (sign = xx < 0))
 		x = -xx;
 	else
 		x = xx;
@@ -37,22 +40,23 @@ static void printint(int xx, int base, int sign)
 	i = 0;
 	do {
 		buf[i++] = digits[x % base];
-	} while((x /= base) != 0);
+	} while ((x /= base) != 0);
 
-	if(sign)
+	if (sign)
 		buf[i++] = '-';
 
-	while(--i >= 0)
-		consputc(buf[i]);
+	while (--i >= 0)
+		put(buf[i], arg);
 }
 
-static void printlongint(long int xx, int base, int sign)
+static void printlongint_to(printf_putc_t put, void *arg, long int xx, int base,
+			    int sign)
 {
 	char buf[32];
 	int i;
 	uint64 x;
 
-	if(sign && (sign = xx < 0))
+	if (sign && (sign = xx < 0))
 		x = -xx;
 	else
 		x = xx;
@@ -60,26 +64,26 @@ static void printlongint(long int xx, int base, int sign)
 	i = 0;
 	do {
 		buf[i++] = digits[x % base];
-	} while((x /= base) != 0);
+	} while ((x /= base) != 0);
 
-	if(sign)
+	if (sign)
 		buf[i++] = '-';
 
-	while(--i >= 0)
-		consputc(buf[i]);
+	while (--i >= 0)
+		put(buf[i], arg);
 }
 
-static void printptr(uint64 x)
+static void printptr_to(printf_putc_t put, void *arg, uint64 x)
 {
 	int i;
-	consputc('0');
-	consputc('x');
 
+	put('0', arg);
+	put('x', arg);
 	for (i = 0; i < (sizeof(uint64) * 2); i++, x <<= 4)
-		consputc(digits[x >> (sizeof(uint64) * 8 - 4)]);
+		put(digits[x >> (sizeof(uint64) * 8 - 4)], arg);
 }
 
-static void vprintf(const char *fmt, va_list ap)
+static void vprintf_to(printf_putc_t put, void *arg, const char *fmt, va_list ap)
 {
 	int i, c, c2;
 	char *s;
@@ -89,7 +93,7 @@ static void vprintf(const char *fmt, va_list ap)
 
 	for (i = 0; (c = fmt[i] & 0xff) != 0; i++) {
 		if (c != '%') {
-			consputc(c);
+			put(c, arg);
 			continue;
 		}
 
@@ -99,44 +103,123 @@ static void vprintf(const char *fmt, va_list ap)
 
 		switch (c) {
 		case 'o':
-			printint(va_arg(ap, int), 8, 1);
+			printint_to(put, arg, va_arg(ap, int), 8, 1);
 			break;
 		case 'd':
-			printint(va_arg(ap, int), 10, 1);
+			printint_to(put, arg, va_arg(ap, int), 10, 1);
 			break;
 		case 'x':
-			printint(va_arg(ap, int), 16, 1);
+			printint_to(put, arg, va_arg(ap, int), 16, 1);
 			break;
 		case 'l':
-			c2 = fmt[i+1] & 0xff;
+			c2 = fmt[i + 1] & 0xff;
 			if (c2 == 'd') {
-				printlongint(va_arg(ap, long int), 10, 1);
+				printlongint_to(put, arg, va_arg(ap, long int),
+						10, 1);
 				i++;
 			} else if (c2 == 'x') {
-				printlongint(va_arg(ap, long int), 16, 1);
+				printlongint_to(put, arg, va_arg(ap, long int),
+						16, 1);
 				i++;
 			} else {
-				consputc(c);
+				put(c, arg);
 			}
 			break;
 		case 'p':
-			printptr(va_arg(ap, uint64));
+			printptr_to(put, arg, va_arg(ap, uint64));
 			break;
 		case 's':
-			if ((s = va_arg(ap, char*)) == 0)
+			if ((s = va_arg(ap, char *)) == 0)
 				s = "(null)";
 			for (; *s; s++)
-				consputc(*s);
+				put(*s, arg);
 			break;
 		case '%':
-			consputc('%');
+			put('%', arg);
 			break;
 		default:
-			consputc('%');
-			consputc(c);
+			put('%', arg);
+			put(c, arg);
 			break;
 		}
 	}
+}
+
+static void cons_putc_arg(int c, void *arg)
+{
+	(void)arg;
+	consputc(c);
+}
+
+/* 用于 snprintf 的缓冲 */
+struct snbuf {
+	char *buf;
+	uint size;	/* 含结尾 '\\0' 的容量 */
+	uint len;	/* 已写入/本应写入的字符数（不含 '\\0'） */
+};
+
+/* 用于 snprintf 的输出回调 */
+static void sn_putc(int c, void *arg)
+{
+	struct snbuf *b = arg;
+
+	if (b->buf && b->size > 0 && b->len + 1 < b->size)
+		b->buf[b->len] = (char)c;
+	b->len++;
+}
+
+/*
+ * C99：返回若不受限本应写入的字符数（不含 '\\0'）。
+ * size>0 时保证 buf 以 '\\0' 结尾（即便截断）。
+ */
+int vsnprintf(char *buf, uint size, const char *fmt, va_list ap)
+{
+	struct snbuf b;
+
+	b.buf = buf;
+	b.size = size;
+	b.len = 0;
+	vprintf_to(sn_putc, &b, fmt, ap);
+	if (buf && size > 0) {
+		if (b.len < size)
+			buf[b.len] = '\0';
+		else
+			buf[size - 1] = '\0';
+	}
+	return (int)b.len;
+}
+
+int snprintf(char *buf, uint size, const char *fmt, ...)
+{
+	va_list ap;
+	int n;
+
+	va_start(ap, fmt);
+	n = vsnprintf(buf, size, fmt, ap);
+	va_end(ap);
+	return n;
+}
+
+/* 无边界检查；调用方须保证 buf 足够大。优先用 snprintf。 */
+int vsprintf(char *buf, const char *fmt, va_list ap)
+{
+	return vsnprintf(buf, (uint)-1, fmt, ap);
+}
+
+int sprintf(char *buf, const char *fmt, ...)
+{
+	va_list ap;
+	int n;
+
+	va_start(ap, fmt);
+	n = vsprintf(buf, fmt, ap);
+	va_end(ap);
+	return n;
+}
+
+static void vprintf(const char *fmt, va_list ap)
+{
+	vprintf_to(cons_putc_arg, 0, fmt, ap);
 }
 
 void printf(char *fmt, ...)
@@ -203,7 +286,8 @@ void panic(char *s)
 	printf(s);
 	printf("\n");
 	panicked = 1;
-	for (;;) halt();
+	for (;;)
+		halt();
 }
 
 void printfinit(void)

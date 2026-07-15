@@ -21,13 +21,32 @@ QEMU = qemu-system-x86_64
 QEMUOPTS = -machine q35 -m $(MEM) -smp $(CPUS) -display none
 QEMUOPTS += -serial stdio -monitor none
 
-# 第二块盘：经 PIIX IDE 挂到主通道 master（端口 0x1F0），供 ATA PIO 驱动使用。
-# q35 默认是 AHCI，if=ide 不会出现在 0x1F0，故显式加 piix3-ide。
+# IDE：q35 默认 AHCI，需显式加控制器；驱动按端口表扫描各通道。
+# ide0 = piix3-ide：hd0/hd1 @0x1F0，hd2 @0x170。
+# ide1 = 第二块控制器：QEMU 第二个 piix3-ide 端口写死会冲突，故用两路
+#        isa-ide 模拟双通道扩展卡（0x1E8 / 0x168），挂 hd3/hd4/hd5。
 HD_IMG = hd.img
+HD1_IMG = hd1.img
+HD2_IMG = hd2.img
+HD3_IMG = hd3.img
+HD4_IMG = hd4.img
+HD5_IMG = hd5.img
 HD_SIZE_MB ?= 8 	# 8 MB
-QEMUOPTS += -device piix3-ide,id=ide
+QEMUOPTS += -device piix3-ide,id=ide0
 QEMUOPTS += -drive file=$(HD_IMG),format=raw,if=none,id=hd0
-QEMUOPTS += -device ide-hd,drive=hd0,bus=ide.0
+QEMUOPTS += -device ide-hd,drive=hd0,bus=ide0.0,unit=0
+QEMUOPTS += -drive file=$(HD1_IMG),format=raw,if=none,id=hd1
+QEMUOPTS += -device ide-hd,drive=hd1,bus=ide0.0,unit=1
+QEMUOPTS += -drive file=$(HD2_IMG),format=raw,if=none,id=hd2
+QEMUOPTS += -device ide-hd,drive=hd2,bus=ide0.1,unit=0
+QEMUOPTS += -device isa-ide,id=ide1a,iobase=0x1e8,iobase2=0x3ee,irq=11
+QEMUOPTS += -drive file=$(HD3_IMG),format=raw,if=none,id=hd3
+QEMUOPTS += -device ide-hd,drive=hd3,bus=ide1a.0,unit=0
+QEMUOPTS += -drive file=$(HD4_IMG),format=raw,if=none,id=hd4
+QEMUOPTS += -device ide-hd,drive=hd4,bus=ide1a.0,unit=1
+QEMUOPTS += -device isa-ide,id=ide1b,iobase=0x168,iobase2=0x36e,irq=10
+QEMUOPTS += -drive file=$(HD5_IMG),format=raw,if=none,id=hd5
+QEMUOPTS += -device ide-hd,drive=hd5,bus=ide1b.0,unit=0
 
 CFLAGS := -m32 -ffreestanding -fno-pic -fno-stack-protector -nostdlib -Wall
 CFLAGS += -fno-asynchronous-unwind-tables -fno-unwind-tables
@@ -41,12 +60,13 @@ endif
 
 .PHONY: qemu clean print-cc print-cflags compile_commands.json
 
-qemu: $(HD_IMG) $(if $(filter 1,$(K)),kernel.elf,boot.img)
+qemu: $(HD_IMG) $(HD1_IMG) $(HD2_IMG) $(HD3_IMG) $(HD4_IMG) $(HD5_IMG) \
+	$(if $(filter 1,$(K)),kernel.elf,boot.img)
 	@$(QEMU) $(QEMUOPTS)
 
-$(HD_IMG):
+$(HD_IMG) $(HD1_IMG) $(HD2_IMG) $(HD3_IMG) $(HD4_IMG) $(HD5_IMG):
 	@dd if=/dev/zero of=$@ bs=1M count=$(HD_SIZE_MB) status=none
-	@echo "created $(HD_IMG) ($(HD_SIZE_MB) MiB)"
+	@echo "created $@ ($(HD_SIZE_MB) MiB)"
 
 $(BOOTDIR)/entry_kernel.o: $(BOOTDIR)/entry.S
 	$(AS) --32 -defsym KERNEL=1 $< -o $@

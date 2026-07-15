@@ -22,6 +22,8 @@ int open(const char *path, int flags);
 int close(int fd);
 
 int printf(const char *fmt, ...);
+int sprintf(char *buf, const char *fmt, ...);
+int snprintf(char *buf, unsigned int size, const char *fmt, ...);
 
 /* string.h */
 unsigned int strlen(const char *s);

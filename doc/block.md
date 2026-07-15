@@ -37,24 +37,3 @@ IDE（ATA PIO）≈ 最简单 → SATA(AHCI) → NVMe → SCSI
 | AHCI | Advanced Host Controller Interface   | SATA 存储设备            | 用于 SATA 控制器与存储设备（HDD/SSD）通信。支持 NCQ（原生指令队列）和热插拔，相比老旧的 IDE 模式能显著提升硬盘性能。                                     |
 | XHCI | eXtensible Host Controller Interface | USB 3.0 及更新版本        | 由 Intel 开发，旨在统一替代 UHCI/OHCI/EHCI。支持所有速度的 USB 设备（1.x 到 3.x），采用单一驱动堆栈；消除了传统的“伙伴控制器”模式，大幅提升了能效并降低了 CPU 轮询开销。 |
 
-
-# IDE 控制器
-IDE 控制器寄存器的挂载位置取决于系统架构以及 IDE 控制器的总线类型（传统 ISA/PCI 或现代 PCIe）。主要分为以下三种情况：
-
-## 1.传统 x86 架构（I/O 端口映射）
-在传统的 x86 计算机中，IDE 控制器寄存器通常不占用物理内存地址，而是映射到独立的 I/O 地址空间（通过 in 和 out 指令访问）。
-- Primary（主）通道：
-    - 数据/命令寄存器：0x1F0 - 0x1F7
-    - 控制/状态寄存器：0x3F6 - 0x3F7
-- Secondary（从）通道：
-    - 数据/命令寄存器：0x170 - 0x177
-    - 控制/状态寄存器：0x376 - 0x377
-
-## 2.内存映射 I/O (MMIO) 模式
-在现代系统或嵌入式设备中，如果 IDE 控制器（如 PCI IDE 控制器）被配置为内存映射模式，其寄存器会被映射到系统物理内存地址空间中。
-- 具体位置：由系统的 PCI 总线枚举过程动态分配。
-- 如何获取：操作系统在启动时会读取 PCI 配置空间中的 BAR (Base Address Register) 寄存器（通常是 BAR0 到 BAR5）。BAR 寄存器返回的物理地址，就是该 IDE 控制器寄存器在内存中的确切起始位置。
-
-## 3.ARM 等嵌入式架构
-在 ARM 等非 x86 架构中，IDE 控制器几乎总是采用内存映射 I/O (MMIO)。
-- 具体位置：由硬件设计（SoC 数据手册）或设备树（Device Tree）静态定义。例如，某个 ARM 芯片的数据手册可能会明确规定其 IDE 寄存器基地址为 0x40000000。
