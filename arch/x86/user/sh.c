@@ -1,5 +1,5 @@
 /*
- * 简易用户态 shell：从 stdin（串口）读命令，内置 help/echo/pid/cat/ls/exit/color/clear，
+ * 简易用户态 shell：从 stdin（串口）读命令，内置 help/echo/cd/pwd/ls/history 等，
  * 方向键：上下历史，左右移动光标（可在光标处插入）；
  * Ctrl+←/→ 按单词移动；Ctrl+A/E 行首行尾，Ctrl+L 清屏，Ctrl+W 删词。
  * 其它名称经 fork + execve + waitpid 执行。
@@ -296,6 +296,27 @@ static void hist_add(const char *line)
 		strlcpy_local(history[i - 1], history[i], BUFSZ);
 	}
 	strlcpy_local(history[HISTMAX - 1], line, BUFSZ);
+}
+
+/* 清空历史（history -c） */
+static void hist_clear(void)
+{
+	int i;
+
+	for (i = 0; i < hist_n; i++) {
+		history[i][0] = '\0';
+	}
+	hist_n = 0;
+}
+
+/* 按编号打印历史；编号从 1 起，与 ↑ 浏览同一缓冲 */
+static void hist_print(void)
+{
+	int i;
+
+	for (i = 0; i < hist_n; i++) {
+		printf(" %5d  %s\n", i + 1, history[i]);
+	}
 }
 
 /* 编辑打断历史浏览：保存草稿并退出 viewing */
@@ -725,6 +746,7 @@ static int cmd_cat(int argc, char **argv);
 static int cmd_cd(int argc, char **argv);
 static int cmd_pwd(int argc, char **argv);
 static int cmd_ls(int argc, char **argv);
+static int cmd_history(int argc, char **argv);
 static int cmd_pid(int argc, char **argv);
 static int cmd_color(int argc, char **argv);
 static int cmd_clear(int argc, char **argv);
@@ -737,16 +759,17 @@ struct builtin {
 };
 
 static const struct builtin builtins[] = {
-	{ "help",  "          show this message",     cmd_help },
-	{ "echo",  " [args]   print arguments",       cmd_echo },
-	{ "cat",   " <path>   print file",            cmd_cat },
-	{ "cd",    " [path]   change directory",      cmd_cd },
-	{ "pwd",   "          print working directory", cmd_pwd },
-	{ "ls",    " [path]   list directory",        cmd_ls },
-	{ "pid",   "          print shell pid",       cmd_pid },
-	{ "color", " [on|off] color switch",          cmd_color },
-	{ "clear", "          clear screen",          cmd_clear },
-	{ "exit",  "          leave shell",           cmd_exit },
+	{ "help",    "          show this message",     cmd_help },
+	{ "echo",    " [args]   print arguments",       cmd_echo },
+	{ "cat",     " <path>   print file",            cmd_cat },
+	{ "cd",      " [path]   change directory",      cmd_cd },
+	{ "pwd",     "          print working directory", cmd_pwd },
+	{ "ls",      " [path]   list directory",        cmd_ls },
+	{ "history", " [-c]     list/clear history",    cmd_history },
+	{ "pid",     "          print shell pid",       cmd_pid },
+	{ "color",   " [on|off] color switch",          cmd_color },
+	{ "clear",   "          clear screen",          cmd_clear },
+	{ "exit",    "          leave shell",           cmd_exit },
 };
 
 /* 运行时字符串上色（C_* 仅适用于字面量） */
@@ -822,6 +845,24 @@ static int cmd_pwd(int argc, char **argv)
 		return 1;
 	}
 	printf("%s\n", cwd);
+	return 0;
+}
+
+/*
+ * history：列出命令历史（与 ↑/↓ 共用缓冲，最多 HISTMAX 条）。
+ * history -c：清空。
+ */
+static int cmd_history(int argc, char **argv)
+{
+	if (argc >= 2) {
+		if (strcmp(argv[1], "-c") == 0) {
+			hist_clear();
+			return 0;
+		}
+		printf("%s usage: history [-c]\n", C_RED("history:"));
+		return 1;
+	}
+	hist_print();
 	return 0;
 }
 

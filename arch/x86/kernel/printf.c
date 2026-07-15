@@ -26,48 +26,78 @@ static char digits[] = "0123456789abcdef";
 /* 输出回调：控制台或 snprintf 缓冲 */
 typedef void (*printf_putc_t)(int c, void *arg);
 
-static void printint_to(printf_putc_t put, void *arg, int xx, int base, int sign)
+static void pad_to(printf_putc_t put, void *arg, int width, int len, char pad)
+{
+	while (width > len) {
+		put(pad, arg);
+		width--;
+	}
+}
+
+/* width/zeropad：支持 %5d、%05x；宽度含符号 */
+static void printint_to(printf_putc_t put, void *arg, int xx, int base, int sign,
+			int width, int zeropad)
 {
 	char buf[16];
-	int i;
+	int i, neg;
 	uint x;
 
-	if (sign && (sign = xx < 0))
-		x = -xx;
-	else
-		x = xx;
+	neg = 0;
+	if (sign && xx < 0) {
+		neg = 1;
+		x = (uint)(-(xx + 1)) + 1;
+	} else {
+		x = (uint)xx;
+	}
 
 	i = 0;
 	do {
 		buf[i++] = digits[x % base];
 	} while ((x /= base) != 0);
 
-	if (sign)
-		buf[i++] = '-';
+	if (zeropad) {
+		if (neg)
+			put('-', arg);
+		pad_to(put, arg, width, i + neg, '0');
+	} else {
+		pad_to(put, arg, width, i + neg, ' ');
+		if (neg)
+			put('-', arg);
+	}
 
 	while (--i >= 0)
 		put(buf[i], arg);
 }
 
 static void printlongint_to(printf_putc_t put, void *arg, long int xx, int base,
-			    int sign)
+			    int sign, int width, int zeropad)
 {
 	char buf[32];
-	int i;
+	int i, neg;
 	uint64 x;
 
-	if (sign && (sign = xx < 0))
-		x = -xx;
-	else
-		x = xx;
+	neg = 0;
+	if (sign && xx < 0) {
+		neg = 1;
+		x = (uint64)(-(xx + 1)) + 1;
+	} else {
+		x = (uint64)xx;
+	}
 
 	i = 0;
 	do {
 		buf[i++] = digits[x % base];
 	} while ((x /= base) != 0);
 
-	if (sign)
-		buf[i++] = '-';
+	if (zeropad) {
+		if (neg)
+			put('-', arg);
+		pad_to(put, arg, width, i + neg, '0');
+	} else {
+		pad_to(put, arg, width, i + neg, ' ');
+		if (neg)
+			put('-', arg);
+	}
 
 	while (--i >= 0)
 		put(buf[i], arg);
@@ -85,7 +115,7 @@ static void printptr_to(printf_putc_t put, void *arg, uint64 x)
 
 static void vprintf_to(printf_putc_t put, void *arg, const char *fmt, va_list ap)
 {
-	int i, c, c2;
+	int i, c, c2, width, zeropad, len;
 	char *s;
 
 	if (fmt == 0)
@@ -101,25 +131,43 @@ static void vprintf_to(printf_putc_t put, void *arg, const char *fmt, va_list ap
 		if (c == 0)
 			break;
 
+		zeropad = 0;
+		width = 0;
+		if (c == '0') {
+			zeropad = 1;
+			c = fmt[++i] & 0xff;
+			if (c == 0)
+				break;
+		}
+		while (c >= '0' && c <= '9') {
+			width = width * 10 + (c - '0');
+			c = fmt[++i] & 0xff;
+			if (c == 0)
+				return;
+		}
+
 		switch (c) {
 		case 'o':
-			printint_to(put, arg, va_arg(ap, int), 8, 1);
+			printint_to(put, arg, va_arg(ap, int), 8, 1, width,
+				    zeropad);
 			break;
 		case 'd':
-			printint_to(put, arg, va_arg(ap, int), 10, 1);
+			printint_to(put, arg, va_arg(ap, int), 10, 1, width,
+				    zeropad);
 			break;
 		case 'x':
-			printint_to(put, arg, va_arg(ap, int), 16, 1);
+			printint_to(put, arg, va_arg(ap, int), 16, 1, width,
+				    zeropad);
 			break;
 		case 'l':
 			c2 = fmt[i + 1] & 0xff;
 			if (c2 == 'd') {
 				printlongint_to(put, arg, va_arg(ap, long int),
-						10, 1);
+						10, 1, width, zeropad);
 				i++;
 			} else if (c2 == 'x') {
 				printlongint_to(put, arg, va_arg(ap, long int),
-						16, 1);
+						16, 1, width, zeropad);
 				i++;
 			} else {
 				put(c, arg);
@@ -131,6 +179,10 @@ static void vprintf_to(printf_putc_t put, void *arg, const char *fmt, va_list ap
 		case 's':
 			if ((s = va_arg(ap, char *)) == 0)
 				s = "(null)";
+			len = 0;
+			for (; s[len]; len++)
+				;
+			pad_to(put, arg, width, len, ' ');
 			for (; *s; s++)
 				put(*s, arg);
 			break;
