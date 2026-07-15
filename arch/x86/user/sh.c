@@ -7,6 +7,7 @@
  * 可用内置命令 color on|off 开关。
  *
  * 结构贴近 bash 教学版：PS1 提示符、行内分词为 argv、内置命令表分发。
+ * bash 本体：十几万行代码级。
  */
 #include "user.h"
 #include "ansi.h"
@@ -76,9 +77,124 @@ static int split_argv(char *line, char **argv, int max)
 	return argc;
 }
 
+/* ---------- UTF-8 / 显示宽度（终端列） ---------- */
+
+/* 首字节对应的 UTF-8 期望长度；非法首字节按 1 */
+static int utf8_expected_len(unsigned char c)
+{
+	if (c < 0x80)
+		return 1;
+	if ((c & 0xe0) == 0xc0)
+		return 2;
+	if ((c & 0xf0) == 0xe0)
+		return 3;
+	if ((c & 0xf8) == 0xf0)
+		return 4;
+	return 1;
+}
+
+/* 从 s 起一个 UTF-8 字符的字节数；非法序列按 1 字节处理 */
+static int utf8_nbytes(const char *s, int avail)
+{
+	int n, i;
+
+	if (avail <= 0)
+		return 0;
+	n = utf8_expected_len((unsigned char)s[0]);
+	if (n > avail)
+		return 1;
+	for (i = 1; i < n; i++) {
+		if (((unsigned char)s[i] & 0xc0) != 0x80)
+			return 1;
+	}
+	return n;
+}
+
+/* pos 之前一个 UTF-8 字符的起始下标 */
+static int utf8_prev(const char *buf, int pos)
+{
+	int i;
+
+	if (pos <= 0)
+		return 0;
+	i = pos - 1;
+	while (i > 0 && ((unsigned char)buf[i] & 0xc0) == 0x80)
+		i--;
+	return i;
+}
+
+static unsigned int utf8_decode(const char *s, int n)
+{
+	unsigned char c0 = (unsigned char)s[0];
+
+	if (n <= 1)
+		return c0;
+	if (n == 2)
+		return ((c0 & 0x1f) << 6) | ((unsigned char)s[1] & 0x3f);
+	if (n == 3)
+		return ((c0 & 0x0f) << 12) |
+		       (((unsigned char)s[1] & 0x3f) << 6) |
+		       ((unsigned char)s[2] & 0x3f);
+	return ((c0 & 0x07) << 18) |
+	       (((unsigned char)s[1] & 0x3f) << 12) |
+	       (((unsigned char)s[2] & 0x3f) << 6) |
+	       ((unsigned char)s[3] & 0x3f);
+}
+
+/*
+ * 终端显示列宽（简化 East Asian Width）。
+ * 中文等宽字符为 2，ASCII 为 1；避免按字节退格把 PS1 擦掉。
+ */
+static int utf8_char_width(const char *s, int n)
+{
+	unsigned int cp;
+
+	if (n <= 1)
+		return 1;
+	cp = utf8_decode(s, n);
+	if (cp >= 0x1100 && cp <= 0x115f)
+		return 2;
+	if (cp >= 0x2329 && cp <= 0x232a)
+		return 2;
+	if (cp >= 0x2e80 && cp <= 0xa4cf)
+		return 2;
+	if (cp >= 0xac00 && cp <= 0xd7a3)
+		return 2;
+	if (cp >= 0xf900 && cp <= 0xfaff)
+		return 2;
+	if (cp >= 0xfe10 && cp <= 0xfe19)
+		return 2;
+	if (cp >= 0xfe30 && cp <= 0xfe6f)
+		return 2;
+	if (cp >= 0xff00 && cp <= 0xff60)
+		return 2;
+	if (cp >= 0xffe0 && cp <= 0xffe6)
+		return 2;
+	if (cp >= 0x1f300 && cp <= 0x1f64f)
+		return 2;
+	if (cp >= 0x20000 && cp <= 0x3fffd)
+		return 2;
+	return 1;
+}
+
+/* buf[0 .. nbytes) 的显示列宽 */
+static int str_disp_width(const char *s, int nbytes)
+{
+	int i = 0, w = 0, n;
+
+	while (i < nbytes) {
+		n = utf8_nbytes(s + i, nbytes - i);
+		if (n <= 0)
+			break;
+		w += utf8_char_width(s + i, n);
+		i += n;
+	}
+	return w;
+}
+
 /* ---------- 终端光标 / 行缓冲重绘 ---------- */
 
-/* 光标左移 n 格 */
+/* 光标左移 n 列（不是 n 字节） */
 static void cursor_left(int n)
 {
 	while (n-- > 0) {
@@ -87,8 +203,9 @@ static void cursor_left(int n)
 }
 
 /*
- * 从屏幕光标位置起，重画 buf[pos .. len)，再写 nclear 个空格清残留，
- * 最后把光标停在 stay（相对 buf 起点）。
+ * 从屏幕光标位置起，重画 buf[pos .. len)，再写 nclear 列空格清残留，
+ * 最后把光标停在字节下标 stay。
+ * nclear 按终端列计（宽字符删掉后须清 2 列）。
  */
 static void refresh_tail(char *buf, int len, int pos, int nclear, int stay)
 {
@@ -100,8 +217,8 @@ static void refresh_tail(char *buf, int len, int pos, int nclear, int stay)
 	for (i = 0; i < nclear; i++) {
 		write(1, " ", 1);
 	}
-	/* 写完后光标在 len+nclear，左移到 stay */
-	cursor_left(len + nclear - stay);
+	/* 写完后光标在 stay..len 的列宽 + nclear 之外，左移回去 */
+	cursor_left(str_disp_width(buf + stay, len - stay) + nclear);
 }
 
 /* 删除 buf[pos .. pos+n)，后面内容前移 */
@@ -119,33 +236,38 @@ static void buf_delete(char *buf, int *len, int pos, int n)
 	buf[*len] = '\0';
 }
 
-/* 在 pos 处插入一字符；缓冲区须留有空位 */
-static void buf_insert(char *buf, int *len, int pos, char c, int cap)
+/* 在 pos 处插入 nbytes 字节；缓冲区须留有空位 */
+static void buf_insert_bytes(char *buf, int *len, int pos, const char *s,
+			     int nbytes, int cap)
 {
 	int i;
 
-	if (*len + 1 >= cap || pos < 0 || pos > *len) {
+	if (nbytes <= 0 || *len + nbytes >= cap || pos < 0 || pos > *len) {
 		return;
 	}
-	for (i = *len; i > pos; i--) {
-		buf[i] = buf[i - 1];
+	for (i = *len - 1; i >= pos; i--) {
+		buf[i + nbytes] = buf[i];
 	}
-	buf[pos] = c;
-	(*len)++;
+	for (i = 0; i < nbytes; i++) {
+		buf[pos + i] = s[i];
+	}
+	*len += nbytes;
 	buf[*len] = '\0';
 }
 
 /* 重绘整行输入区；结束后光标在行尾 */
 static void redraw_line(char *buf, int *len, int *pos, const char *text)
 {
-	int oldlen = *len;
+	int old_cols = str_disp_width(buf, *len);
+	int new_cols;
 	int nclear;
 
-	cursor_left(*pos);
+	cursor_left(str_disp_width(buf, *pos));
 	strlcpy_local(buf, text, BUFSZ);
 	*len = strlen(buf);
 	*pos = *len;
-	nclear = oldlen > *len ? oldlen - *len : 0;
+	new_cols = str_disp_width(buf, *len);
+	nclear = old_cols > new_cols ? old_cols - new_cols : 0;
 	refresh_tail(buf, *len, 0, nclear, *pos);
 }
 
@@ -208,22 +330,29 @@ static void clear_screen(void)
 
 /* ---------- readline 行编辑动作 ---------- */
 
-/* 左箭头 / 光标左移一格 */
-static void edit_left(int *pos)
+/* 左箭头：左移一个 UTF-8 字符（按显示列退格） */
+static void edit_left(char *buf, int *pos)
 {
-	if (*pos > 0) {
-		cursor_left(1);
-		(*pos)--;
-	}
+	int prev, w;
+
+	if (*pos <= 0)
+		return;
+	prev = utf8_prev(buf, *pos);
+	w = str_disp_width(buf + prev, *pos - prev);
+	cursor_left(w);
+	*pos = prev;
 }
 
-/* 右箭头 / 光标右移一格（重打该字符以推进光标） */
+/* 右箭头：右移一个 UTF-8 字符（重打该字符以推进光标） */
 static void edit_right(char *buf, int len, int *pos)
 {
-	if (*pos < len) {
-		write(1, &buf[*pos], 1);
-		(*pos)++;
-	}
+	int n;
+
+	if (*pos >= len)
+		return;
+	n = utf8_nbytes(buf + *pos, len - *pos);
+	write(1, buf + *pos, n);
+	*pos += n;
 }
 
 /*
@@ -240,7 +369,7 @@ static void edit_word_left(char *buf, int *pos)
 	while (*pos > 0 && !is_space(buf[*pos - 1])) {
 		(*pos)--;
 	}
-	cursor_left(start - *pos);
+	cursor_left(str_disp_width(buf + *pos, start - *pos));
 }
 
 /*
@@ -263,9 +392,9 @@ static void edit_word_right(char *buf, int len, int *pos)
 }
 
 /* Ctrl+A：光标到行首 */
-static void edit_home(int *pos)
+static void edit_home(char *buf, int *pos)
 {
-	cursor_left(*pos);
+	cursor_left(str_disp_width(buf, *pos));
 	*pos = 0;
 }
 
@@ -278,16 +407,20 @@ static void edit_end(char *buf, int len, int *pos)
 	}
 }
 
-/* Backspace：删光标前一字符 */
+/* Backspace：删光标前一个 UTF-8 字符（按显示列擦除） */
 static void edit_backspace(char *buf, int *len, int *pos)
 {
-	if (*pos <= 0) {
+	int prev, nbytes, cols;
+
+	if (*pos <= 0)
 		return;
-	}
-	(*pos)--;
-	buf_delete(buf, len, *pos, 1);
-	write(1, ANSI_CUB, 1);
-	refresh_tail(buf, *len, *pos, 1, *pos);
+	prev = utf8_prev(buf, *pos);
+	nbytes = *pos - prev;
+	cols = str_disp_width(buf + prev, nbytes);
+	*pos = prev;
+	buf_delete(buf, len, *pos, nbytes);
+	cursor_left(cols);
+	refresh_tail(buf, *len, *pos, cols, *pos);
 }
 
 /*
@@ -297,7 +430,7 @@ static void edit_backspace(char *buf, int *len, int *pos)
 static void edit_kill_word(char *buf, int *len, int *pos)
 {
 	int end = *pos;
-	int nerase;
+	int nerase, cols;
 
 	while (*pos > 0 && is_space(buf[*pos - 1])) {
 		(*pos)--;
@@ -309,9 +442,10 @@ static void edit_kill_word(char *buf, int *len, int *pos)
 	if (nerase <= 0) {
 		return;
 	}
+	cols = str_disp_width(buf + *pos, nerase);
 	buf_delete(buf, len, *pos, nerase);
-	cursor_left(nerase);
-	refresh_tail(buf, *len, *pos, nerase, *pos);
+	cursor_left(cols);
+	refresh_tail(buf, *len, *pos, cols, *pos);
 }
 
 /* Ctrl+L：清屏后重画 PS1 与编辑行，光标回到原相对位置 */
@@ -322,15 +456,22 @@ static void edit_clear_redraw(char *buf, int len, int pos)
 	if (len > 0) {
 		write(1, buf, len);
 	}
-	cursor_left(len - pos);
+	cursor_left(str_disp_width(buf + pos, len - pos));
 }
 
-/* 在光标处插入可打印字符 */
-static void edit_insert(char *buf, int *len, int *pos, char c, int cap)
+/*
+ * 在光标处插入一个完整 UTF-8 字符（可多字节）。
+ * 必须整字写入再重绘：若按字节插入，中间态会把不完整序列与右侧 ASCII
+ * 一起发给终端，解码即乱码。
+ */
+static void edit_insert_bytes(char *buf, int *len, int *pos, const char *s,
+			      int nbytes, int cap)
 {
-	buf_insert(buf, len, *pos, c, cap);
-	refresh_tail(buf, *len, *pos, 0, *pos + 1);
-	(*pos)++;
+	if (nbytes <= 0)
+		return;
+	buf_insert_bytes(buf, len, *pos, s, nbytes, cap);
+	refresh_tail(buf, *len, *pos, 0, *pos + nbytes);
+	*pos += nbytes;
 }
 
 /* 历史上翻：更旧一条；失败返回 0 */
@@ -408,6 +549,10 @@ static int readline(char *buf, int n)
 	int ctrl;
 	char draft[BUFSZ];
 	int viewing = -1;	/* -1：编辑当前行；否则 history 下标 */
+	/* 凑齐一个 UTF-8 字符再插入，避免行中插入中文乱码 */
+	char utf8_pending[4];
+	int utf8_pend_n = 0;
+	int utf8_need = 0;
 
 	draft[0] = '\0';
 	buf[0] = '\0';
@@ -417,6 +562,12 @@ static int readline(char *buf, int n)
 			return -1;
 		}
 		c = (unsigned char)ch;
+
+		/* 控制/编辑键打断未完成的多字节序列 */
+		if (c < 32 || c == KEY_DELETE) {
+			utf8_pend_n = 0;
+			utf8_need = 0;
+		}
 
 		/* 状态 1：刚收到 ESC，下一字节应为 '[' 才进入 CSI */
 		if (esc == 1) {
@@ -481,7 +632,7 @@ static int readline(char *buf, int n)
 				if (ctrl) {
 					edit_word_left(buf, &pos);
 				} else {
-					edit_left(&pos);
+					edit_left(buf, &pos);
 				}
 			}
 			continue;
@@ -507,7 +658,7 @@ static int readline(char *buf, int n)
 			return len;
 		}
 		if (c == CTRL_A) {
-			edit_home(&pos);
+			edit_home(buf, &pos);
 			continue;
 		}
 		if (c == CTRL_E) {
@@ -523,12 +674,35 @@ static int readline(char *buf, int n)
 			hist_touch(buf, len, draft, &viewing);
 			continue;
 		}
-		/* 不可打印字符 */
+		/* 不可打印字符（含控制字符；UTF-8 续字节 >= 0x80） */
 		if (c < 32) {
 			continue;
 		}
 
-		edit_insert(buf, &len, &pos, (char)c, n);
+		/*
+		 * 组装完整 UTF-8 后再 edit_insert：
+		 * 中文等 3 字节字符若逐字节插入并 refresh_tail，
+		 * 终端会把「半截 UTF-8 + 右侧 ASCII」当成错误序列显示。
+		 */
+		if (utf8_pend_n == 0) {
+			utf8_need = utf8_expected_len((unsigned char)c);
+			utf8_pending[0] = (char)c;
+			utf8_pend_n = 1;
+		} else if (((unsigned char)c & 0xc0) == 0x80 &&
+			   utf8_pend_n < utf8_need) {
+			utf8_pending[utf8_pend_n++] = (char)c;
+		} else {
+			/* 续字节不合法：丢掉半截，用当前字节重新开始 */
+			utf8_need = utf8_expected_len((unsigned char)c);
+			utf8_pending[0] = (char)c;
+			utf8_pend_n = 1;
+		}
+		if (utf8_pend_n < utf8_need) {
+			continue;
+		}
+		edit_insert_bytes(buf, &len, &pos, utf8_pending, utf8_pend_n, n);
+		utf8_pend_n = 0;
+		utf8_need = 0;
 		hist_touch(buf, len, draft, &viewing);
 	}
 	buf[len] = '\0';
