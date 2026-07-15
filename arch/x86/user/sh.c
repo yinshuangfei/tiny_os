@@ -1,5 +1,5 @@
 /*
- * 简易用户态 shell：从 stdin（串口）读命令，内置 help/echo/pid/cat/exit/color/clear，
+ * 简易用户态 shell：从 stdin（串口）读命令，内置 help/echo/pid/cat/ls/exit/color/clear，
  * 方向键：上下历史，左右移动光标（可在光标处插入）；
  * Ctrl+←/→ 按单词移动；Ctrl+A/E 行首行尾，Ctrl+L 清屏，Ctrl+W 删词。
  * 其它名称经 fork + execve + waitpid 执行。
@@ -540,6 +540,7 @@ static int readline(char *buf, int n)
 static int cmd_help(int argc, char **argv);
 static int cmd_echo(int argc, char **argv);
 static int cmd_cat(int argc, char **argv);
+static int cmd_ls(int argc, char **argv);
 static int cmd_pid(int argc, char **argv);
 static int cmd_color(int argc, char **argv);
 static int cmd_clear(int argc, char **argv);
@@ -555,6 +556,7 @@ static const struct builtin builtins[] = {
 	{ "help",  "          show this message",     cmd_help },
 	{ "echo",  " [args]   print arguments",       cmd_echo },
 	{ "cat",   " <path>   print file",            cmd_cat },
+	{ "ls",    " [path]   list directory",        cmd_ls },
 	{ "pid",   "          print shell pid",       cmd_pid },
 	{ "color", " [on|off] color switch",          cmd_color },
 	{ "clear", "          clear screen",          cmd_clear },
@@ -607,6 +609,55 @@ static int cmd_echo(int argc, char **argv)
 		printf("%s", argv[i]);
 	}
 	printf("\n");
+	return 0;
+}
+
+static int cmd_ls(int argc, char **argv)
+{
+	const char *path;
+	struct dirent de;
+	struct stat st;
+	int fd, n;
+
+	path = (argc >= 2) ? argv[1] : "/";
+	fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		printf("%s cannot open %s\n", C_RED("ls:"), path);
+		return 1;
+	}
+	if (fstat(fd, &st) < 0) {
+		printf("%s fstat failed\n", C_RED("ls:"));
+		close(fd);
+		return 1;
+	}
+	if (!S_ISDIR(st.st_mode)) {
+		/* 与常见 ls 类似：对文件只打印路径 */
+		printf("%s\n", path);
+		close(fd);
+		return 0;
+	}
+	while ((n = read(fd, &de, sizeof(de))) > 0) {
+		if (n < (int)sizeof(de) || de.d_reclen < sizeof(de)) {
+			printf("%s short dirent\n", C_RED("ls:"));
+			close(fd);
+			return 1;
+		}
+		if (de.d_type == DT_DIR) {
+			print_colored(ANSI_FG_BBLUE, de.d_name);
+			printf("/\n");
+		} else if (de.d_type == DT_CHR || de.d_type == DT_BLK) {
+			print_colored(ANSI_FG_BYELLOW, de.d_name);
+			printf("\n");
+		} else {
+			printf("%s\n", de.d_name);
+		}
+	}
+	if (n < 0) {
+		printf("%s read error\n", C_RED("ls:"));
+		close(fd);
+		return 1;
+	}
+	close(fd);
 	return 0;
 }
 
@@ -755,10 +806,11 @@ int main(void)
 	for (;;) {
 		print_prompt();
 		if (readline(line, sizeof(line)) < 0) {
-			break;
+			/* 串口暂无输入时不退出，避免 init 反复 fork */
+			sleep(1);
+			continue;
 		}
 		hist_add(line);
 		run_line(line);
 	}
-	exit(0);
 }

@@ -20,5 +20,6 @@ int sys_waitpid(struct trapframe *tf);
 int sys_write(struct trapframe *tf);
 int sys_open(struct trapframe *tf);
 int sys_close(struct trapframe *tf);
+int sys_fstat(struct trapframe *tf);
 
 #endif

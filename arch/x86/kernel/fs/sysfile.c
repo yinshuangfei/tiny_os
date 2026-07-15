@@ -55,6 +55,44 @@ int sys_open(struct trapframe *tf)
 	return fd;
 }
 
+static unsigned short inode_to_mode(short type)
+{
+	switch (type) {
+	case T_DIR:
+		return S_IFDIR;
+	case T_FILE:
+		return S_IFREG;
+	case T_DEV:
+		return S_IFCHR;
+	default:
+		return 0;
+	}
+}
+
+int sys_fstat(struct trapframe *tf)
+{
+	int fd;
+	uint uaddr;
+	struct proc *p = myproc();
+	struct file *f;
+	struct stat st;
+
+	if (argint(tf, 0, &fd) < 0 || argaddr(tf, 1, &uaddr) < 0)
+		return -1;
+	if (!p || !p->pagetable)
+		return -1;
+	f = fdget(fd);
+	if (!f || !f->ip)
+		return -1;
+
+	st.st_mode = inode_to_mode(f->ip->type);
+	st.st_ino = f->ip->inum;
+	st.st_size = f->ip->size;
+	if (copyout(p->pagetable, uaddr, &st, sizeof(st)) < 0)
+		return -1;
+	return 0;
+}
+
 int sys_close(struct trapframe *tf)
 {
 	int fd;

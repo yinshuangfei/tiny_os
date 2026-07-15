@@ -14,12 +14,32 @@
 #define SYS_waitpid	7
 #define SYS_execve	11
 #define SYS_getpid	20
+#define SYS_fstat	28
 #define SYS_nanosleep	162	/* Linux i386 __NR_nanosleep */
 
 #ifndef __ASSEMBLER__
 struct timespec {
 	unsigned int tv_sec;
 	unsigned int tv_nsec;
+};
+
+/*
+ * fstat 结果（字段名对齐 Linux struct stat 常用子集）。
+ * st_mode 使用 S_IF* 文件类型位。
+ */
+#define S_IFMT		00170000
+#define S_IFDIR		0040000
+#define S_IFCHR		0020000
+#define S_IFREG		0100000
+
+#define S_ISDIR(m)	(((m) & S_IFMT) == S_IFDIR)
+#define S_ISCHR(m)	(((m) & S_IFMT) == S_IFCHR)
+#define S_ISREG(m)	(((m) & S_IFMT) == S_IFREG)
+
+struct stat {
+	unsigned short	st_mode;
+	unsigned int	st_ino;
+	unsigned int	st_size;
 };
 
 /* open flags */

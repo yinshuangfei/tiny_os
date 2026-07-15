@@ -11,6 +11,21 @@
 static struct inode *root;		/* 根inode */
 static struct inode inodes[NINODE];	/* 所有inode */
 
+/* inode_type → Linux dirent.d_type */
+static unsigned char inode_to_dtype(short type)
+{
+	switch (type) {
+	case T_DIR:
+		return DT_DIR;
+	case T_FILE:
+		return DT_REG;
+	case T_DEV:
+		return DT_CHR;
+	default:
+		return DT_UNKNOWN;
+	}
+}
+
 /* 比较两个目录项名称 */
 static int namecmp(const char *a, const char *b)
 {
@@ -40,6 +55,7 @@ static struct inode *ialloc(short type)
 	for (i = 0; i < NINODE; i++) {
 		ip = &inodes[i];
 		if (ip->type == 0) {
+			ip->inum = (uint)(i + 1);
 			ip->type = type;
 			ip->ref = 1;
 			ip->size = 0;
@@ -72,7 +88,7 @@ void fs_iput(struct inode *ip)
 	/* 教学实现：inode 不回收到空闲池以外的彻底释放，
 	 * type 保留；无引用且非根时清空数据以便复用。 */
 	if (ip->ref == 0 && ip != root) {
-		struct dirent *d, *n;
+		struct dentry *d, *n;
 
 		if (ip->data) {
 			kfree(ip->data);
@@ -86,10 +102,11 @@ void fs_iput(struct inode *ip)
 		ip->dents = 0;
 		ip->type = 0;
 		ip->size = 0;
+		ip->inum = 0;
 	}
 }
 
-/* 从 path 取出第一个路径名（组件），返回去除 '\' 后的剩余路径；
+/* 从 path 取出第一个路径名（组件），返回去除 '/' 后的剩余路径；
  * 取出的组件名称写入大小为 DIRSIZ 的缓冲区 name
  */
 static const char *skipelem(const char *path, char *name)
@@ -119,9 +136,9 @@ static const char *skipelem(const char *path, char *name)
 }
 
 /* 在父目录中查找一个目录项 */
-static struct dirent *dirlookup(struct inode *dp, const char *name)
+static struct dentry *dirlookup(struct inode *dp, const char *name)
 {
-	struct dirent *d;
+	struct dentry *d;
 
 	if (!dp || dp->type != T_DIR)
 		return 0;
@@ -135,7 +152,7 @@ static struct dirent *dirlookup(struct inode *dp, const char *name)
 /* 将一个 inode 添加到父目录的目录项链表中 */
 static int dirlink(struct inode *dp, const char *name, struct inode *ip)
 {
-	struct dirent *d;
+	struct dentry *d;
 
 	if (!dp || dp->type != T_DIR)
 		return -1;
@@ -159,7 +176,7 @@ static int dirlink(struct inode *dp, const char *name, struct inode *ip)
 static struct inode *namex(const char *path, int nameiparent, char *name)
 {
 	struct inode *ip, *next;
-	struct dirent *de;
+	struct dentry *de;
 	const char *p;
 
 	if (!path || path[0] != '/')
@@ -237,12 +254,55 @@ struct inode *fs_create(const char *path, short type)
 	return ip;
 }
 
-/* 从 inode 的数据区读取数据 */
+/* 从目录 inode 按 struct dirent 记录顺序读取（对齐 Linux getdents 记录语义） */
+static int fs_readdir(struct inode *ip, char *dst, uint off, uint n)
+{
+	struct dentry *d;
+	struct dirent de;
+	uint idx, i, total;
+	uint esz = sizeof(struct dirent);
+
+	if (off % esz)
+		return -1;
+
+	idx = off / esz;
+	total = 0;
+	i = 0;
+	for (d = ip->dents; d; d = d->next) {
+		if (i++ < idx)
+			continue;
+		if (n < esz)
+			break;
+
+		memset(&de, 0, sizeof(de));
+		de.d_ino = d->ip ? d->ip->inum : 0;
+		de.d_reclen = (unsigned short)esz;
+		de.d_off = off + total + esz;
+		de.d_type = d->ip ? inode_to_dtype(d->ip->type) : DT_UNKNOWN;
+		namecpy(de.d_name, d->name);
+		{
+			uint j;
+
+			for (j = 0; j < esz; j++)
+				dst[j] = ((char *)&de)[j];
+		}
+		dst += esz;
+		n -= esz;
+		total += esz;
+	}
+	return (int)total;
+}
+
+/* 从 inode 的数据区读取数据（普通文件或目录） */
 int fs_readi(struct inode *ip, char *dst, uint off, uint n)
 {
 	uint i;
 
-	if (!ip || ip->type != T_FILE)
+	if (!ip)
+		return -1;
+	if (ip->type == T_DIR)
+		return fs_readdir(ip, dst, off, n);
+	if (ip->type != T_FILE)
 		return -1;
 	if (off > ip->size)
 		return 0;

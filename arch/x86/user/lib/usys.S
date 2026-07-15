@@ -86,3 +86,11 @@ close:
 	movl $SYS_close, %eax
 	int $0x80
 	ret
+
+.globl fstat
+fstat:
+	movl 4(%esp), %ebx
+	movl 8(%esp), %ecx
+	movl $SYS_fstat, %eax
+	int $0x80
+	ret

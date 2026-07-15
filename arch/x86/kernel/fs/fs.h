@@ -3,12 +3,13 @@
 
 #include "../types.h"
 #include "../param.h"
+#include "../../user/include/dirent.h"
 
-#define DIRSIZ		28		/* 目录项大小 */
+#define DIRSIZ		(NAME_MAX + 1)	/* 目录项名缓冲，与 NAME_MAX 对齐 */
 #define NINODE		64		/* 最大inode数 */
 #define NFILE		64		/* 最大文件数 */
 
-/* inode 类型 */
+/* inode 类型（内核内部，不是 dirent.d_type） */
 enum inode_type {
 	T_DIR	= 1,			/* 目录 */
 	T_FILE	= 2,			/* 文件 */
@@ -21,19 +22,21 @@ enum inode_type {
 struct proc;
 struct inode;
 
-struct dirent {
+/* 内核目录树节点（对应 Linux VFS 的 dentry 角色，非用户 ABI） */
+struct dentry {
 	char name[DIRSIZ];		/* 目录项名称 */
-	struct inode *ip;		/* 指向的inode */
-	struct dirent *next;		/* 下一个目录项 */
+	struct inode *ip;		/* 指向的 inode */
+	struct dentry *next;		/* 下一个目录项 */
 };
 
 struct inode {
+	uint inum;			/* inode 号（1..NINODE） */
 	short type;			/* 文件类型 */
 	short major;			/* T_DEV */
 	uint ref;			/* 引用计数 */
 	uint size;			/* 文件大小 */
 	char *data;			/* T_FILE 内容 */
-	struct dirent *dents;		/* T_DIR 子项 */
+	struct dentry *dents;		/* T_DIR 子项 */
 };
 
 struct file {

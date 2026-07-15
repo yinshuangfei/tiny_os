@@ -73,6 +73,7 @@ static int (*syscalls[])(struct trapframe *tf) = {
 	[SYS_read] = sys_read,
 	[SYS_open] = sys_open,
 	[SYS_close] = sys_close,
+	[SYS_fstat] = sys_fstat,
 	[SYS_nanosleep] = sys_nanosleep,
 };
 

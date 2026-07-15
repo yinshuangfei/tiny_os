@@ -5,6 +5,7 @@
 #define __USER_USER_H__
 
 #include "syscall.h"
+#include "dirent.h"
 
 struct timespec;
 
@@ -20,6 +21,7 @@ int read(int fd, void *buf, int n);
 int write(int, const void *, int);
 int open(const char *path, int flags);
 int close(int fd);
+int fstat(int fd, struct stat *st);
 
 int printf(const char *fmt, ...);
 int sprintf(char *buf, const char *fmt, ...);
