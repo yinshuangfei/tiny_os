@@ -68,6 +68,16 @@ void *memset(void *dst, int c, uint n)
 	return dst;
 }
 
+void *memcpy(void *dst, const void *src, uint n)
+{
+	uchar *d = dst;
+	const uchar *s = src;
+
+	while (n-- > 0)
+		*d++ = *s++;
+	return dst;
+}
+
 /* 物理地址 → mem_map 中的 struct page */
 static struct page *addr_to_page(void *addr)
 {

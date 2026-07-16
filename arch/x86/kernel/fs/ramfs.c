@@ -106,6 +106,7 @@ static struct dentry *dirlookup(struct inode *dp, const char *name)
 	return 0;
 }
 
+/* 在目录中添加一个名为 name，inode 为 ip 的目录项 */
 static int dirlink(struct inode *dp, const char *name, struct inode *ip)
 {
 	struct dentry *d;
@@ -124,6 +125,12 @@ static int dirlink(struct inode *dp, const char *name, struct inode *ip)
 	d->next = dp->dents;
 	dp->dents = d;
 	return 0;
+}
+
+/* 供其它 FS 挂接到 ramfs 目录（如 ext2 → /mnt） */
+int ramfs_link(struct inode *dir, const char *name, struct inode *ip)
+{
+	return dirlink(dir, name, ip);
 }
 
 static int dirunlink(struct inode *dp, const char *name)

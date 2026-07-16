@@ -14,3 +14,4 @@ lib/usys.S
 .cache
 .clangd
 __pycache__
+mkfs_ext2

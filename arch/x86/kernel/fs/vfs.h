@@ -59,7 +59,7 @@ struct inode {
 	short type;			/* 文件类型 */
 	dev_t rdev;			/* T_CHAR / T_BLK：设备号（12+20） */
 	uint ref;			/* 引用计数 */
-	uint size;			/* 文件大小（块设备可为容量字节数） */
+	uint size;			/* 文件、目录大小（块设备可为容量字节数） */
 	char *data;			/* T_FILE 内容（后端私有用法） */
 	struct dentry *dents;		/* T_DIR 子项（后端私有用法） */
 	struct inode *parent;		/* 父目录（root->parent == root） */
@@ -120,5 +120,8 @@ struct file *fdget(int fd);
 void fd_install_stdio(struct proc *p);
 void fd_copy(struct proc *dst, struct proc *src);
 void fd_closeall(struct proc *p);
+
+/* 将 inode 链到 ramfs 目录（跨后端挂接，如 ext2 → /mnt） */
+int ramfs_link(struct inode *dir, const char *name, struct inode *ip);
 
 #endif

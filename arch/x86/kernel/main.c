@@ -3,6 +3,7 @@
 #include "gdt.h"
 #include "idt.h"
 #include "x86.h"
+#include "fs/mount.h"
 
 #define MAJOR_VERSION 0
 #define MINOR_VERSION 0
@@ -38,6 +39,8 @@ void main(void)
 	blk_init();
 	/* IDE 设备初始化（探测后注册 hda/hdb/…） */
 	ide_init();
+	/* 扫描块设备：读超级块魔数识别 FS 后按需加载并挂到 /mnt */
+	mount_init();
 	/* printf 自旋锁（须在 sti 之前，避免定时器 IRQ 交错输出） */
 	printfinit();
 	/* 初始化时钟（尚未 sti，不会抢占） */

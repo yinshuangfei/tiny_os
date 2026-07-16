@@ -64,7 +64,19 @@ qemu: $(HD_IMG) $(HD1_IMG) $(HD2_IMG) $(HD3_IMG) $(HD4_IMG) $(HD5_IMG) \
 	$(if $(filter 1,$(K)),kernel.elf,boot.img)
 	@$(QEMU) $(QEMUOPTS)
 
-$(HD_IMG) $(HD1_IMG) $(HD2_IMG) $(HD3_IMG) $(HD4_IMG) $(HD5_IMG):
+# hd.img：C 版 mkfs_ext2 生成（已是 ext2 则保留）
+TOOLS_MKFS = tools/mkfs_ext2
+
+$(TOOLS_MKFS): tools/mkfs_ext2.c
+	$(CC) -O2 -Wall -o $@ $<
+
+# $(HD_IMG):
+# 	@sh scripts/mkhd-ext2.sh $@ $(HD_SIZE_MB)
+
+$(HD_IMG): $(TOOLS_MKFS)
+	@$(TOOLS_MKFS) $@ $(HD_SIZE_MB)
+
+$(HD1_IMG) $(HD2_IMG) $(HD3_IMG) $(HD4_IMG) $(HD5_IMG):
 	@dd if=/dev/zero of=$@ bs=1M count=$(HD_SIZE_MB) status=none
 	@echo "created $@ ($(HD_SIZE_MB) MiB)"
 
@@ -113,6 +125,8 @@ C_OBJS = \
 	$(KDIR)/fs/inode.o \
 	$(KDIR)/fs/namei.o \
 	$(KDIR)/fs/ramfs.o \
+	$(KDIR)/fs/ext2.o \
+	$(KDIR)/fs/mount.o \
 	$(KDIR)/fs/file.o \
 	$(KDIR)/fs/sysfile.o \
 	$(KDIR)/block/genhd.o \
@@ -231,6 +245,7 @@ compile_commands.json:
 clean:
 	rm -f *.o *.elf *.bin *.img *.map *.vmdk *.tmp main.s test64.* \
 	setup.elf setup.bin kernel_body.elf kernel_body.bin $(HD_IMG) \
+	$(TOOLS_MKFS) \
 	$(BOOTDIR)/*.o $(BOOTDIR)/*.bin \
 	$(USERDIR)/*.o $(USERDIR)/*.elf $(USERDIR)/*.bin \
 	$(USERDIR)/lib/*.o \

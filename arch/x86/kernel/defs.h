@@ -10,6 +10,7 @@
 
 /** mm/ — 物理探测、buddy、slab、页表（对齐 Linux mm/） */
 void *memset(void *dst, int c, uint n);
+void *memcpy(void *dst, const void *src, uint n);
 void pmm_init(void);
 void mem_probe(void);
 void *alloc_pages(unsigned int order);
@@ -20,7 +21,6 @@ unsigned int pmm_nr_free_pages(void);
 
 /** cpu.c */
 void cpu_init(void);
-
 
 /** printf.c / printk */
 #include "printk.h"
