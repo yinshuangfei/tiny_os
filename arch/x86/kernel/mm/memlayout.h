@@ -39,8 +39,6 @@
 #define USERSTACK    0x00800000
 #define USEREND      0x00800000	/* [USERBASE, USEREND) 为用户独占 VA */
 
-#define USERINITESP  (USERSTACK - 16)	/* iret 后初始 esp，须落在已映射栈页内 */
-
 #define KSTACKSIZE   PGSIZE	/* 内核主栈 / 中断栈大小 */
 /*
  * (1) 用户态程序，切换到内核态时，内核栈顶的布局：

@@ -135,15 +135,20 @@ static uint32 eiblocks[EXT2_NINODE][EXT2_N_BLOCKS];
 /* inode 操作 */
 static const struct inode_operations ext2_iops;
 
+/*
+ * 比较目录项名 a[0..n)（无 '\0'，长度由 name_len 给出）与 C 字符串 b。
+ * 相等当且仅当前 n 字节相同且 b[n] == '\0'。
+ * 不可读 a[n]：其后可能是下一项（如 "test" 紧挨 "test.elf"）。
+ */
 static int namecmp_n(const char *a, const char *b, int n)
 {
 	int i;
 
 	for (i = 0; i < n; i++) {
-		if (a[i] != b[i])
+		if ((unsigned char)a[i] != (unsigned char)b[i])
 			return (unsigned char)a[i] - (unsigned char)b[i];
 	}
-	return a[n] ? 1 : 0;
+	return b[n] ? 1 : 0;
 }
 
 /* 从块设备读取一个扇区到 buf */
@@ -432,8 +437,7 @@ static int lookup_cb(struct ext2_dir_entry *de, void *arg)
 	struct lookup_arg *a = arg;
 	int nlen = de->name_len;
 
-	if (namecmp_n(de->name, a->name, nlen) == 0 &&
-	    a->name[nlen] == 0) {
+	if (namecmp_n(de->name, a->name, nlen) == 0) {
 		a->inum = de->inode;
 		return 1;
 	}

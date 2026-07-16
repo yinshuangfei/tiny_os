@@ -3,6 +3,7 @@
  */
 #include "types.h"
 #include "defs.h"
+#include "param.h"
 #include "proc.h"
 #include "syscall.h"
 #include "execve.h"
@@ -106,11 +107,48 @@ int sys_nanosleep(struct trapframe *tf)
 	return 0;
 }
 
+/*
+ * 从用户地址空间拷贝以 NULL 结尾的字符串指针表到内核。
+ * store 容量为 max * NNAME；ptrs[] 填入指向 store 的指针，以 NULL 结尾。
+ * 成功返回个数，失败 -1（调用方负责 kfree(store)）。
+ */
+static int copy_user_strvec(pagetable_t pgdir, uint uvec, char *store, int max,
+			    char **ptrs)
+{
+	uint uarg;
+	int n;
+
+	n = 0;
+	if (uvec == 0) {
+		ptrs[0] = 0;
+		return 0;
+	}
+	for (;;) {
+		if (n >= max)
+			return -1;
+		if (copyin(pgdir, &uarg, uvec + (uint)n * sizeof(uint),
+			   sizeof(uint)) < 0)
+			return -1;
+		if (uarg == 0)
+			break;
+		if (copyinstr(pgdir, store + n * NNAME, uarg, NNAME) < 0)
+			return -1;
+		ptrs[n] = store + n * NNAME;
+		n++;
+	}
+	ptrs[n] = 0;
+	return n;
+}
+
 int sys_execve(struct trapframe *tf)
 {
 	char path[NNAME];
-	uint upath;
+	char *argstore, *envstore;
+	char *kargv[MAXARG + 1];
+	char *kenvp[MAXENV + 1];
+	uint upath, uargv, uenvp;
 	struct proc *p = myproc();
+	int argc, envc, r;
 
 	if (!p || !p->pagetable)
 		return -1;
@@ -118,6 +156,50 @@ int sys_execve(struct trapframe *tf)
 		return -1;
 	if (copyinstr(p->pagetable, path, upath, NNAME) < 0)
 		return -1;
-	/* envp/argv 暂未实现，忽略 arg1、arg2 */
-	return execve(p, tf, path);
+
+	/* 临时申请的存储空间 */
+	argstore = 0;
+	envstore = 0;
+	argc = 0;
+	envc = 0;
+
+	/* argv 和 envp 指针数组 */
+	kargv[0] = 0;
+	kenvp[0] = 0;
+
+	/* 换页表前从旧地址空间拷出 argv / envp（Linux execve 三参数） */
+	if (argaddr(tf, 1, &uargv) == 0 && uargv != 0) {
+		argstore = kmalloc(MAXARG * NNAME);
+		if (!argstore)
+			return -1;
+		argc = copy_user_strvec(p->pagetable, uargv, argstore, MAXARG,
+					kargv);
+		if (argc < 0) {
+			kfree(argstore);
+			return -1;
+		}
+	}
+	if (argaddr(tf, 2, &uenvp) == 0 && uenvp != 0) {
+		envstore = kmalloc(MAXENV * NNAME);
+		if (!envstore) {
+			if (argstore)
+				kfree(argstore);
+			return -1;
+		}
+		envc = copy_user_strvec(p->pagetable, uenvp, envstore, MAXENV,
+					kenvp);
+		if (envc < 0) {
+			if (argstore)
+				kfree(argstore);
+			kfree(envstore);
+			return -1;
+		}
+	}
+
+	r = execve(p, tf, path, argc ? kargv : 0, envc ? kenvp : 0);
+	if (argstore)
+		kfree(argstore);
+	if (envstore)
+		kfree(envstore);
+	return r;
 }

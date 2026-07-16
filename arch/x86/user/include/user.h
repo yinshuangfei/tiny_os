@@ -9,7 +9,7 @@
 
 struct timespec;
 
-int execve(const char *, char *const *, char *const *);
+int execve(const char *filename, char *const argv[], char *const envp[]);
 int exit(int) __attribute__((noreturn));
 int fork(void);
 int getpid(void);

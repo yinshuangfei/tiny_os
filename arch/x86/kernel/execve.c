@@ -2,6 +2,13 @@
  * execve：将当前进程映像替换为用户程序。
  * 支持 ELF32（i386 ET_EXEC）与 flat binary（入口 USERBASE）。
  *
+ * 用户栈布局对齐 Linux i386 / SysV ABI（create_elf_tables）：
+ *   高址 │ 字符串（argv / envp）
+ *       │ AT_NULL 辅助向量
+ *       │ envp[0..n], NULL
+ *       │ argv[0..argc-1], NULL
+ *   低址 │ argc                    ← %esp（16 字节对齐）
+ *
  * 查找顺序：
  *   1) 文件系统路径（fs_namei + 读入）
  *   2) 内核嵌入表（仅 init/sh 启动用）
@@ -48,6 +55,17 @@ static int streq(const char *a, const char *b)
 		b++;
 	}
 	return *a == *b;
+}
+
+static uint strlen_u(const char *s)
+{
+	uint n = 0;
+
+	if (!s)
+		return 0;
+	while (s[n])
+		n++;
+	return n;
 }
 
 static const struct userbin *userbin_lookup(const char *path)
@@ -157,17 +175,120 @@ static int exec_load_elf(pagetable_t pgdir, const char *blob, uint size,
 }
 
 /*
+ * 在已映射的用户栈页上构造 Linux 风格初始栈。
+ * argv/envp 为内核侧以 NULL 结尾的字符串表；argv 空则用 name 作 argv[0]。
+ * 成功时 *out_esp 指向 argc，且 16 字节对齐。
+ */
+static int exec_stack_argv(pagetable_t pgdir, const char *name,
+			   char *const *argv, char *const *envp, uint *out_esp)
+{
+	const char *kargv[MAXARG + 1];
+	const char *kenvp[MAXENV + 1];
+	uint uargv[MAXARG + 1];
+	uint uenvp[MAXENV + 1];
+	uint sp, len, tab, argc_u, aux[2];
+	int argc, envc, i;
+
+	if (!pgdir || !out_esp || !name)
+		return -1;
+
+	argc = 0;
+	if (argv) {
+		for (i = 0; argv[i]; i++) {
+			if (argc >= MAXARG)
+				return -1;
+			kargv[argc++] = argv[i];
+		}
+	}
+	if (argc == 0) {
+		kargv[0] = name;
+		argc = 1;
+	}
+	kargv[argc] = 0;
+
+	envc = 0;
+	if (envp) {
+		for (i = 0; envp[i]; i++) {
+			if (envc >= MAXENV)
+				return -1;
+			kenvp[envc++] = envp[i];
+		}
+	}
+	kenvp[envc] = 0;
+
+	/* 1) 信息块：argv / envp 字符串（高址 → 低址） */
+	sp = USERSTACK;
+	for (i = 0; i < argc; i++) {
+		len = strlen_u(kargv[i]) + 1;
+		if (len > NNAME || sp < USERSTACK - PGSIZE + len)
+			return -1;
+		sp -= len;
+		if (copyout(pgdir, sp, kargv[i], len) < 0)
+			return -1;
+		uargv[i] = sp;
+	}
+	uargv[argc] = 0;
+
+	for (i = 0; i < envc; i++) {
+		len = strlen_u(kenvp[i]) + 1;
+		if (len > NNAME || sp < USERSTACK - PGSIZE + len)
+			return -1;
+		sp -= len;
+		if (copyout(pgdir, sp, kenvp[i], len) < 0)
+			return -1;
+		uenvp[i] = sp;
+	}
+	uenvp[envc] = 0;
+
+	/*
+	 * 2) 指针表 + argc + AT_NULL：
+	 *    单词数 = 1(argc) + (argc+1) + (envc+1) + 2(aux)
+	 *    最终 %esp 须 16 字节对齐（SysV i386 ABI）。
+	 *
+	 * TODO: 待消化
+	 */
+	tab = (1 + (uint)(argc + 1) + (uint)(envc + 1) + 2) * sizeof(uint);
+	if (sp < USERSTACK - PGSIZE + tab)
+		return -1;
+	sp = (sp - tab) & ~0xf;
+	if (sp < USERSTACK - PGSIZE)
+		return -1;
+
+	argc_u = (uint)argc;
+	if (copyout(pgdir, sp, &argc_u, sizeof(uint)) < 0)
+		return -1;
+	if (copyout(pgdir, sp + sizeof(uint), uargv,
+		    (uint)(argc + 1) * sizeof(uint)) < 0)
+		return -1;
+	if (copyout(pgdir,
+		    sp + sizeof(uint) + (uint)(argc + 1) * sizeof(uint),
+		    uenvp, (uint)(envc + 1) * sizeof(uint)) < 0)
+		return -1;
+
+	aux[0] = AT_NULL;
+	aux[1] = 0;
+	if (copyout(pgdir,
+		    sp + sizeof(uint) +
+			    (uint)(argc + 1 + envc + 1) * sizeof(uint),
+		    aux, sizeof(aux)) < 0)
+		return -1;
+
+	*out_esp = sp;
+	return 0;
+}
+
+/*
  * 在新页表加载 blob + 用户栈；成功时切换 p->pagetable 并更新 trapframe。
  * 失败时释放 newpg，旧映像保持不变。
  */
 int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
-	      const char *name)
+	      const char *name, char *const *argv, char *const *envp)
 {
 	pagetable_t oldpg, newpg;
 	void *ustack;
-	uint entry;
+	uint entry, esp;
 
-	if (!p || !tf || !blob || size == 0 || size > EXEC_MAX_FILE)
+	if (!p || !tf || !blob || size == 0 || size > EXEC_MAX_FILE || !name)
 		return -1;
 
 	newpg = uvmcreate();
@@ -194,13 +315,16 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 		goto bad;
 	}
 
+	if (exec_stack_argv(newpg, name, argv, envp, &esp) < 0)
+		goto bad;
+
 	oldpg = p->pagetable;
 	p->pagetable = newpg;
 	p->sz = USERSTACK;
 	proc_name_from_path(p, name);
 
 	tf->eip = entry;
-	tf->esp = USERINITESP;
+	tf->esp = esp;
 	tf->cs = SEG_UCODE | DPL_USER;
 	tf->ss = SEG_UDATA | DPL_USER;
 	tf->ds = SEG_UDATA | DPL_USER;
@@ -209,8 +333,8 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 	current_user_pgdir = newpg;
 	uvmfree(oldpg);
 
-	printk(KERN_DEBUG "execve: pid=%d name=%s eip=0x%x\n",
-	       p->pid, p->name, tf->eip);
+	printk(KERN_DEBUG "execve: pid=%d name=%s eip=0x%x esp=0x%x\n",
+	       p->pid, p->name, tf->eip, tf->esp);
 	return 0;
 
 bad:
@@ -250,7 +374,8 @@ static char *exec_read_file(const char *path, uint *out_size)
 	return buf;
 }
 
-int execve(struct proc *p, struct trapframe *tf, const char *path)
+int execve(struct proc *p, struct trapframe *tf, const char *path,
+	   char *const *argv, char *const *envp)
 {
 	const struct userbin *bin;
 	char *buf;
@@ -263,7 +388,7 @@ int execve(struct proc *p, struct trapframe *tf, const char *path)
 	/* 1) 文件系统路径 */
 	buf = exec_read_file(path, &size);
 	if (buf) {
-		r = exec_load(p, tf, buf, size, path);
+		r = exec_load(p, tf, buf, size, path, argv, envp);
 		kfree(buf);
 		return r;
 	}
@@ -271,7 +396,8 @@ int execve(struct proc *p, struct trapframe *tf, const char *path)
 	/* 2) 嵌入二进制（init / sh） */
 	bin = userbin_lookup(path);
 	if (bin)
-		return exec_load(p, tf, bin->blob, bin->size, bin->name);
+		return exec_load(p, tf, bin->blob, bin->size, bin->name, argv,
+				 envp);
 
 	printk(KERN_ERR "execve: pid=%d cannot find '%s'\n", p->pid, path);
 	return -1;
@@ -292,7 +418,7 @@ void kernel_execve(struct proc *p, const char *path)
 				  sizeof(struct trapframe));
 	memset(tf, 0, sizeof(*tf));
 
-	if (execve(p, tf, path) < 0)
+	if (execve(p, tf, path, 0, 0) < 0)
 		panic("kernel_execve: exec failed");
 
 	p->kframe = tf;

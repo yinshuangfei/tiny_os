@@ -29,8 +29,22 @@ void nanosleep_test(void)
 	test_check("nanosleep", 1);
 }
 
-int main(void)
+/**
+ * 可以只使用
+ * int main(int argc, char *argv[])
+*/
+int main(int argc, char *argv[], char *envp[])
 {
+	int i;
+
+	for (i = 0; i < argc; i++)
+		printf("argv[%d] = %s\n", i, argv[i]);
+
+	if (envp) {
+		for (i = 0; envp[i]; i++)
+			printf("envp[%d] = %s\n", i, envp[i]);
+	}
+
 	write_test();
 	getpid_test();
 	nanosleep_test();

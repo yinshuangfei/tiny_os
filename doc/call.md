@@ -107,3 +107,43 @@ addl $4, %esp           # 清 1 个参数
 
 # 总结
 汇编“被”C 调用 vs 汇编“调”C ：两边用的是同一套 cdecl，只是 caller 不同。
+
+
+# 用户程序启动时的栈空间
+以 execve("/mnt/test.elf", {"/mnt/test.elf","hello",0}, {"USER=root",0}) 为例：
+```
+高地址  USERSTACK = 0x00800000  ─── 栈顶（未映射之上）
+        ┌─────────────────────────────┐
+        │  "/mnt/test.elf\0"          │  ← 字符串区（信息块）
+        │  "hello\0"                  │
+        │  "USER=root\0"              │
+        ├─────────────────────────────┤
+        │  (对齐填充，使下方 %esp      │
+        │   16 字节对齐)               │
+        ├─────────────────────────────┤
+        │  AT_NULL (0)                │  auxv: Auxiliary Vector，辅助向量
+        │  0                          │
+        ├─────────────────────────────┤
+        │  → "USER=root"              │  envp[0]
+        │  NULL                       │  envp 结尾
+        ├─────────────────────────────┤
+        │  → "/mnt/test.elf"          │  argv[0]
+        │  → "hello"                  │  argv[1]
+        │  NULL                       │  argv 结尾
+        ├─────────────────────────────┤
+%esp →  │  argc = 2                   │  ← _start 参数读取地址入口
+        └─────────────────────────────┘
+低地址  … 其余为未用栈空间（可向低址增长）
+        USERSTACK-PGSIZE = 0x7FF000  ─── 已映射栈页底
+```
+
+_start 如何取参：
+```
+%esp     →  argc
+%esp+4   →  argv[0]   （即 char **argv）
+…
+%esp+4+4*argc → NULL
+再下一字  →  envp[0]   （即 char **envp）
+…
+再下一字  →  AT_NULL
+```

@@ -1029,16 +1029,17 @@ static int run_builtin(int argc, char **argv)
 	return 0;
 }
 
-/* 执行外部命令 */
-static void run_external(const char *cmd)
+/* 执行外部命令（传入完整 argv） */
+static void run_external(int argc, char **argv)
 {
 	int pid;
 	int status;
 
+	(void)argc;
 	pid = fork();
 	if (pid == 0) {
-		execve(cmd, 0, 0);
-		printf("%s exec %s failed\n", C_RED("sh:"), cmd);
+		execve(argv[0], argv, 0);
+		printf("%s exec %s failed\n", C_RED("sh:"), argv[0]);
 		exit(1);
 	}
 	if (pid < 0) {
@@ -1060,7 +1061,7 @@ static void run_line(char *line)
 	if (run_builtin(argc, argv)) {
 		return;
 	}
-	run_external(argv[0]);
+	run_external(argc, argv);
 }
 
 void print_banner(void)
