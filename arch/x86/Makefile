@@ -52,6 +52,22 @@ CFLAGS := -m32 -ffreestanding -fno-pic -fno-stack-protector -nostdlib -Wall
 CFLAGS += -fno-asynchronous-unwind-tables -fno-unwind-tables
 USER_CFLAGS := $(CFLAGS) -I$(USERDIR)/include -ffreestanding -fno-builtin
 
+# 用户程序产物（须在 hd.img 规则之前定义，否则依赖展开为空）
+USER_LIB_OBJS = \
+	$(USERDIR)/lib/start.o \
+	$(USERDIR)/lib/usys.o \
+	$(USERDIR)/lib/printf.o \
+	$(USERDIR)/lib/sleep.o \
+	$(USERDIR)/lib/string.o \
+	$(USERDIR)/lib/ansi.o
+
+INITCODE_BIN=$(USERDIR)/init.bin
+INITCODE_OBJS=$(USER_LIB_OBJS) $(USERDIR)/init.o
+SH_BIN=$(USERDIR)/sh.bin
+SH_OBJS=$(USER_LIB_OBJS) $(USERDIR)/sh.o
+TEST_BIN=$(USERDIR)/test.bin
+TEST_OBJS=$(USER_LIB_OBJS) $(USERDIR)/test.o
+
 ifeq ($(K),1)
 QEMUOPTS += -kernel kernel.elf
 else
@@ -64,17 +80,10 @@ qemu: $(HD_IMG) $(HD1_IMG) $(HD2_IMG) $(HD3_IMG) $(HD4_IMG) $(HD5_IMG) \
 	$(if $(filter 1,$(K)),kernel.elf,boot.img)
 	@$(QEMU) $(QEMUOPTS)
 
-# hd.img：C 版 mkfs_ext2 生成（已是 ext2 则保留）
-TOOLS_MKFS = tools/mkfs_ext2
-
-$(TOOLS_MKFS): tools/mkfs_ext2.c
-	$(CC) -O2 -Wall -o $@ $<
-
-# $(HD_IMG):
-# 	@sh scripts/mkhd-ext2.sh $@ $(HD_SIZE_MB)
-
-$(HD_IMG): $(TOOLS_MKFS)
-	@$(TOOLS_MKFS) $@ $(HD_SIZE_MB)
+# hd.img：ext2 + 样例文件 + 用户程序 test（依赖 test.bin，变更则重建）
+$(HD_IMG): scripts/mkhd-ext2.sh $(TEST_BIN)
+	@rm -f $@
+	@sh scripts/mkhd-ext2.sh $@ $(HD_SIZE_MB) $(TEST_BIN)
 
 $(HD1_IMG) $(HD2_IMG) $(HD3_IMG) $(HD4_IMG) $(HD5_IMG):
 	@dd if=/dev/zero of=$@ bs=1M count=$(HD_SIZE_MB) status=none
@@ -141,19 +150,6 @@ AS_OBJS = \
 	$(KDIR)/swtch.o \
 	$(KDIR)/userbins.o \
 
-USER_LIB_OBJS = \
-	$(USERDIR)/lib/start.o \
-	$(USERDIR)/lib/usys.o \
-	$(USERDIR)/lib/printf.o \
-	$(USERDIR)/lib/sleep.o \
-	$(USERDIR)/lib/string.o \
-	$(USERDIR)/lib/ansi.o \
-
-INITCODE_BIN=$(USERDIR)/init.bin
-INITCODE_OBJS=$(USER_LIB_OBJS) $(USERDIR)/init.o
-SH_BIN=$(USERDIR)/sh.bin
-SH_OBJS=$(USER_LIB_OBJS) $(USERDIR)/sh.o
-
 OBJS = $(C_OBJS) $(AS_OBJS)
 
 # 用户程序：user.ld 连续布局（含 .bss）；objcopy 将 .bss 标成可装载并填 0
@@ -165,10 +161,17 @@ $(SH_BIN): $(SH_OBJS) $(USERDIR)/user.ld
 	@$(LD) -m elf_i386 -T $(USERDIR)/user.ld -o $(USERDIR)/sh.elf $(SH_OBJS)
 	@$(OBJCOPY) --set-section-flags .bss=alloc,load,contents -O binary $(USERDIR)/sh.elf $@
 
+$(TEST_BIN): $(TEST_OBJS) $(USERDIR)/user.ld
+	@$(LD) -m elf_i386 -T $(USERDIR)/user.ld -o $(USERDIR)/test.elf $(TEST_OBJS)
+	@$(OBJCOPY) --set-section-flags .bss=alloc,load,contents -O binary $(USERDIR)/test.elf $@
+
 $(USERDIR)/init.o: $(USERDIR)/init.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/sh.o: $(USERDIR)/sh.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(USERDIR)/test.o: $(USERDIR)/test.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/lib/printf.o: $(USERDIR)/lib/printf.c
@@ -245,7 +248,6 @@ compile_commands.json:
 clean:
 	rm -f *.o *.elf *.bin *.img *.map *.vmdk *.tmp main.s test64.* \
 	setup.elf setup.bin kernel_body.elf kernel_body.bin $(HD_IMG) \
-	$(TOOLS_MKFS) \
 	$(BOOTDIR)/*.o $(BOOTDIR)/*.bin \
 	$(USERDIR)/*.o $(USERDIR)/*.elf $(USERDIR)/*.bin \
 	$(USERDIR)/lib/*.o \
