@@ -31,7 +31,7 @@ HD2_IMG = hd2.img
 HD3_IMG = hd3.img
 HD4_IMG = hd4.img
 HD5_IMG = hd5.img
-HD_SIZE_MB ?= 8 	# 8 MB
+HD_SIZE_MB ?= 8
 QEMUOPTS += -device piix3-ide,id=ide0
 QEMUOPTS += -drive file=$(HD_IMG),format=raw,if=none,id=hd0
 QEMUOPTS += -device ide-hd,drive=hd0,bus=ide0.0,unit=0
@@ -66,7 +66,13 @@ INITCODE_OBJS=$(USER_LIB_OBJS) $(USERDIR)/init.o
 SH_BIN=$(USERDIR)/sh.bin
 SH_OBJS=$(USER_LIB_OBJS) $(USERDIR)/sh.o
 TEST_BIN=$(USERDIR)/test.bin
+TEST_ELF=$(USERDIR)/test.elf
 TEST_OBJS=$(USER_LIB_OBJS) $(USERDIR)/test.o
+
+# 打进 hd.img 根目录的文件：host路径[:镜像内名字]
+HD_FILES = \
+	$(TEST_BIN):test \
+	$(TEST_ELF):test.elf
 
 ifeq ($(K),1)
 QEMUOPTS += -kernel kernel.elf
@@ -80,10 +86,10 @@ qemu: $(HD_IMG) $(HD1_IMG) $(HD2_IMG) $(HD3_IMG) $(HD4_IMG) $(HD5_IMG) \
 	$(if $(filter 1,$(K)),kernel.elf,boot.img)
 	@$(QEMU) $(QEMUOPTS)
 
-# hd.img：ext2 + 样例文件 + 用户程序 test（依赖 test.bin，变更则重建）
-$(HD_IMG): scripts/mkhd-ext2.sh $(TEST_BIN)
+# hd.img：ext2 + 样例 + HD_FILES（任意 host 文件，见 mkhd-ext2.sh）
+$(HD_IMG): scripts/mkhd-ext2.sh $(TEST_BIN) $(TEST_ELF)
 	@rm -f $@
-	@sh scripts/mkhd-ext2.sh $@ $(HD_SIZE_MB) $(TEST_BIN)
+	@sh scripts/mkhd-ext2.sh $@ $(HD_SIZE_MB) $(HD_FILES)
 
 $(HD1_IMG) $(HD2_IMG) $(HD3_IMG) $(HD4_IMG) $(HD5_IMG):
 	@dd if=/dev/zero of=$@ bs=1M count=$(HD_SIZE_MB) status=none
@@ -161,9 +167,11 @@ $(SH_BIN): $(SH_OBJS) $(USERDIR)/user.ld
 	@$(LD) -m elf_i386 -T $(USERDIR)/user.ld -o $(USERDIR)/sh.elf $(SH_OBJS)
 	@$(OBJCOPY) --set-section-flags .bss=alloc,load,contents -O binary $(USERDIR)/sh.elf $@
 
-$(TEST_BIN): $(TEST_OBJS) $(USERDIR)/user.ld
-	@$(LD) -m elf_i386 -T $(USERDIR)/user.ld -o $(USERDIR)/test.elf $(TEST_OBJS)
-	@$(OBJCOPY) --set-section-flags .bss=alloc,load,contents -O binary $(USERDIR)/test.elf $@
+$(TEST_ELF): $(TEST_OBJS) $(USERDIR)/user.ld
+	@$(LD) -m elf_i386 -T $(USERDIR)/user.ld -o $@ $(TEST_OBJS)
+
+$(TEST_BIN): $(TEST_ELF)
+	@$(OBJCOPY) --set-section-flags .bss=alloc,load,contents -O binary $< $@
 
 $(USERDIR)/init.o: $(USERDIR)/init.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@

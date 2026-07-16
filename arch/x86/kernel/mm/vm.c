@@ -424,6 +424,56 @@ int loaduvm(pagetable_t pgdir, uint va, const void *src, uint sz)
 }
 
 /*
+ * 将 src[0..filesz) 装入用户空间 [va, va+filesz)，并保证 [va, va+memsz)
+ * 已映射（多出部分为 0，供 .bss）。va 不必页对齐；页按需分配。
+ * perm 传给 uvmmap（自动加 PTE_U）。
+ */
+int loaduvm_seg(pagetable_t pgdir, uint va, const void *src, uint filesz,
+		uint memsz, int perm)
+{
+	uint i, end, file_end, pa;
+	char *mem;
+	const char *s = src;
+
+	if (pgdir == 0 || (filesz > 0 && src == 0) || memsz < filesz)
+		return -1;
+	if (memsz == 0)
+		return 0;
+	if (va < USERBASE || va + memsz > USEREND)
+		return -1;
+
+	end = va + memsz;
+	file_end = va + filesz;
+
+	for (i = PGROUNDDOWN(va); i < end; i += PGSIZE) {
+		uint c_lo, c_hi, n;
+
+		pa = walkaddr(pgdir, i);
+		if (pa == 0) {
+			mem = alloc_page();
+			if (mem == 0)
+				return -1;
+			memset(mem, 0, PGSIZE);
+			if (uvmmap(pgdir, i, (uint)mem, PGSIZE, perm) < 0) {
+				free_page(mem);
+				return -1;
+			}
+		} else {
+			mem = (char *)PTE_ADDR(pa);
+		}
+
+		/* 本页与文件映像 [va, file_end) 的交集 */
+		c_lo = va > i ? va : i;	/* 起始地址 */
+		c_hi = file_end < i + PGSIZE ? file_end : i + PGSIZE;	/* 结束地址 */
+		if (c_lo < c_hi) {
+			n = c_hi - c_lo;	/* 拷贝大小 */
+			memcpy(mem + (c_lo - i), s + (c_lo - va), n);
+		}
+	}
+	return 0;
+}
+
+/*
  * 释放 pgdir 中 [USERBASE, USEREND) 的用户映射及用户专用页表页；
  * 继承自 kernel_pgdir 的 PDE（无 PTE_U）保留不动，最后释放页目录。
  */

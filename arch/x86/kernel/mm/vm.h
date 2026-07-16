@@ -23,6 +23,8 @@ int uvmmap(pagetable_t pgdir, uint va, uint pa, uint size, int perm);
 int uvmunmap(pagetable_t pgdir, uint va, uint npages, int do_free);
 int uvminit(pagetable_t pgdir, uint va, const void *src, uint sz);
 int loaduvm(pagetable_t pgdir, uint va, const void *src, uint sz);
+int loaduvm_seg(pagetable_t pgdir, uint va, const void *src, uint filesz,
+		uint memsz, int perm);
 void uvmfree(pagetable_t pgdir);
 void uvmcopy_kernel(pagetable_t pgdir);
 int uvmcopy(pagetable_t old, pagetable_t new, uint sz);

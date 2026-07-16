@@ -1,35 +1,88 @@
 #!/bin/sh
-# 生成带样例文件的 ext2 镜像（供内核挂到 /mnt）
-# 用法: mkhd-ext2.sh <image> [size_mb] [test.bin]
+# 生成 ext2 镜像（供内核挂到 /mnt）。
+#
+# 用法:
+#   mkhd-ext2.sh <image> <size_mb> [src[:dst_name] ...]
+#
+# 额外参数写入根目录：
+#   path/to/foo.bin        → /foo.bin（basename）
+#   path/to/foo.bin:test   → /test
+#
+# 固定样例：hello.txt、dir/a.txt
 set -e
-IMG="${1:?usage: mkhd-ext2.sh <image> [size_mb] [test.bin]}"
-SIZE_MB="${2:-8}"
-TEST_BIN="${3:-}"
 
-if [ -z "$TEST_BIN" ] || [ ! -f "$TEST_BIN" ]; then
-	echo "mkhd-ext2.sh: need existing test binary (got '${TEST_BIN:-}')" >&2
-	echo "usage: mkhd-ext2.sh <image> [size_mb] <test.bin>" >&2
+usage() {
+	echo "usage: $0 <image> <size_mb> [src[:dst_name] ...]" >&2
 	exit 1
-fi
+}
+
+[ "$#" -ge 2 ] || usage
+IMG=$1
+SIZE_MB=$2
+shift 2
+
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+LIST=$TMPDIR/files	# 每行: src<TAB>dst
+
+: >"$LIST"
+for spec in "$@"; do
+	case "$spec" in
+	*:*)
+		src=${spec%%:*}
+		dst=${spec#*:}
+		;;
+	*)
+		src=$spec
+		dst=$(basename "$spec")
+		;;
+	esac
+	if [ -z "$src" ] || [ -z "$dst" ]; then
+		echo "$0: bad file spec '$spec'" >&2
+		exit 1
+	fi
+	if [ ! -f "$src" ]; then
+		echo "$0: missing file '$src'" >&2
+		exit 1
+	fi
+	case "$dst" in
+	*/*)
+		echo "$0: dst must be a single name ('$dst')" >&2
+		exit 1
+		;;
+	esac
+	if cut -f2 "$LIST" 2>/dev/null | grep -qx "$dst"; then
+		echo "$0: duplicate dst '$dst'" >&2
+		exit 1
+	fi
+	printf '%s\t%s\n' "$src" "$dst" >>"$LIST"
+done
 
 dd if=/dev/zero of="$IMG" bs=1M count="$SIZE_MB" status=none
 mkfs.ext2 -F -q -b 1024 -I 128 "$IMG"
 
-TMPDIR=$(mktemp -d)
-# 脚本无论怎样结束，退出前都删掉临时目录
-trap 'rm -rf "$TMPDIR"' EXIT
-echo 'Hello from ext2 on /mnt!' > "$TMPDIR/hello.txt"
-echo 'file in dir' > "$TMPDIR/a.txt"
+echo 'Hello from ext2 on /mnt!' >"$TMPDIR/hello.txt"
+echo 'file in dir' >"$TMPDIR/a.txt"
 
+CMD=$TMPDIR/cmds
 {
 	echo "write $TMPDIR/hello.txt hello.txt"
 	echo "mkdir dir"
 	echo "cd dir"
 	echo "write $TMPDIR/a.txt a.txt"
 	echo "cd /"
-	# 根目录可执行文件 /test（flat binary）
-	echo "write $TEST_BIN test"
+	while IFS='	' read -r src dst; do
+		[ -n "$src" ] || continue
+		echo "write $src $dst"
+	done <"$LIST"
 	echo "quit"
-} | debugfs -w -f - "$IMG" >/dev/null
+} >"$CMD"
 
-echo "created $IMG (${SIZE_MB} MiB, ext2 + hello.txt, dir/a.txt, test)"
+debugfs -w -f "$CMD" "$IMG" >/dev/null
+
+extra=$(cut -f2 "$LIST" | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+if [ -n "$extra" ]; then
+	echo "created $IMG (${SIZE_MB} MiB, ext2 + hello.txt, dir/a.txt, $extra)"
+else
+	echo "created $IMG (${SIZE_MB} MiB, ext2 + hello.txt, dir/a.txt)"
+fi
