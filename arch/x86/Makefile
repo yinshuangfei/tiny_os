@@ -18,7 +18,11 @@ endif
 MEM ?= 128M
 
 QEMU = qemu-system-x86_64
-QEMUOPTS = -machine q35 -m $(MEM) -smp $(CPUS) -display none
+QEMUOPTS = -machine q35 -m $(MEM) -smp $(CPUS)
+# VNC：:N 为 display 号，TCP 端口 = 5900+N；:0 → 0.0.0.0:5900
+QEMUOPTS += -vnc 0.0.0.0:0
+# QEMUOPTS += -display none	# 仅关闭视频画面
+# QEMUOPTS += -nographic	# 彻底的纯命令行模式, redirect serial I/Os to console
 QEMUOPTS += -serial stdio -monitor none
 
 # IDE：q35 默认 AHCI，需显式加控制器；驱动按端口表扫描各通道。
@@ -118,6 +122,7 @@ $(BOOTDIR)/boot.bin: $(BOOTDIR)/boot.o
 C_OBJS = \
 	$(KDIR)/main.o \
 	$(KDIR)/serial.o \
+	$(KDIR)/vga.o \
 	$(KDIR)/timer.o \
 	$(KDIR)/gdt.o \
 	$(KDIR)/idt.o \

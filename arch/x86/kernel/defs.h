@@ -41,6 +41,10 @@ int uart_getc(void);
 void uart_puts(const char *s);
 void uart_intr(void);
 
+/** vga.c */
+void vga_init(void);
+void vga_putc_at(int row, int col, char c);
+
 #include "proc.h"
 #include "lock/spinlock.h"
 

@@ -13,6 +13,8 @@ void main(void)
 {
 	/* 初始化串口 */
 	serial_init();
+	/* VGA 文本模式：清屏并在左上角显示字符（VNC/本地画面可见） */
+	vga_init();
 	printk(KERN_INFO "Tiny-OS (%d.%d.%d) booting ...\n",
 		MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION);
 	/* 初始化 GDT */

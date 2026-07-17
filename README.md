@@ -64,4 +64,4 @@ $ make qemu
 
 ## Qemu CMD
 - quit: Ctrl a + x
-- cmd: Ctrl a + c
+- qemu shell: Ctrl a + c
