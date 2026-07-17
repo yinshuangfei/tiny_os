@@ -26,6 +26,7 @@
 #include "x86.h"
 #include "gdt.h"
 #include "fs/fs.h"
+#include "ipc/signal.h"
 
 extern char init[];
 extern char init_end[];
@@ -322,6 +323,7 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 	p->pagetable = newpg;
 	p->sz = USERSTACK;
 	proc_name_from_path(p, name);
+	signal_exec_reset(p);
 
 	tf->eip = entry;
 	tf->esp = esp;

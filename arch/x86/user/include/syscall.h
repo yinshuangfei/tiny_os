@@ -17,8 +17,11 @@
 #define SYS_stat	18	/* Linux i386 __NR_oldstat（与 fstat=28 同代） */
 #define SYS_getpid	20
 #define SYS_fstat	28	/* Linux i386 __NR_oldfstat */
+#define SYS_kill	37	/* Linux i386 __NR_kill */
 #define SYS_mkdir	39	/* Linux i386 __NR_mkdir */
 #define SYS_rmdir	40	/* Linux i386 __NR_rmdir */
+#define SYS_signal	48	/* Linux i386 __NR_signal */
+#define SYS_sigreturn	119	/* Linux i386 __NR_sigreturn */
 #define SYS_nanosleep	162	/* Linux i386 __NR_nanosleep */
 #define SYS_getcwd	183	/* Linux i386 __NR_getcwd */
 

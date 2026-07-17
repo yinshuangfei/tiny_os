@@ -80,19 +80,26 @@ static int (*syscalls[])(struct trapframe *tf) = {
 	[SYS_mkdir] = sys_mkdir,
 	[SYS_rmdir] = sys_rmdir,
 	[SYS_nanosleep] = sys_nanosleep,
+	[SYS_kill] = sys_kill,
+	[SYS_signal] = sys_signal,
+	[SYS_sigreturn] = sys_sigreturn,
 };
 
 void syscall(struct trapframe *tf)
 {
 	int num;
 	struct proc *p = myproc();
+	int ret;
 
 	if (p)
 		p->kframe = tf;
 
 	num = tf->eax;
 	if (num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-		tf->eax = syscalls[num](tf);
+		ret = syscalls[num](tf);
+		/* sigreturn 已整帧恢复（含原 eax），勿再覆盖 */
+		if (num != SYS_sigreturn)
+			tf->eax = ret;
 		return;
 	}
 

@@ -5,6 +5,7 @@
 #define __USER_USER_H__
 
 #include "syscall.h"
+#include "signal.h"
 #include "dirent.h"
 
 struct timespec;
@@ -13,6 +14,9 @@ int execve(const char *filename, char *const argv[], char *const envp[]);
 int exit(int) __attribute__((noreturn));
 int fork(void);
 int getpid(void);
+int kill(int pid, int sig);
+sighandler_t signal(int sig, sighandler_t handler);
+int sigreturn(void);
 int nanosleep(const struct timespec *req, struct timespec *rem);
 unsigned int sleep(unsigned int seconds);
 int usleep(unsigned int usec);

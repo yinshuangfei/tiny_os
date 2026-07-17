@@ -17,6 +17,7 @@
 #include "debug.h"
 #include "gdt.h"
 #include "fs/fs.h"
+#include "ipc/signal.h"
 
 /* 进程表 */
 struct proc *proc_table;
@@ -144,6 +145,9 @@ void exit(int status)
 
 	if (p == initproc)
 		panic("init exiting");	/* pid 1 不能 exit（用户态 init 亦同） */
+
+	signal_parent_child_exit(p);
+	signal_exit_cleanup(p);
 
 	fd_closeall(p);
 	if (p->cwd) {
@@ -882,6 +886,7 @@ int fork_copy(struct trapframe *tf)
 	if (p->cwd)
 		np->cwd = fs_idup(p->cwd);
 
+	signal_fork(np, p);
 	fork_user_ctx_init(np);
 
 	acquire(&proc_lock);

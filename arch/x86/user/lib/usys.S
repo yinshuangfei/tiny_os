@@ -169,3 +169,29 @@ rmdir:
 	int $0x80
 	popl %ebx
 	ret
+
+.globl kill
+kill:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl $SYS_kill, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl signal
+signal:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl $SYS_signal, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl sigreturn
+sigreturn:
+	movl $SYS_sigreturn, %eax
+	int $0x80
+	ret

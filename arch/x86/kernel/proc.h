@@ -6,6 +6,7 @@
 #include "list.h"
 #include "mm/vm.h"
 #include "trap.h"
+#include "ipc/signal.h"
 
 struct file;
 struct inode;
@@ -69,6 +70,13 @@ struct proc {
 	char name[NNAME];
 	struct file *ofile[NOFILE];	/* 打开文件表 */
 	struct inode *cwd;		/* 当前工作目录 */
+
+	/* 信号（ipc/signal.c） */
+	uint sigpending;		/* 未决信号集 */
+	uint sigmasked;			/* 阻塞信号集 */
+	uint sighand[NSIG];		/* 信号处理函数数组 */
+	struct trapframe *sigold;	/* 旧的 trapframe */
+	int sighandling;		/* 是否正在处理信号 */
 };
 
 extern struct cpu cpus[NCPU];

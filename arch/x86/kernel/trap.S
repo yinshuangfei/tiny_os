@@ -36,6 +36,7 @@
 .extern timer_trap_user
 .extern uart_intr
 .extern preempt_check
+.extern signal_notify
 .extern kernel_pgdir
 .extern current_user_pgdir
 
@@ -247,6 +248,7 @@ isr_timer:
 	TRAP_RING3_ENTER
 	TRAP_CALL_ON_KSTACK timer_trap_user
 	call preempt_check
+	TRAP_CALL_ON_KSTACK signal_notify
 	TRAP_USER_RETURN
 
 timer_from_kernel:
@@ -266,6 +268,7 @@ isr_serial:
 
 	TRAP_RING3_ENTER
 	call uart_intr
+	TRAP_CALL_ON_KSTACK signal_notify
 	TRAP_USER_RETURN
 
 serial_from_kernel:
@@ -280,4 +283,5 @@ serial_from_kernel:
 
 .globl trap_user_return
 trap_user_return:
+	TRAP_CALL_ON_KSTACK signal_notify
 	TRAP_USER_RETURN

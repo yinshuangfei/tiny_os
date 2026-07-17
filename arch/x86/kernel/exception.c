@@ -23,6 +23,7 @@
 #include "defs.h"
 #include "trap.h"
 #include "x86.h"
+#include "ipc/signal.h"
 
 void divide_error_handler(struct trapframe *tf)
 {
@@ -76,4 +77,5 @@ void syscall_handler(struct trapframe *tf)
 {
 	syscall(tf);
 	/* int 0x80 硬件已将 eip 设为下一条指令，勿再 += 2 */
+	signal_notify(tf);
 }
