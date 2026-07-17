@@ -65,14 +65,15 @@ INITCODE_BIN=$(USERDIR)/init.bin
 INITCODE_OBJS=$(USER_LIB_OBJS) $(USERDIR)/init.o
 SH_BIN=$(USERDIR)/sh.bin
 SH_OBJS=$(USER_LIB_OBJS) $(USERDIR)/sh.o
-TEST_BIN=$(USERDIR)/test.bin
 TEST_ELF=$(USERDIR)/test.elf
 TEST_OBJS=$(USER_LIB_OBJS) $(USERDIR)/test.o
+FREE_ELF=$(USERDIR)/free.elf
+FREE_OBJS=$(USER_LIB_OBJS) $(USERDIR)/free.o
 
 # 打进 hd.img 根目录的文件：host路径[:镜像内名字]
 HD_FILES = \
-	$(TEST_BIN):test \
-	$(TEST_ELF):test.elf
+	$(TEST_ELF):test \
+	$(FREE_ELF):free
 
 ifeq ($(K),1)
 QEMUOPTS += -kernel kernel.elf
@@ -87,7 +88,7 @@ qemu: $(HD_IMG) $(HD1_IMG) $(HD2_IMG) $(HD3_IMG) $(HD4_IMG) $(HD5_IMG) \
 	@$(QEMU) $(QEMUOPTS)
 
 # hd.img：ext2 + 样例 + HD_FILES（任意 host 文件，见 mkhd-ext2.sh）
-$(HD_IMG): scripts/mkhd-ext2.sh $(TEST_BIN) $(TEST_ELF)
+$(HD_IMG): scripts/mkhd-ext2.sh $(TEST_ELF) $(FREE_ELF)
 	@rm -f $@
 	@sh scripts/mkhd-ext2.sh $@ $(HD_SIZE_MB) $(HD_FILES)
 
@@ -141,6 +142,7 @@ C_OBJS = \
 	$(KDIR)/fs/inode.o \
 	$(KDIR)/fs/namei.o \
 	$(KDIR)/fs/ramfs.o \
+	$(KDIR)/fs/procfs.o \
 	$(KDIR)/fs/ext2.o \
 	$(KDIR)/fs/mount.o \
 	$(KDIR)/fs/file.o \
@@ -171,8 +173,11 @@ $(SH_BIN): $(SH_OBJS) $(USERDIR)/user.ld
 $(TEST_ELF): $(TEST_OBJS) $(USERDIR)/user.ld
 	@$(LD) -m elf_i386 -T $(USERDIR)/user.ld -o $@ $(TEST_OBJS)
 
-$(TEST_BIN): $(TEST_ELF)
-	@$(OBJCOPY) --set-section-flags .bss=alloc,load,contents -O binary $< $@
+$(FREE_ELF): $(FREE_OBJS) $(USERDIR)/user.ld
+	@$(LD) -m elf_i386 -T $(USERDIR)/user.ld -o $@ $(FREE_OBJS)
+
+$(USERDIR)/free.o: $(USERDIR)/free.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/init.o: $(USERDIR)/init.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@

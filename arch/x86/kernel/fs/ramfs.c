@@ -404,4 +404,6 @@ void fs_init(void)
 
 	fileinit();
 	printk(KERN_INFO "fs: VFS+ramfs ready (root, /dev, /hello)\n");
+
+	proc_init();
 }

@@ -276,3 +276,9 @@ unsigned int pmm_nr_free_pages(void)
 	release(&pmm_lock);
 	return n;
 }
+
+/* buddy 可管理页总数（不含 [0, mem_start) 等不可分配区） */
+unsigned int pmm_nr_pages(void)
+{
+	return nr_pages;
+}

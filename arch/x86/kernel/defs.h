@@ -18,6 +18,7 @@ void free_pages(void *addr, unsigned int order);
 void *alloc_page(void);
 void free_page(void *addr);
 unsigned int pmm_nr_free_pages(void);
+unsigned int pmm_nr_pages(void);
 
 /** cpu.c */
 void cpu_init(void);
