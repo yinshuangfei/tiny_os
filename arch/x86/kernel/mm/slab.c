@@ -7,7 +7,7 @@
 #include "memlayout.h"
 #include "../list.h"
 #include "slab.h"
-#include "../spinlock.h"
+#include "../lock/spinlock.h"
 
 #define KMAGIC       0x4b4d454d	/* 'KMEM' */
 #define KFLAG_PAGE   0x80000000u	/* size 字段标记：整页分配 */

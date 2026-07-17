@@ -122,7 +122,7 @@ C_OBJS = \
 	$(KDIR)/idt.o \
 	$(KDIR)/trapstack.o \
 	$(KDIR)/cpu.o \
-	$(KDIR)/spinlock.o \
+	$(KDIR)/lock/spinlock.o \
 	$(KDIR)/printf.o \
 	$(KDIR)/utils.o \
 	$(KDIR)/mm/mem.o \

@@ -1,9 +1,9 @@
 #include "types.h"
 #include "defs.h"
 #include "x86.h"
-#include "spinlock.h"
+#include "lock/spinlock.h"
 #include "proc.h"
-#include "proc_lock.h"
+#include "lock/proc_lock.h"
 #include "timer.h"
 
 /** 16550 串口寄存器地址 */
@@ -94,7 +94,6 @@ static void sleep_chan(void *chan, struct spinlock *lk)
 	release(lk);
 	p->chan = chan;
 	p->wakeup_tick = 0;
-	p->swtched = 1;
 	p->state = SLEEPING;
 	release(&proc_lock);
 	sched();

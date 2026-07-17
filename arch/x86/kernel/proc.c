@@ -8,9 +8,9 @@
 #include "mm/memlayout.h"
 #include "list.h"
 #include "proc.h"
-#include "proc_lock.h"
+#include "lock/proc_lock.h"
 #include "task_queue.h"
-#include "spinlock.h"
+#include "lock/spinlock.h"
 #include "timer.h"
 #include "mm/mmu.h"
 #include "x86.h"
@@ -164,7 +164,6 @@ void exit(int status)
 	reparent(p);
 	p->xstate = status;
 	task_queue_unlink_locked(p);		/* 抢占 yield 后 exit 时可能仍在就绪队列 */
-	p->swtched = 0;
 	memset(&p->context, 0, sizeof(p->context));
 	p->state = ZOMBIE;
 	release(&proc_lock);
@@ -217,7 +216,6 @@ void yield(void)
 	mycpu()->need_resched = 0;
 	acquire(&proc_lock);
 	p->state = RUNNABLE;
-	p->swtched = 1;
 	task_queue_enqueue_locked(p);
 	release(&proc_lock);
 	sched();
@@ -316,7 +314,6 @@ static void kthread_ctx_init(struct proc *p)
 	*--sp = (uint)kthread_trampoline;
 	p->context.eip = (uint)kthread_trampoline;
 	p->context.esp = (uint)sp;
-	p->swtched = 0;
 }
 
 /*
@@ -355,7 +352,6 @@ static void user_ctx_init(struct proc *p)
 	*--sp = (uint)user_start_trampoline;
 	p->context.eip = (uint)user_start_trampoline;
 	p->context.esp = (uint)sp;
-	p->swtched = 0;
 }
 
 static int esp_on_kstack(struct proc *p, uint esp)
@@ -409,33 +405,29 @@ static int context_sane(struct proc *p)
 }
 
 /*
- * 调度前准备 context：
- *   用户进程 swtched=0 → 走 user_start_trampoline
- *   用户进程 swtched=1 → 校验后 swtch 恢复
- *   内核线程           → 校验 kstack，异常则重建
+ * 调度前校验 context（对齐 Linux：创建时已备好可 switch_to 的栈，无 swtched 标志）。
+ * 异常时：用户进程若 kframe 仍有效则重建 trampoline；内核线程则重建入口。
  */
 static void prepare_context(struct proc *p)
 {
 	if (!p->kstack)
 		panic("prepare_context: no kstack");
 
-	/* 包含用户态页表的进程 */
+	if (context_sane(p))
+		return;
+
 	if (p->pagetable) {
-		if (!p->swtched) {
+		if (p->kframe && (p->kframe->cs & DPL_USER))
 			user_ctx_init(p);
-		} else if (!context_sane(p)) {
-			/* context 损坏但 trapframe 仍有效时，经 user_start 恢复用户态 */
-			if (p->kframe && (p->kframe->cs & DPL_USER))
-				user_ctx_init(p);
-			else
-				panic("prepare_context: bad user context");
-		}
+		else
+			panic("prepare_context: bad user context");
 		return;
 	}
 
-	/* 内核线程 */
-	if (p->entry && !context_on_kstack(p))
+	if (p->entry)
 		kthread_ctx_init(p);
+	else
+		panic("prepare_context: bad context");
 }
 
 void procinit(void)
@@ -487,7 +479,6 @@ void sleep(void *chan)
 	acquire(&proc_lock);
 	p->chan = chan;
 	p->wakeup_tick = 0;
-	p->swtched = 1;
 	p->state = SLEEPING;
 	release(&proc_lock);
 	sched();
@@ -524,7 +515,6 @@ void sleep_deadline(unsigned int deadline)
 	acquire(&proc_lock);
 	p->wakeup_tick = deadline;
 	p->chan = 0;
-	p->swtched = 1;
 	p->state = SLEEPING;
 	release(&proc_lock);
 	sched();
@@ -671,7 +661,6 @@ static struct proc *kthread_create_via_kthreadd(void (*fn)(void *), void *arg,
 	while (!info->done) {
 		cur->chan = info;
 		cur->wakeup_tick = 0;
-		cur->swtched = 1;
 		cur->state = SLEEPING;
 		release(&proc_lock);
 		sched();
@@ -842,7 +831,6 @@ static void fork_user_ctx_init(struct proc *p)
 	p->context.eip = (uint)trap_user_return;
 	/* esp 须指向 trapframe 起点（非其下方的伪造返回地址） */
 	p->context.esp = (uint)p->kframe;
-	p->swtched = 1;
 }
 
 /*

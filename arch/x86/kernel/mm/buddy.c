@@ -23,7 +23,7 @@
 #include "../defs.h"
 #include "memlayout.h"
 #include "../list.h"
-#include "../spinlock.h"
+#include "../lock/spinlock.h"
 #include "../utils.h"
 
 extern char end[];	/* kernel.ld: .bss 结束后的第一个地址 */

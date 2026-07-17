@@ -1,7 +1,7 @@
 #ifndef __SPINLOCK_H__
 #define __SPINLOCK_H__
 
-#include "types.h"
+#include "../types.h"
 
 struct cpu;
 

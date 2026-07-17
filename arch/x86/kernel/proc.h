@@ -67,7 +67,6 @@ struct proc {
 	void *entry_arg;
 	uint sz;			/* 用户虚拟空间大小 */
 	char name[NNAME];
-	int swtched;			/* 1: context 由 sched 保存，可 swtch 恢复 */
 	struct file *ofile[NOFILE];	/* 打开文件表 */
 	struct inode *cwd;		/* 当前工作目录 */
 };

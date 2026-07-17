@@ -8,7 +8,7 @@
 #include "ide.h"
 #include "defs.h"
 #include "x86.h"
-#include "spinlock.h"
+#include "lock/spinlock.h"
 #include "printk.h"
 #include "block/blk.h"
 

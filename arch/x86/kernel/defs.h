@@ -6,7 +6,7 @@
 #include "mm/vm.h"
 #include "mm/slab.h"
 #include "proc.h"
-#include "spinlock.h"
+#include "lock/spinlock.h"
 
 /** mm/ — 物理探测、buddy、slab、页表（对齐 Linux mm/） */
 void *memset(void *dst, int c, uint n);
@@ -41,7 +41,7 @@ void uart_puts(const char *s);
 void uart_intr(void);
 
 #include "proc.h"
-#include "spinlock.h"
+#include "lock/spinlock.h"
 
 /** timer.c */
 #include "timer.h"

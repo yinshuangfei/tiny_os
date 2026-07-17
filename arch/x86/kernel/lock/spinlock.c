@@ -1,8 +1,8 @@
-#include "types.h"
-#include "defs.h"
+#include "../types.h"
+#include "../defs.h"
 #include "spinlock.h"
-#include "proc.h"
-#include "x86.h"
+#include "../proc.h"
+#include "../x86.h"
 
 struct cpu *mycpu(void)
 {

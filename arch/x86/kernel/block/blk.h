@@ -16,7 +16,7 @@
 
 #include "../types.h"
 #include "../list.h"
-#include "../spinlock.h"
+#include "../lock/spinlock.h"
 #include "../major.h"
 
 /* 逻辑块大小（与 ATA 扇区一致） */

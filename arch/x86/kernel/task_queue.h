@@ -7,7 +7,7 @@ int on_list(struct proc *p);
 void task_queue_init(void);
 
 /*
- * 以下接口假定调用方已持有 proc_lock（见 proc_lock.h）。
+ * 以下接口假定调用方已持有 proc_lock（见 lock/proc_lock.h）。
  * 通常与修改 p->state、扫描 proc_table 放在同一临界区。
  */
 void task_queue_enqueue_locked(struct proc *p);

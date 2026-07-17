@@ -4,7 +4,7 @@
 #include "defs.h"
 #include "printk.h"
 #include "x86.h"
-#include "spinlock.h"
+#include "lock/spinlock.h"
 
 volatile int panicked = 0;
 
