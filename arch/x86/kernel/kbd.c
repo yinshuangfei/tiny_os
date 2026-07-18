@@ -176,8 +176,10 @@ void kbd_intr(void)
 	while (inb(KBD_STATUS) & KBD_STAT_OBF) {
 		data = inb(KBD_DATA) & 0xff;
 		c = kbd_decode(data);
-		if (c >= 0)
+		if (c >= 0) {
+			/* 主动触发系统控制台中断 */
 			console_intr(c);
+		}
 	}
 }
 

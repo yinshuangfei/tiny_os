@@ -127,6 +127,7 @@ void console_intr(int c)
 		cons_w = (cons_w + 1) % CONS_BUF;
 	}
 	release(&cons_lock);
+	/* 唤醒等待控制台输入的进程 */
 	wakeup(&cons_chan);
 }
 
