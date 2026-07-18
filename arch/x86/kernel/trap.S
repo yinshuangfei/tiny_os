@@ -23,6 +23,7 @@
 .globl isr_simd_fp
 .globl isr_syscall
 .globl isr_timer
+.globl isr_kbd
 .globl isr_serial
 
 .extern divide_error_handler
@@ -34,6 +35,7 @@
 .extern syscall_handler
 .extern timer_handler
 .extern timer_trap_user
+.extern kbd_intr
 .extern uart_intr
 .extern preempt_check
 .extern signal_notify
@@ -256,6 +258,25 @@ timer_from_kernel:
 	call timer_handler
 	IRQSTACK_RESTORE
 	call preempt_check
+	iret
+
+/* --------------------------------------------------------------------------
+ * 键盘 IRQ1
+ * -------------------------------------------------------------------------- */
+
+isr_kbd:
+	testl $3, HW_CS(%esp)
+	jz kbd_from_kernel
+
+	TRAP_RING3_ENTER
+	call kbd_intr
+	TRAP_CALL_ON_KSTACK signal_notify
+	TRAP_USER_RETURN
+
+kbd_from_kernel:
+	IRQSTACK_SWITCH
+	call kbd_intr
+	IRQSTACK_RESTORE
 	iret
 
 /* --------------------------------------------------------------------------

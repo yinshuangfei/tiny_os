@@ -5,6 +5,7 @@
 #include "proc.h"
 #include "lock/proc_lock.h"
 #include "timer.h"
+#include "console.h"
 
 /** 16550 串口寄存器地址 */
 #define SERIAL_COM1 0x3f8
@@ -165,19 +166,21 @@ void uart_intr(void)
 	int put_tx = 0;
 
 	/* 发送 EOI（中断结束）， 允许下一个中断 */
-	pic_eoi(4);
+	pic_eoi(IRQ_4_COM1);
 
 	acquire(&uart_lock);
 
 	while (inb(SERIAL_COM1_LSR) & LSR_DR) {
 		char c = inb(SERIAL_COM1_RBR);
 
-		/* 如果接收缓冲区未满，则将数据写入接收缓冲区 */
+		/* 串口本地缓冲（uart_getc） */
 		if (!rx_full()) {
 			rx_buf[rx_w] = c;
 			rx_w = (rx_w + 1) % UART_BUF;
 			got_rx = 1;
 		}
+		/* 同时投递到系统控制台（与键盘共用 /dev/console 输入） */
+		console_intr((unsigned char)c);
 	}
 
 	/* 如果发送保持寄存器空，并且发送缓冲区不为空，则发送数据 */

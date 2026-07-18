@@ -3,7 +3,8 @@
 
 #include "types.h"
 
-#define IRQ_TIMER		0x20	// Timer Interrupt
+#define IRQ_TIMER		0x20	// Timer Interrupt (IRQ0)
+#define IRQ_KBD			0x21	// Keyboard (IRQ1)
 #define IRQ_COM1		0x24	// COM1 (IRQ4)
 #define EXC_DIVIDE_ERROR	0x00	// Divide Error
 #define EXC_INVALID_OPCODE	0x06	// #UD Invalid Opcode

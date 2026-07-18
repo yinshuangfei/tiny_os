@@ -45,7 +45,12 @@ void uart_intr(void);
 void console_init(void);
 void consputc(int c);
 void console_write(const char *s, unsigned int n);
+void console_intr(int c);
 int console_getc(void);
+
+/** kbd.c — PS/2 键盘 */
+void kbd_init(void);
+void kbd_intr(void);
 
 /** vga.c */
 void vga_init(void);
@@ -54,6 +59,9 @@ void vga_putc_at(int row, int col, char c);
 
 #include "proc.h"
 #include "lock/spinlock.h"
+
+/** interrupt.c */
+#include "interrupt.h"
 
 /** timer.c */
 #include "timer.h"

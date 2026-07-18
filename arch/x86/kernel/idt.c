@@ -7,6 +7,7 @@
 struct idt_entry idt[IDT_ENTRIES];
 
 extern void isr_timer(void);
+extern void isr_kbd(void);
 extern void isr_serial(void);
 extern void isr_divide_error(void);
 extern void isr_device_not_available(void);
@@ -48,6 +49,7 @@ void idt_init(void)
 	idt_set_gate(EXC_PAGE_FAULT, isr_page_fault, SEG_KCODE, IDT_ATTR_KERNEL);
 	idt_set_gate(EXC_SIMD_FP, isr_simd_fp, SEG_KCODE, IDT_ATTR_KERNEL);
 	idt_set_gate(IRQ_TIMER, isr_timer, SEG_KCODE, IDT_ATTR_KERNEL);
+	idt_set_gate(IRQ_KBD, isr_kbd, SEG_KCODE, IDT_ATTR_KERNEL);
 	idt_set_gate(IRQ_COM1, isr_serial, SEG_KCODE, IDT_ATTR_KERNEL);
 	idt_set_gate(INT_SYSCALL, isr_syscall, SEG_KCODE, IDT_ATTR_USER);	// DPL=3，用户态可 int 0x80
 

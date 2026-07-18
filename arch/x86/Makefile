@@ -124,9 +124,11 @@ C_OBJS = \
 	$(KDIR)/serial.o \
 	$(KDIR)/vga.o \
 	$(KDIR)/console.o \
+	$(KDIR)/kbd.o \
 	$(KDIR)/timer.o \
 	$(KDIR)/gdt.o \
 	$(KDIR)/idt.o \
+	$(KDIR)/interrupt.o \
 	$(KDIR)/trapstack.o \
 	$(KDIR)/cpu.o \
 	$(KDIR)/lock/spinlock.o \

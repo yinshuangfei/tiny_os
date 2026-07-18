@@ -27,8 +27,10 @@ void main(void)
 	cpu_init();
 	/* 探测物理内存大小（须在 pmm_init / kvm_init 之前） */
 	mem_probe();
-	/* 初始化 PIC/APIC */
+	/* 初始化 PIC/APIC（打开 IRQ0/1/4） */
 	pic_init();
+	/* PS/2 键盘（IRQ1 → console 输入） */
+	kbd_init();
 	/* 初始化物理页分配器 */
 	pmm_init();
 	/* 内核小对象堆（PCB 等动态结构） */
