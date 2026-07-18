@@ -131,7 +131,7 @@ static int file_blk_rw(struct file *f, char *buf, int n, int do_write)
 	return done;
 }
 
-/* 字符设备读（目前仅 console） */
+/* 字符设备读（目前仅 /dev/console → console_getc） */
 static int file_char_read(struct file *f, char *dst, int n)
 {
 	int i;
@@ -139,19 +139,17 @@ static int file_char_read(struct file *f, char *dst, int n)
 	if (!f->ip || MAJOR(f->ip->rdev) != CONSOLE_MAJOR)
 		return -1;
 	for (i = 0; i < n; i++)
-		dst[i] = (char)uart_getc();
+		dst[i] = (char)console_getc();
 	return n;
 }
 
-/* 字符设备写（目前仅 console） */
+/* 字符设备写（目前仅 /dev/console → 所有已注册 console） */
 static int file_char_write(struct file *f, char *src, int n)
 {
-	int i;
-
 	if (!f->ip || MAJOR(f->ip->rdev) != CONSOLE_MAJOR)
 		return -1;
-	for (i = 0; i < n; i++)
-		uart_putc(src[i]);
+	if (n > 0)
+		console_write(src, (unsigned int)n);
 	return n;
 }
 

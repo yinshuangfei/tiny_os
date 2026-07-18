@@ -3,6 +3,7 @@
 #include "types.h"
 #include "defs.h"
 #include "printk.h"
+#include "console.h"
 #include "x86.h"
 #include "lock/spinlock.h"
 
@@ -15,11 +16,6 @@ static struct {
 	struct spinlock lock;
 	int locking;
 } pr;
-
-void consputc(int c)
-{
-	uart_putc(c);
-}
 
 static char digits[] = "0123456789abcdef";
 

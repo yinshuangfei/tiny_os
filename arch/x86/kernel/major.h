@@ -7,7 +7,7 @@
  *   major  名称             类型    节点
  *   ─────────────────────────────────────────
  *     0    UNNAMED_MAJOR    —       未命名 / 无效
- *     1    CONSOLE_MAJOR    字符    /dev/console
+ *     1    CONSOLE_MAJOR    字符    /dev/console（写 → 已注册 console）
  *     3    HD_MAJOR         块      /dev/hda …
  *
  * 新增设备时在此表登记，禁止在驱动里散落魔法数字。

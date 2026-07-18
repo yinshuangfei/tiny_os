@@ -123,6 +123,7 @@ C_OBJS = \
 	$(KDIR)/main.o \
 	$(KDIR)/serial.o \
 	$(KDIR)/vga.o \
+	$(KDIR)/console.o \
 	$(KDIR)/timer.o \
 	$(KDIR)/gdt.o \
 	$(KDIR)/idt.o \

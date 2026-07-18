@@ -41,8 +41,15 @@ int uart_getc(void);
 void uart_puts(const char *s);
 void uart_intr(void);
 
+/** console.c — 系统控制台（printk / /dev/console） */
+void console_init(void);
+void consputc(int c);
+void console_write(const char *s, unsigned int n);
+int console_getc(void);
+
 /** vga.c */
 void vga_init(void);
+void vga_putc(char c);
 void vga_putc_at(int row, int col, char c);
 
 #include "proc.h"
