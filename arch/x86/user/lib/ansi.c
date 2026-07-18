@@ -3,4 +3,4 @@
  */
 #include "ansi.h"
 
-int ansi_color = 0;
+int ansi_color = 1;
