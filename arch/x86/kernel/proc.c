@@ -137,8 +137,13 @@ static void reparent(struct proc *p)
  * 终止当前进程；不返回。资源分阶段释放：
  *   exit      — 用户页表、ZOMBIE 状态、reparent 孤儿、唤醒父进程
  *   wait      — 父进程 waitpid 回收 kstack 与 PCB
+ *
+ * xstate 为 Linux wait 状态字（见 user/include/sys/wait.h）：
+ *   正常退出 (status << 8)；信号致死 (sig & 0x7f)。
  */
-void exit(int status)
+static void exit_with_xstate(int xstate) __attribute__((noreturn));
+
+static void exit_with_xstate(int xstate)
 {
 	struct proc *p = myproc();
 	struct proc *parent;
@@ -166,7 +171,7 @@ void exit(int status)
 	acquire(&proc_lock);
 	parent = p->parent;
 	reparent(p);
-	p->xstate = status;
+	p->xstate = xstate;
 	task_queue_unlink_locked(p);		/* 抢占 yield 后 exit 时可能仍在就绪队列 */
 	memset(&p->context, 0, sizeof(p->context));
 	p->state = ZOMBIE;
@@ -176,10 +181,24 @@ void exit(int status)
 	if (parent)
 		wakeup(parent);
 
-	printf("exit: pid=%d status=%d\n", p->pid, status);
+	printf("exit: pid=%d xstate=%d\n", p->pid, xstate);
 	sched();
 	for (;;)
 		halt();
+}
+
+/* 用户 exit(status)：编码为 WIFEXITED / WEXITSTATUS */
+void exit(int status)
+{
+	exit_with_xstate((status & 0xff) << 8);
+}
+
+/* 致命信号默认动作：编码为 WIFSIGNALED / WTERMSIG */
+void exit_signal(int sig)
+{
+	if (sig < 1)
+		sig = 1;
+	exit_with_xstate(sig & 0x7f);
 }
 
 void context_switch(struct context *old, struct context *new)

@@ -100,6 +100,7 @@ void proc_free(struct proc *p);
 struct proc *proc_find(int pid);
 
 void exit(int status) __attribute__((noreturn));
+void exit_signal(int sig) __attribute__((noreturn));
 
 void sleep(void *chan);
 void wakeup(void *chan);

@@ -317,6 +317,67 @@ void rename_test(void)
 	test_check("rename", ok);
 }
 
+/*
+ * wait：无子进程失败；fork 子进程 exit 后用 WIFEXITED / WEXITSTATUS 解析。
+ */
+void wait_test(void)
+{
+	int pid, wpid, status, ok;
+
+	ok = 1;
+
+	/* 当前无子进程时应失败 */
+	if (wait(&status) != -1) {
+		printf("wait: no child should fail\n");
+		ok = 0;
+	}
+
+	pid = fork();
+	if (pid < 0) {
+		printf("wait: fork failed\n");
+		test_check("wait", 0);
+		return;
+	}
+	if (pid == 0)
+		exit(42);
+
+	status = -1;
+	wpid = wait(&status);
+	if (wpid != pid) {
+		printf("wait: wpid=%d expect %d\n", wpid, pid);
+		ok = 0;
+	}
+	if (!WIFEXITED(status) || WEXITSTATUS(status) != 42) {
+		printf("wait: status=0x%x exited=%d code=%d\n",
+		       status, WIFEXITED(status), WEXITSTATUS(status));
+		ok = 0;
+	}
+	if (WIFSIGNALED(status)) {
+		printf("wait: unexpectedly signaled\n");
+		ok = 0;
+	}
+
+	/* 子进程已收完，再次 wait 应失败 */
+	if (wait(&status) != -1) {
+		printf("wait: second wait should fail\n");
+		ok = 0;
+	}
+
+	/* status == NULL 也可等待 */
+	pid = fork();
+	if (pid < 0) {
+		printf("wait: fork2 failed\n");
+		ok = 0;
+	} else if (pid == 0) {
+		exit(0);
+	} else if (wait(0) != pid) {
+		printf("wait: wait(NULL) failed\n");
+		ok = 0;
+	}
+
+	test_check("wait", ok);
+}
+
 /**
  * 可以只使用
  * int main(int argc, char *argv[])
@@ -340,5 +401,6 @@ int main(int argc, char *argv[], char *envp[])
 	lseek_test();
 	link_unlink_test();
 	rename_test();
+	wait_test();
 	exit(0);
 }

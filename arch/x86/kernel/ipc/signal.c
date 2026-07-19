@@ -252,7 +252,7 @@ void signal_notify(struct trapframe *tf)
 		/* 处理 SIGKILL 信号，直接退出进程 */
 		if (p->sigpending & SIGBIT(SIGKILL)) {
 			p->sigpending &= ~SIGBIT(SIGKILL);
-			exit(128 + SIGKILL);
+			exit_signal(SIGKILL);
 		}
 		return;
 	}
@@ -264,7 +264,7 @@ void signal_notify(struct trapframe *tf)
 			return;
 
 		if (sig == SIGKILL)
-			exit(128 + SIGKILL);
+			exit_signal(SIGKILL);
 
 		handler = p->sighand[sig];
 		if (handler == SIG_IGN)
@@ -272,12 +272,12 @@ void signal_notify(struct trapframe *tf)
 		if (handler == SIG_DFL) {
 			if (!sig_fatal_default(sig))
 				continue;
-			exit(128 + sig);
+			exit_signal(sig);
 		}
 
 		/* 设置信号处理帧，并设置返回地址为信号处理函数 */
 		if (signal_setup_frame(p, tf, sig, handler) < 0)
-			exit(128 + sig);
+			exit_signal(sig);
 		return;
 	}
 }

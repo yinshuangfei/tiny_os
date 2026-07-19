@@ -8,13 +8,6 @@
  */
 #include "user.h"
 
-/*
- * 从 waitpid 返回的 status 取出子进程 exit(n) 的退出码。
- * 完整 Linux 语义下 status 是编码后的状态字，需 WIFEXITED 等配合解析；
- * 本系统 waitpid 直接 copyout exit 时的 status，故取低 8 位即可。
- */
-#define WEXITSTATUS(s)	((s) & 0xff)
-
 /* 类似 getty：fork + execve 拉起 shell */
 static void spawn_shell(void)
 {
@@ -42,8 +35,15 @@ int main(void)
 			spawn_shell();
 			continue;
 		}
-		printf("init: reaped pid=%d status=%d\n",
-		       pid, WEXITSTATUS(status));
+		if (WIFEXITED(status))
+			printf("init: reaped pid=%d exit=%d\n",
+			       pid, WEXITSTATUS(status));
+		else if (WIFSIGNALED(status))
+			printf("init: reaped pid=%d signal=%d\n",
+			       pid, WTERMSIG(status));
+		else
+			printf("init: reaped pid=%d status=0x%x\n",
+			       pid, status);
 		/* 收尸后继续 spawn，保持至少有一个子进程 */
 		spawn_shell();
 	}

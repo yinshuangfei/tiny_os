@@ -62,6 +62,7 @@ USER_LIB_OBJS = \
 	$(USERDIR)/lib/usys.o \
 	$(USERDIR)/lib/printf.o \
 	$(USERDIR)/lib/sleep.o \
+	$(USERDIR)/lib/wait.o \
 	$(USERDIR)/lib/string.o \
 	$(USERDIR)/lib/ansi.o
 
@@ -201,6 +202,9 @@ $(USERDIR)/lib/printf.o: $(USERDIR)/lib/printf.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/lib/sleep.o: $(USERDIR)/lib/sleep.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(USERDIR)/lib/wait.o: $(USERDIR)/lib/wait.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/lib/string.o: $(USERDIR)/lib/string.c
