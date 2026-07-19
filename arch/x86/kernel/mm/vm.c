@@ -315,6 +315,54 @@ int uvm_cow_fault(pagetable_t pgdir, uint va)
 	return 0;
 }
 
+/* 将用户空间从 oldsz 收缩到 newsz；成功返回 newsz */
+uint uvmdealloc(pagetable_t pgdir, uint oldsz, uint newsz)
+{
+	if (pgdir == 0)
+		return 0;
+	if (newsz >= oldsz)
+		return oldsz;
+
+	if (PGROUNDUP(newsz) < PGROUNDUP(oldsz)) {
+		uint npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
+
+		if (uvmunmap(pgdir, PGROUNDUP(newsz), npages, 1) < 0)
+			return 0;
+	}
+	return newsz;
+}
+
+/*
+ * 将用户空间从 oldsz 增长到 newsz（分配并映射新页，清零）。
+ * 成功返回 newsz，失败返回 0。
+ */
+uint uvmalloc(pagetable_t pgdir, uint oldsz, uint newsz)
+{
+	char *mem;
+	uint a;
+
+	if (pgdir == 0 || newsz < oldsz)
+		return 0;
+	if (newsz > USERHEAP_TOP)
+		return 0;
+
+	oldsz = PGROUNDUP(oldsz);
+	for (a = oldsz; a < newsz; a += PGSIZE) {
+		mem = alloc_page();
+		if (mem == 0) {
+			uvmdealloc(pgdir, a, oldsz);
+			return 0;
+		}
+		memset(mem, 0, PGSIZE);
+		if (uvmmap(pgdir, a, (uint)mem, PGSIZE, PTE_W | PTE_P) < 0) {
+			free_page(mem);
+			uvmdealloc(pgdir, a, oldsz);
+			return 0;
+		}
+	}
+	return newsz;
+}
+
 int uvmmap(pagetable_t pgdir, uint va, uint pa, uint size, int perm)
 {
 	if (pgdir == 0)

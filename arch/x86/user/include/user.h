@@ -23,6 +23,8 @@ unsigned int sleep(unsigned int seconds);
 int usleep(unsigned int usec);
 int waitpid(int pid, int *status, int options);
 int wait(int *status);
+void *brk(void *addr);
+void *sbrk(int incr);
 int read(int fd, void *buf, int n);
 int write(int, const void *, int);
 int open(const char *path, int flags);

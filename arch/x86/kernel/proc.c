@@ -863,7 +863,7 @@ static void fork_user_ctx_init(struct proc *p)
 int fork_copy(struct trapframe *tf)
 {
 	struct proc *p = myproc();
-	struct proc *np;
+	struct proc *np;	/* new process */
 	struct trapframe *ntf;
 
 	if (!p || !p->pagetable || !tf)
@@ -881,6 +881,8 @@ int fork_copy(struct trapframe *tf)
 		goto bad;
 
 	np->sz = p->sz;
+	np->brk = p->brk;
+	np->brk_start = p->brk_start;
 	np->parent = p;
 	proc_name_set(np->name, p->name);
 

@@ -130,6 +130,15 @@ pipe:
 	popl %ebx
 	ret
 
+.globl brk
+brk:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl $SYS_brk, %eax
+	int $0x80
+	popl %ebx
+	ret
+
 .globl lseek
 lseek:
 	pushl %ebx

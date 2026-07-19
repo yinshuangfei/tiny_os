@@ -38,6 +38,8 @@
  */
 #define USERSTACK    0x00800000
 #define USEREND      0x00800000	/* [USERBASE, USEREND) 为用户独占 VA */
+/* 堆向上增长，不得进入栈页 [USERSTACK-PGSIZE, USERSTACK) */
+#define USERHEAP_TOP (USERSTACK - PGSIZE)
 
 #define KSTACKSIZE   PGSIZE	/* 内核主栈 / 中断栈大小 */
 /*

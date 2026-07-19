@@ -66,7 +66,9 @@ struct proc {
 	void *kstack;			/* 内核栈（用户线程及内核线程） */
 	void (*entry)(void *);
 	void *entry_arg;
-	uint sz;			/* 用户虚拟空间大小 */
+	uint sz;			/* 用户 VA 扫描上界（fork/COW，现为 USERSTACK） */
+	uint brk;			/* 程序间断点（heap end，类 Linux mm->brk） */
+	uint brk_start;			/* exec 后初始 brk（不可再缩小到其下） */
 	char name[NNAME];
 	struct file *ofile[NOFILE];	/* 打开文件表 */
 	struct inode *cwd;		/* 当前工作目录 */

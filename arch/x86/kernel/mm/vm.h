@@ -29,6 +29,8 @@ void uvmfree(pagetable_t pgdir);
 void uvmcopy_kernel(pagetable_t pgdir);
 int uvmcopy(pagetable_t old, pagetable_t new, uint sz);
 int uvm_cow_fault(pagetable_t pgdir, uint va);
+uint uvmalloc(pagetable_t pgdir, uint oldsz, uint newsz);
+uint uvmdealloc(pagetable_t pgdir, uint oldsz, uint newsz);
 
 uint walkaddr(pagetable_t pgdir, uint va);
 int copyin(pagetable_t pgdir, void *dst, uint srcva, uint n);

@@ -118,14 +118,14 @@ static int is_elf(const void *blob, uint size)
 }
 
 /*
- * 按 PT_LOAD 装入 ELF；成功时 *entry = e_entry。
+ * 按 PT_LOAD 装入 ELF；成功时 *entry = e_entry，*out_brk = 段末最高地址。
  */
 static int exec_load_elf(pagetable_t pgdir, const char *blob, uint size,
-			 uint *entry)
+			 uint *entry, uint *out_brk)
 {
 	const struct elfhdr *eh;
 	const struct proghdr *ph;
-	uint i, ph_end;
+	uint i, ph_end, brk;
 	int perm;
 
 	eh = (const struct elfhdr *)blob;
@@ -139,7 +139,7 @@ static int exec_load_elf(pagetable_t pgdir, const char *blob, uint size,
 	if (eh->phoff >= size || ph_end > size || ph_end < eh->phoff)
 		return -1;
 
-	/* 遍历程序头表，加载每个程序头 */
+	brk = USERBASE;
 	ph = (const struct proghdr *)(blob + eh->phoff);
 	for (i = 0; i < eh->phnum; i++, ph++) {
 		uint seg_end;
@@ -162,16 +162,19 @@ static int exec_load_elf(pagetable_t pgdir, const char *blob, uint size,
 		if (ph->flags & ELF_PROG_FLAG_WRITE)
 			perm |= PTE_W;
 
-		/* 将 ELF 文件中的段加载到用户空间 */
 		if (loaduvm_seg(pgdir, ph->vaddr,
 				ph->filesz ? blob + ph->off : 0, ph->filesz,
 				ph->memsz, perm) < 0)
 			return -1;
+		if (seg_end > brk)
+			brk = seg_end;
 	}
 
 	if (eh->entry < USERBASE || eh->entry >= USEREND)
 		return -1;
 	*entry = eh->entry;
+	if (out_brk)
+		*out_brk = brk;
 	return 0;
 }
 
@@ -287,7 +290,7 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 {
 	pagetable_t oldpg, newpg;
 	void *ustack;
-	uint entry, esp;
+	uint entry, esp, heap_end;
 
 	if (!p || !tf || !blob || size == 0 || size > EXEC_MAX_FILE || !name)
 		return -1;
@@ -296,8 +299,9 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 	if (newpg == 0)
 		return -1;
 
+	heap_end = USERBASE;
 	if (is_elf(blob, size)) {
-		if (exec_load_elf(newpg, blob, size, &entry) < 0)
+		if (exec_load_elf(newpg, blob, size, &entry, &heap_end) < 0)
 			goto bad;
 	} else {
 		if (size > USEREND - USERBASE)
@@ -305,6 +309,7 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 		if (loaduvm(newpg, USERBASE, blob, size) < 0)
 			goto bad;
 		entry = USERBASE;
+		heap_end = USERBASE + size;
 	}
 
 	ustack = alloc_page();
@@ -322,6 +327,13 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 	oldpg = p->pagetable;
 	p->pagetable = newpg;
 	p->sz = USERSTACK;
+	/* 程序断点：数据段末；堆向 USERHEAP_TOP 增长 */
+	if (heap_end < USERBASE)
+		heap_end = USERBASE;
+	if (heap_end > USERHEAP_TOP)
+		heap_end = USERHEAP_TOP;
+	p->brk = heap_end;
+	p->brk_start = heap_end;
 	proc_name_from_path(p, name);
 	signal_exec_reset(p);
 

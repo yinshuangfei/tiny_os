@@ -477,6 +477,55 @@ void cow_fork_test(void)
 	syscall_pr_result("fork-cow", ok);
 }
 
+/*
+ * brk / sbrk：扩展堆、写入、再收缩；非法 brk 应保持原断点。
+ */
+void brk_test(void)
+{
+	char *p, *q, *old;
+	int ok = 1;
+	int i;
+
+	old = (char *)brk((void *)0);
+	if (old == 0 || old == (char *)-1) {
+		printf("brk: query failed\n");
+		syscall_pr_result("brk", 0);
+		return;
+	}
+
+	p = sbrk(4096);
+	if (p == (char *)-1 || p != old) {
+		printf("brk: sbrk grow failed\n");
+		ok = 0;
+	} else {
+		for (i = 0; i < 4096; i++)
+			p[i] = (char)(i & 0xff);
+		for (i = 0; i < 4096; i++) {
+			if (p[i] != (char)(i & 0xff)) {
+				printf("brk: heap write/read mismatch\n");
+				ok = 0;
+				break;
+			}
+		}
+	}
+
+	q = (char *)brk(old);
+	if (q != old) {
+		printf("brk: shrink to old failed ret=%p expect=%p\n", q, old);
+		ok = 0;
+	}
+
+	/* 非法：低于起始断点 → 仍返回当前断点 */
+	q = (char *)brk((void *)0x1000);
+	if (q != old) {
+		printf("brk: bad addr should return current\n");
+		ok = 0;
+	}
+
+	syscall_pr_result("brk", ok);
+	lib_pr_result("sbrk", ok);
+}
+
 /**
  * 可以只使用
  * int main(int argc, char *argv[])
@@ -502,5 +551,6 @@ int main(int argc, char *argv[], char *envp[])
 	rename_test();
 	wait_test();
 	cow_fork_test();
+	brk_test();
 	exit(0);
 }

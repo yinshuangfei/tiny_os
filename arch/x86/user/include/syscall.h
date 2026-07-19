@@ -26,6 +26,7 @@
 #define SYS_rmdir	40	/* Linux i386 __NR_rmdir */
 #define SYS_dup		41	/* Linux i386 __NR_dup */
 #define SYS_pipe	42	/* Linux i386 __NR_pipe */
+#define SYS_brk		45	/* Linux i386 __NR_brk */
 #define SYS_signal	48	/* Linux i386 __NR_signal */
 #define SYS_sigreturn	119	/* Linux i386 __NR_sigreturn */
 #define SYS_nanosleep	162	/* Linux i386 __NR_nanosleep */

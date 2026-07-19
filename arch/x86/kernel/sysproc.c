@@ -9,6 +9,7 @@
 #include "execve.h"
 #include "timer.h"
 #include "x86.h"
+#include "mm/memlayout.h"
 
 #define NSEC_PER_SEC  1000000000u
 #define NSEC_PER_TICK (NSEC_PER_SEC / TIMER_HZ)
@@ -39,6 +40,36 @@ int sys_getpid(struct trapframe *tf)
 int sys_fork(struct trapframe *tf)
 {
 	return fork_copy(tf);
+}
+
+/*
+ * brk(addr)：设置程序断点（对齐 Linux i386 __NR_brk）。
+ * 成功返回新断点；失败返回原断点（Linux 系统调用语义）。
+ */
+int sys_brk(struct trapframe *tf)
+{
+	uint addr, old;
+	struct proc *p = myproc();
+
+	if (!p || !p->pagetable)
+		return -1;
+	if (argaddr(tf, 0, &addr) < 0)
+		return -1;
+
+	old = p->brk;
+	/* 非法：过小、落入栈页、或越过堆顶 → 保持原断点 */
+	if (addr < p->brk_start || addr > USERHEAP_TOP)
+		return (int)old;
+
+	if (addr > old) {
+		if (uvmalloc(p->pagetable, old, addr) == 0)
+			return (int)old;
+	} else if (addr < old) {
+		if (uvmdealloc(p->pagetable, old, addr) == 0)
+			return (int)old;
+	}
+	p->brk = addr;
+	return (int)p->brk;
 }
 
 int sys_waitpid(struct trapframe *tf)
