@@ -296,3 +296,139 @@ int fs_rmdir(const char *path)
 	fs_iput(dp);
 	return 0;
 }
+
+/* link(old, new)：为已有 inode 增加硬链接（不可链接目录） */
+int fs_link(const char *oldpath, const char *newpath)
+{
+	char name[DIRSIZ];
+	struct inode *ip, *dp;
+
+	if (!oldpath || !oldpath[0] || !newpath || !newpath[0])
+		return -1;
+
+	ip = fs_namei(oldpath);
+	if (!ip)
+		return -1;
+	if (ip->type == T_DIR) {
+		fs_iput(ip);
+		return -1;
+	}
+
+	dp = namex(newpath, 1, name);
+	if (!dp) {
+		fs_iput(ip);
+		return -1;
+	}
+	if (name[0] == 0 ||
+	    namecmp(name, ".") == 0 ||
+	    namecmp(name, "..") == 0) {
+		fs_iput(dp);
+		fs_iput(ip);
+		return -1;
+	}
+	/* 跨文件系统：i_op 不同则拒绝（类 EXDEV） */
+	if (!dp->i_op || !dp->i_op->link || dp->i_op != ip->i_op) {
+		fs_iput(dp);
+		fs_iput(ip);
+		return -1;
+	}
+	if (dp->i_op->link(dp, name, ip) < 0) {
+		fs_iput(dp);
+		fs_iput(ip);
+		return -1;
+	}
+	fs_iput(dp);
+	fs_iput(ip);
+	return 0;
+}
+
+/* unlink(path)：删除非目录目录项 */
+int fs_unlink(const char *path)
+{
+	char name[DIRSIZ];
+	struct inode *dp, *ip;
+
+	if (!path || !path[0])
+		return -1;
+
+	dp = namex(path, 1, name);
+	if (!dp)
+		return -1;
+	if (name[0] == 0 ||
+	    namecmp(name, ".") == 0 ||
+	    namecmp(name, "..") == 0) {
+		fs_iput(dp);
+		return -1;
+	}
+	if (!dp->i_op || !dp->i_op->lookup || !dp->i_op->unlink) {
+		fs_iput(dp);
+		return -1;
+	}
+
+	ip = dp->i_op->lookup(dp, name);
+	if (!ip) {
+		fs_iput(dp);
+		return -1;
+	}
+	if (ip->type == T_DIR) {
+		fs_iput(ip);
+		fs_iput(dp);
+		return -1;
+	}
+	fs_iput(ip);
+
+	if (dp->i_op->unlink(dp, name) < 0) {
+		fs_iput(dp);
+		return -1;
+	}
+	fs_iput(dp);
+	return 0;
+}
+
+/* rename(old, new)：同文件系统内重命名或移动 */
+int fs_rename(const char *oldpath, const char *newpath)
+{
+	char oldname[DIRSIZ], newname[DIRSIZ];
+	struct inode *old_dir, *new_dir;
+
+	if (!oldpath || !oldpath[0] || !newpath || !newpath[0])
+		return -1;
+
+	old_dir = namex(oldpath, 1, oldname);
+	if (!old_dir)
+		return -1;
+	if (oldname[0] == 0 ||
+	    namecmp(oldname, ".") == 0 ||
+	    namecmp(oldname, "..") == 0) {
+		fs_iput(old_dir);
+		return -1;
+	}
+
+	new_dir = namex(newpath, 1, newname);
+	if (!new_dir) {
+		fs_iput(old_dir);
+		return -1;
+	}
+	if (newname[0] == 0 ||
+	    namecmp(newname, ".") == 0 ||
+	    namecmp(newname, "..") == 0) {
+		fs_iput(new_dir);
+		fs_iput(old_dir);
+		return -1;
+	}
+
+	if (!old_dir->i_op || !old_dir->i_op->rename ||
+	    old_dir->i_op != new_dir->i_op) {
+		fs_iput(new_dir);
+		fs_iput(old_dir);
+		return -1;
+	}
+	if (old_dir->i_op->rename(old_dir, oldname, new_dir, newname) < 0) {
+		fs_iput(new_dir);
+		fs_iput(old_dir);
+		return -1;
+	}
+	fs_iput(new_dir);
+	fs_iput(old_dir);
+	return 0;
+}

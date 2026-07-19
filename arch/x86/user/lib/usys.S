@@ -199,6 +199,35 @@ rmdir:
 	popl %ebx
 	ret
 
+.globl link
+link:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl $SYS_link, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl unlink
+unlink:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl $SYS_unlink, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl rename
+rename:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl $SYS_rename, %eax
+	int $0x80
+	popl %ebx
+	ret
+
 .globl kill
 kill:
 	pushl %ebx

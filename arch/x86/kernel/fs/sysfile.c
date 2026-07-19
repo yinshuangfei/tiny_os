@@ -299,6 +299,38 @@ int sys_rmdir(struct trapframe *tf)
 	return fs_rmdir(path);
 }
 
+/* link(oldpath, newpath) */
+int sys_link(struct trapframe *tf)
+{
+	char oldpath[NNAME], newpath[NNAME];
+
+	if (argstr(tf, 0, oldpath, NNAME) < 0 ||
+	    argstr(tf, 1, newpath, NNAME) < 0)
+		return -1;
+	return fs_link(oldpath, newpath);
+}
+
+/* unlink(path) */
+int sys_unlink(struct trapframe *tf)
+{
+	char path[NNAME];
+
+	if (argstr(tf, 0, path, NNAME) < 0)
+		return -1;
+	return fs_unlink(path);
+}
+
+/* rename(oldpath, newpath) */
+int sys_rename(struct trapframe *tf)
+{
+	char oldpath[NNAME], newpath[NNAME];
+
+	if (argstr(tf, 0, oldpath, NNAME) < 0 ||
+	    argstr(tf, 1, newpath, NNAME) < 0)
+		return -1;
+	return fs_rename(oldpath, newpath);
+}
+
 /* getcwd(buf, size)：成功返回写入长度（含 '\0'），失败 -1 */
 int sys_getcwd(struct trapframe *tf)
 {

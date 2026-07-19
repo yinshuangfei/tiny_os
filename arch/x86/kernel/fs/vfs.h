@@ -51,6 +51,13 @@ struct inode_operations {
 	int (*mkdir)(struct inode *dir, const char *name);
 	int (*rmdir)(struct inode *dir, const char *name);
 	int (*mknod)(struct inode *dir, const char *name, short type, dev_t rdev);
+	/* 硬链接：在 dir 下新增 name → ip（不可链接目录） */
+	int (*link)(struct inode *dir, const char *name, struct inode *ip);
+	/* 删除目录项（不可删目录，目录用 rmdir） */
+	int (*unlink)(struct inode *dir, const char *name);
+	/* 同文件系统内重命名/移动 */
+	int (*rename)(struct inode *old_dir, const char *old_name,
+		      struct inode *new_dir, const char *new_name);
 	int (*get_name)(struct inode *dir, struct inode *child, char *name);
 	void (*evict)(struct inode *ip);
 	int (*read)(struct inode *ip, char *dst, uint off, uint n);
@@ -111,6 +118,9 @@ struct inode *fs_mknod(const char *path, short type,
 		       unsigned int major, unsigned int minor);
 int fs_mkdir(const char *path);
 int fs_rmdir(const char *path);
+int fs_link(const char *oldpath, const char *newpath);
+int fs_unlink(const char *path);
+int fs_rename(const char *oldpath, const char *newpath);
 void fs_iput(struct inode *ip);
 struct inode *fs_idup(struct inode *ip);
 int fs_getcwd(char *buf, int max);

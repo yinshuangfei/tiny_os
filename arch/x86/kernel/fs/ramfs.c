@@ -18,6 +18,10 @@ static int ramfs_mkdir(struct inode *dir, const char *name);
 static int ramfs_rmdir(struct inode *dir, const char *name);
 static int ramfs_mknod(struct inode *dir, const char *name, short type,
 		       dev_t rdev);
+static int ramfs_hardlink(struct inode *dir, const char *name, struct inode *ip);
+static int ramfs_unlink(struct inode *dir, const char *name);
+static int ramfs_rename(struct inode *old_dir, const char *old_name,
+			struct inode *new_dir, const char *new_name);
 static int ramfs_get_name(struct inode *dir, struct inode *child, char *name);
 static void ramfs_evict(struct inode *ip);
 static int ramfs_read(struct inode *ip, char *dst, uint off, uint n);
@@ -29,6 +33,9 @@ static const struct inode_operations ramfs_iops = {
 	.mkdir		= ramfs_mkdir,
 	.rmdir		= ramfs_rmdir,
 	.mknod		= ramfs_mknod,
+	.link		= ramfs_hardlink,
+	.unlink		= ramfs_unlink,
+	.rename		= ramfs_rename,
 	.get_name	= ramfs_get_name,
 	.evict		= ramfs_evict,
 	.read		= ramfs_read,
@@ -236,6 +243,85 @@ static int ramfs_mknod(struct inode *dir, const char *name, short type,
 		fs_iput(ip);
 		return -1;
 	}
+	fs_iput(ip);
+	return 0;
+}
+
+/* 硬链接（i_op->link）；与对外挂接用的 ramfs_link() 分离 */
+static int ramfs_hardlink(struct inode *dir, const char *name, struct inode *ip)
+{
+	if (!dir || !ip || dir->type != T_DIR)
+		return -1;
+	if (ip->type == T_DIR)
+		return -1;
+	return dirlink(dir, name, ip);
+}
+
+static int ramfs_unlink(struct inode *dir, const char *name)
+{
+	struct dentry *de;
+
+	de = dirlookup(dir, name);
+	if (!de)
+		return -1;
+	if (de->ip->type == T_DIR)
+		return -1;
+	return dirunlink(dir, name);
+}
+
+static int ramfs_rename(struct inode *old_dir, const char *old_name,
+			struct inode *new_dir, const char *new_name)
+{
+	struct dentry *de, *nde;
+	struct inode *ip;
+
+	if (!old_dir || !new_dir || old_dir->type != T_DIR ||
+	    new_dir->type != T_DIR)
+		return -1;
+
+	de = dirlookup(old_dir, old_name);
+	if (!de)
+		return -1;
+	ip = de->ip;
+
+	/* 同目录同名：无操作 */
+	if (old_dir == new_dir && namecmp(old_name, new_name) == 0)
+		return 0;
+
+	nde = dirlookup(new_dir, new_name);
+	if (nde) {
+		/* 目标已存在：仅允许覆盖普通文件；目录须为空且源也是目录 */
+		if (nde->ip == ip)
+			return 0;
+		if (nde->ip->type == T_DIR) {
+			if (ip->type != T_DIR || nde->ip->dents)
+				return -1;
+		} else if (ip->type == T_DIR) {
+			return -1;
+		}
+		if (dirunlink(new_dir, new_name) < 0)
+			return -1;
+	}
+
+	/* 同目录：直接改名 */
+	if (old_dir == new_dir) {
+		namecpy(de->name, new_name);
+		return 0;
+	}
+
+	/* 跨目录：摘链再挂接（持临时引用防止中间被回收） */
+	ip = fs_idup(ip);
+	if (dirunlink(old_dir, old_name) < 0) {
+		fs_iput(ip);
+		return -1;
+	}
+	if (dirlink(new_dir, new_name, ip) < 0) {
+		(void)dirlink(old_dir, old_name, ip);
+		fs_iput(ip);
+		return -1;
+	}
+	if (ip->type == T_DIR)
+		ip->parent = new_dir;
 	fs_iput(ip);
 	return 0;
 }

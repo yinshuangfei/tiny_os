@@ -60,3 +60,7 @@ kill(getpid(), SIGUSR1); // 向自己发送用户自定义信号1
 raise(SIGTERM); // 向自己发送终止信号
 pthread_kill(pthread_self(), SIGINT); // 向当前线程发送中断信号
 ```
+
+## 信号发送和投递时机
+- 发送（pending）：kill 只把信号记在进程上（sigpending），handler 还没跑。
+- 投递（delivery）：信号一般在内核准备返回用户态时投递，安排 handler（或默认动作）生效。

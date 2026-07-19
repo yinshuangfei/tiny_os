@@ -12,6 +12,8 @@
 #define SYS_open	5
 #define SYS_close	6
 #define SYS_waitpid	7
+#define SYS_link	9	/* Linux i386 __NR_link */
+#define SYS_unlink	10	/* Linux i386 __NR_unlink */
 #define SYS_execve	11
 #define SYS_chdir	12	/* Linux i386 __NR_chdir */
 #define SYS_stat	18	/* Linux i386 __NR_oldstat（与 fstat=28 同代） */
@@ -19,6 +21,7 @@
 #define SYS_getpid	20
 #define SYS_fstat	28	/* Linux i386 __NR_oldfstat */
 #define SYS_kill	37	/* Linux i386 __NR_kill */
+#define SYS_rename	38	/* Linux i386 __NR_rename */
 #define SYS_mkdir	39	/* Linux i386 __NR_mkdir */
 #define SYS_rmdir	40	/* Linux i386 __NR_rmdir */
 #define SYS_dup		41	/* Linux i386 __NR_dup */

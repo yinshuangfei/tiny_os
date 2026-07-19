@@ -34,6 +34,9 @@ int chdir(const char *path);
 int getcwd(char *buf, int size);
 int mkdir(const char *path, int mode);
 int rmdir(const char *path);
+int link(const char *oldpath, const char *newpath);
+int unlink(const char *path);
+int rename(const char *oldpath, const char *newpath);
 
 int printf(const char *fmt, ...);
 int sprintf(char *buf, const char *fmt, ...);
