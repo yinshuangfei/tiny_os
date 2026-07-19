@@ -21,13 +21,24 @@
      用户态任务，切换到内核态执行相应的中断服务例程。
 */
 #include "defs.h"
+#include "printk.h"
 #include "trap.h"
 #include "x86.h"
+#include "proc.h"
+#include "mm/memlayout.h"
+#include "mm/mmu.h"
+#include "gdt.h"
 #include "ipc/signal.h"
+
+/* #PF error code */
+#define PF_P	0x1	/* 1=protection，0=not-present */
+#define PF_W	0x2	/* 1=write */
+#define PF_U	0x4	/* 1=user */
 
 void divide_error_handler(struct trapframe *tf)
 {
-	printf("divide error at eip=0x%x\n", tf->eip);
+	printk(KERN_INFO "divide error at eip=0x%x\n", tf->eip);
+	exit_signal(SIGSEGV);
 	panic("divide error");
 }
 
@@ -44,7 +55,8 @@ void device_not_available_handler(struct trapframe *tf)
 
 void invalid_opcode_handler(struct trapframe *tf)
 {
-	printf("invalid opcode (#UD) at eip=0x%x\n", tf->eip);
+	printk(KERN_INFO "invalid opcode (#UD) at eip=0x%x\n", tf->eip);
+	exit_signal(SIGSEGV);
 	panic("invalid opcode");
 }
 
@@ -53,17 +65,44 @@ void invalid_opcode_handler(struct trapframe *tf)
  */
 void general_protection_handler(struct trapframe *tf)
 {
-	printf("general protection (#GP) err=0x%x eip=0x%x\n", tf->err, tf->eip);
+	printk(KERN_INFO "general protection (#GP) err=0x%x eip=0x%x\n", tf->err, tf->eip);
+	exit_signal(SIGSEGV);
 	panic("general protection");
 }
 
+/*
+ * 缺页：优先处理用户写 COW 页（P|W|U）；失败则杀用户进程。
+ * 内核态缺页仍 panic（教学内核无 fixup）。
+ */
 void page_fault_handler(struct trapframe *tf)
 {
 	uint32 fault_va;
+	struct proc *p;
+	int user;
 
 	__asm__ volatile ("movl %%cr2, %0" : "=r"(fault_va));
-	printf("page fault at va=%p err=0x%x eip=0x%x\n",
-	       (void *)fault_va, tf->err, tf->eip);
+
+	user = tf && ((tf->cs & 3) == DPL_USER);
+	p = myproc();
+
+	/*
+	 * 用户写已存在页（典型 err=0x7）：若为 COW，复制后返回重试指令。
+	 */
+	if (user && p && p->pagetable && (tf->err & PF_U) && (tf->err & PF_W) &&
+	    (tf->err & PF_P)) {
+		if (fault_va >= USERBASE && fault_va < p->sz &&
+		    uvm_cow_fault(p->pagetable, fault_va) == 0)
+			return;
+	}
+
+	printk(KERN_ERR "page fault at va=%p err=0x%x eip=0x%x pid=%d\n",
+	       (void *)fault_va, tf ? tf->err : 0,
+	       tf ? tf->eip : 0, p ? p->pid : -1);
+
+	if (user && p && p->pagetable) {
+		/* 用户非法访问：以 SIGSEGV 退出（WIFSIGNALED） */
+		exit_signal(SIGSEGV);
+	}
 	panic("page fault");
 }
 

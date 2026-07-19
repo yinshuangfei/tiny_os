@@ -1,1 +1,2 @@
 MEM=8 crash
+user print SIGSEGV

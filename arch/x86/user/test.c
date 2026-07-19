@@ -381,6 +381,102 @@ void wait_test(void)
 	lib_pr_result("wait", ok);
 }
 
+/*
+ * fork COW：父子写同一全局缓冲应互不影响；且 fork 后空闲页不应骤降（共享而非全拷）。
+ */
+static unsigned int mem_free_kb(void)
+{
+	char buf[256];
+	char line[64];
+	int fd, n, i, li;
+	unsigned int free_kb;
+
+	fd = open("/proc/meminfo", O_RDONLY);
+	if (fd < 0)
+		return 0;
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return 0;
+	buf[n] = '\0';
+
+	free_kb = 0;
+	li = 0;
+	for (i = 0; i <= n; i++) {
+		char c = (i < n) ? buf[i] : '\n';
+
+		if (c == '\n' || c == '\0') {
+			line[li] = '\0';
+			if (li > 8 && line[0] == 'M' && line[3] == 'F') {
+				/* MemFree: */
+				const char *p = line;
+				while (*p && (*p < '0' || *p > '9'))
+					p++;
+				while (*p >= '0' && *p <= '9') {
+					free_kb = free_kb * 10 + (*p - '0');
+					p++;
+				}
+				return free_kb;
+			}
+			li = 0;
+		} else if (li + 1 < (int)sizeof(line)) {
+			line[li++] = c;
+		}
+	}
+	return free_kb;
+}
+
+static char cow_slot[64];
+
+void cow_fork_test(void)
+{
+	int pid, status, ok;
+	unsigned int free0, free1;
+
+	ok = 1;
+	strcpy(cow_slot, "parent-data");
+
+	free0 = mem_free_kb();
+	pid = fork();
+	if (pid < 0) {
+		printf("cow: fork failed\n");
+		syscall_pr_result("fork-cow", 0);
+		return;
+	}
+	if (pid == 0) {
+		/* 子进程写入应触发 COW，不影响父进程 */
+		cow_slot[0] = 'C';
+		if (cow_slot[0] != 'C' || cow_slot[1] != 'a')
+			exit(1);
+		exit(0);
+	}
+
+	free1 = mem_free_kb();
+	/*
+	 * COW：fork 后主要只多页表等少量页；全量拷贝会掉很多（用户映像数页）。
+	 * 允许消耗 < 64 KiB（页表等）；过大则不像 COW。
+	 */
+	if (free0 > free1 && (free0 - free1) > 64) {
+		printf("cow: freeram dropped %u KiB (expect COW share)\n",
+		       free0 - free1);
+		ok = 0;
+	}
+
+	/* 父进程也写，验证隔离 */
+	cow_slot[0] = 'P';
+	if (wait(&status) != pid || !WIFEXITED(status) ||
+	    WEXITSTATUS(status) != 0) {
+		printf("cow: child status bad\n");
+		ok = 0;
+	}
+	if (cow_slot[0] != 'P' || strcmp(cow_slot + 1, "arent-data") != 0) {
+		printf("cow: parent buf corrupted: %s\n", cow_slot);
+		ok = 0;
+	}
+
+	syscall_pr_result("fork-cow", ok);
+}
+
 /**
  * 可以只使用
  * int main(int argc, char *argv[])
@@ -405,5 +501,6 @@ int main(int argc, char *argv[], char *envp[])
 	link_unlink_test();
 	rename_test();
 	wait_test();
+	cow_fork_test();
 	exit(0);
 }

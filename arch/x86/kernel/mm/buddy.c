@@ -33,10 +33,12 @@ extern char end[];	/* kernel.ld: .bss 结束后的第一个地址 */
 /*
  * 每个物理页一条元数据，类似 Linux 的 struct page / mem_map。
  * 空闲时挂在 free_area[order] 上；分配后 order = PAGE_INUSE。
+ * _refcount：order-0 用户页 COW 共享（类 Linux page->_refcount）。
  */
 struct page {
 	struct list_head list;
 	unsigned int order;
+	unsigned int _refcount;
 };
 
 /*
@@ -176,6 +178,7 @@ static struct page *__alloc_pages(unsigned int order)
 		}
 
 		page->order = PAGE_INUSE;
+		page->_refcount = 1;	/* 调用方持有一份引用 */
 		return page;
 	}
 	return 0;
@@ -208,6 +211,7 @@ void pmm_init(void)
 	for (i = 0; i < nr_pages; i++) {
 		INIT_LIST_HEAD(&mem_map[i].list);
 		mem_map[i].order = PAGE_INUSE;
+		mem_map[i]._refcount = 0;
 	}
 
 	for (addr = mem_start; addr < mem_end; addr += PGSIZE)
@@ -241,6 +245,8 @@ void *alloc_pages(unsigned int order)
 	return addr;
 }
 
+void put_page(void *addr);	/* 前向声明：free_pages(order0) 使用 */
+
 /* 释放 addr 起的 2^order 页；order 必须与分配时一致 */
 void free_pages(void *addr, unsigned int order)
 {
@@ -248,6 +254,12 @@ void free_pages(void *addr, unsigned int order)
 
 	if (order >= MAX_ORDER)
 		panic("free_pages: bad order");
+
+	/* order 0：走引用计数（COW / 统一 put） */
+	if (order == 0) {
+		put_page(addr);
+		return;
+	}
 
 	acquire(&pmm_lock);
 	page = addr_to_page(addr);
@@ -264,7 +276,49 @@ void *alloc_page(void)
 
 void free_page(void *addr)
 {
-	free_pages(addr, 0);
+	put_page(addr);
+}
+
+/* 增加页引用（fork COW 共享） */
+void get_page(void *addr)
+{
+	struct page *page;
+
+	acquire(&pmm_lock);
+	page = addr_to_page(addr);
+	if (!page || page->order != PAGE_INUSE)
+		panic("get_page");
+	page->_refcount++;
+	release(&pmm_lock);
+}
+
+/* 减少页引用；减至 0 时归还 buddy */
+void put_page(void *addr)
+{
+	struct page *page;
+
+	acquire(&pmm_lock);
+	page = addr_to_page(addr);
+	if (!page || page->order != PAGE_INUSE)
+		panic("put_page");
+	if (page->_refcount == 0)
+		panic("put_page: refcount 0");
+	page->_refcount--;
+	if (page->_refcount == 0)
+		__free_one_page(page, 0);
+	release(&pmm_lock);
+}
+
+unsigned int page_refcount(void *addr)
+{
+	struct page *page;
+	unsigned int n;
+
+	acquire(&pmm_lock);
+	page = addr_to_page(addr);
+	n = page ? page->_refcount : 0;
+	release(&pmm_lock);
+	return n;
 }
 
 unsigned int pmm_nr_free_pages(void)

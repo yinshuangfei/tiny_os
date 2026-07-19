@@ -23,5 +23,7 @@
 #define PTE_D   0x040	/* dirty */
 #define PTE_PS  0x080	/* page size */
 #define PTE_G   0x100	/* global */
+/* 软件 AVL 位（Intel 允许 PTE[11:9] 由 OS 使用） */
+#define PTE_COW	0x200	/* bit9：Copy-on-Write（类 Linux） */
 
 #endif

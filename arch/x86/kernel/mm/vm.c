@@ -104,7 +104,7 @@ static int unmappages(pagetable_t pgdir, uint va, uint npages, int do_free)
 		if (pte == 0 || !(*pte & PTE_P))
 			return -1;
 		if (do_free)
-			free_page((void *)PTE_ADDR(*pte));
+			put_page((void *)PTE_ADDR(*pte));
 		*pte = 0;
 	}
 	return 0;
@@ -237,14 +237,15 @@ void uvmcopy_kernel(pagetable_t pgdir)
 }
 
 /*
- * 复制父进程用户映射到子进程页表（fork）。
- * 仅复制 [USERBASE, sz) 内已映射的用户页，权限与父进程一致。
+ * fork：Copy-on-Write（对齐 Linux do_cow_fault / xv6 COW 教学模型）。
+ * - 共享父进程物理页（get_page），不立即拷贝
+ * - 原可写页：父子均清 PTE_W、置 PTE_COW，写时缺页再复制
+ * - 本就只读页：仅共享，不标 COW（写入则为真保护错）
  */
 int uvmcopy(pagetable_t old, pagetable_t new, uint sz)
 {
 	pte_t *pte;
-	uint va, pa, i;
-	char *mem;
+	uint va, pa;
 	int perm;
 
 	if (old == 0 || new == 0 || sz < USERBASE)
@@ -256,20 +257,61 @@ int uvmcopy(pagetable_t old, pagetable_t new, uint sz)
 		pte = walk(old, va, 0, 0);
 		if (pte == 0 || !(*pte & PTE_P))
 			continue;
-		mem = alloc_page();
-		if (mem == 0)
-			return -1;
 		pa = PTE_ADDR(*pte);
-		for (i = 0; i < PGSIZE; i++)
-			mem[i] = ((char *)pa)[i];
-		perm = PTE_U | PTE_P;
-		if (*pte & PTE_W)
-			perm |= PTE_W;
-		if (uvmmap(new, va, (uint)mem, PGSIZE, perm) < 0) {
-			free_page(mem);
+		get_page((void *)pa);
+
+		if ((*pte & PTE_W) || (*pte & PTE_COW)) {
+			/* 可写或已 COW：双方只读 + COW */
+			*pte = (*pte | PTE_COW) & ~PTE_W;
+			perm = PTE_U | PTE_P | PTE_COW;
+		} else {
+			/* 只读代码页等：共享且保持只读 */
+			perm = PTE_U | PTE_P;
+		}
+		if (uvmmap(new, va, pa, PGSIZE, perm) < 0) {
+			put_page((void *)pa);
 			return -1;
 		}
 	}
+	tlb_flush_if_active(old);
+	return 0;
+}
+
+/*
+ * 处理写 COW 页：sole owner 直接恢复可写；否则分配新页拷贝。
+ * 成功返回 0，调用方重试故障指令。
+ */
+int uvm_cow_fault(pagetable_t pgdir, uint va)
+{
+	pte_t *pte;
+	uint pa;
+	char *mem;
+	uint i;
+
+	va = PGROUNDDOWN(va);
+	if (pgdir == 0 || va < USERBASE || va >= USEREND)
+		return -1;
+
+	pte = walk(pgdir, va, 0, 0);
+	if (pte == 0 || !(*pte & PTE_P) || !(*pte & PTE_COW))
+		return -1;
+
+	pa = PTE_ADDR(*pte);
+	if (page_refcount((void *)pa) == 1) {
+		*pte = (*pte | PTE_W) & ~PTE_COW;
+		tlb_flush_if_active(pgdir);
+		return 0;
+	}
+
+	mem = alloc_page();
+	if (mem == 0)
+		return -1;
+	for (i = 0; i < PGSIZE; i++)
+		mem[i] = ((char *)pa)[i];
+
+	put_page((void *)pa);
+	*pte = PA2PTE((uint)mem) | PTE_P | PTE_U | PTE_W;
+	tlb_flush_if_active(pgdir);
 	return 0;
 }
 
@@ -361,6 +403,7 @@ int copyin(pagetable_t pgdir, void *dst, uint srcva, uint n)
 
 /*
  * 从内核缓冲区 copyout 至多 n 字节到用户页表；跨页自动拆分。
+ * 写 COW 页前先 break COW（内核写不经 #PF）。
  */
 int copyout(pagetable_t pgdir, uint dstva, const void *src, uint n)
 {
@@ -371,8 +414,16 @@ int copyout(pagetable_t pgdir, uint dstva, const void *src, uint n)
 		return -1;
 	while (n > 0) {
 		uint i;
+		pte_t *pte;
 
 		va = PGROUNDDOWN(dstva);
+
+		/* 处理写 COW 页 */
+		pte = walk(pgdir, va, 0, 0);
+		if (pte && (*pte & PTE_P) && (*pte & PTE_COW)) {
+			if (uvm_cow_fault(pgdir, va) < 0)
+				return -1;
+		}
 		pa = walkaddr(pgdir, va);
 		if (pa == 0)
 			return -1;
@@ -491,7 +542,7 @@ void uvmfree(pagetable_t pgdir)
 		if (pte == 0)
 			continue;
 		if (*pte & PTE_P) {
-			free_page((void *)PTE_ADDR(*pte));
+			put_page((void *)PTE_ADDR(*pte));
 			*pte = 0;
 		}
 	}
