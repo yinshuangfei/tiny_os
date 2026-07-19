@@ -112,6 +112,24 @@ close:
 	popl %ebx
 	ret
 
+.globl dup
+dup:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl $SYS_dup, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl pipe
+pipe:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl $SYS_pipe, %eax
+	int $0x80
+	popl %ebx
+	ret
+
 .globl fstat
 fstat:
 	pushl %ebx

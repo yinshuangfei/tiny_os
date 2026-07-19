@@ -20,6 +20,8 @@
 #define SYS_kill	37	/* Linux i386 __NR_kill */
 #define SYS_mkdir	39	/* Linux i386 __NR_mkdir */
 #define SYS_rmdir	40	/* Linux i386 __NR_rmdir */
+#define SYS_dup		41	/* Linux i386 __NR_dup */
+#define SYS_pipe	42	/* Linux i386 __NR_pipe */
 #define SYS_signal	48	/* Linux i386 __NR_signal */
 #define SYS_sigreturn	119	/* Linux i386 __NR_sigreturn */
 #define SYS_nanosleep	162	/* Linux i386 __NR_nanosleep */
@@ -36,11 +38,13 @@ struct timespec {
  * st_mode 使用 S_IF* 文件类型位。
  */
 #define S_IFMT		00170000
+#define S_IFIFO		0010000
 #define S_IFDIR		0040000
 #define S_IFCHR		0020000
 #define S_IFBLK		0060000
 #define S_IFREG		0100000
 
+#define S_ISFIFO(m)	(((m) & S_IFMT) == S_IFIFO)
 #define S_ISDIR(m)	(((m) & S_IFMT) == S_IFDIR)
 #define S_ISCHR(m)	(((m) & S_IFMT) == S_IFCHR)
 #define S_ISBLK(m)	(((m) & S_IFMT) == S_IFBLK)

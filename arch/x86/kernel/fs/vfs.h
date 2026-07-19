@@ -25,10 +25,13 @@ enum inode_type {
 	T_FILE	= 2,			/* 普通文件 */
 	T_CHAR	= 3,			/* 字符设备（如 console） */
 	T_BLK	= 4,			/* 块设备（如 hda） */
+	T_FIFO	= 5,			/* 管道 / FIFO（S_IFIFO） */
 };
 
 struct proc;
 struct inode;
+struct pipe;
+struct file;
 
 /* 内核目录树节点（对应 Linux VFS 的 dentry 角色，非用户 ABI） */
 struct dentry {
@@ -61,6 +64,7 @@ struct inode {
 	uint ref;			/* 引用计数 */
 	uint size;			/* 文件、目录大小（块设备可为容量字节数） */
 	char *data;			/* T_FILE 内容（后端私有用法） */
+	struct pipe *i_pipe;		/* T_FIFO：pipe_inode_info（类 Linux i_pipe） */
 	struct dentry *dents;		/* T_DIR 子项（后端私有用法） */
 	struct inode *parent;		/* 父目录（root->parent == root） */
 	const struct inode_operations *i_op; /* 后端操作表 */
@@ -69,11 +73,12 @@ struct inode {
 /*
  * 打开文件（对齐 Linux struct file 教学子集；属 VFS，见 file.c）。
  * 设备号不缓存在 file 上，经 f_inode（此处 ip）读取，同 Linux。
+ * 匿名管道两端均为 FD_INODE，共享同一 T_FIFO inode（缓冲在 ip->i_pipe）。
  */
 struct file {
 	enum {
 		FD_NONE,		/* 无文件 */
-		FD_INODE,		/* 普通文件 / 目录 */
+		FD_INODE,		/* 普通文件 / 目录 / FIFO */
 		FD_CHAR,		/* 字符设备 */
 		FD_BLOCK		/* 块设备 */
 	} type;
@@ -123,5 +128,9 @@ void fd_closeall(struct proc *p);
 
 /* 将 inode 链到 ramfs 目录（跨后端挂接，如 ext2 → /mnt） */
 int ramfs_link(struct inode *dir, const char *name, struct inode *ip);
+
+/* 匿名管道（Linux pipe(2) / pipefs 教学子集） */
+int pipealloc(struct file **f0, struct file **f1);
+void pipe_release(struct file *f);
 
 #endif

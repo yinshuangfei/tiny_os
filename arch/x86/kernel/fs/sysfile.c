@@ -67,6 +67,8 @@ static unsigned short inode_to_mode(short type)
 		return S_IFCHR;
 	case T_BLK:
 		return S_IFBLK;
+	case T_FIFO:
+		return S_IFIFO;
 	default:
 		return 0;
 	}
@@ -146,6 +148,57 @@ int sys_close(struct trapframe *tf)
 	return 0;
 }
 
+/* dup(oldfd)：复制到最小空闲 fd（对齐 Linux dup） */
+int sys_dup(struct trapframe *tf)
+{
+	int fd, nfd;
+	struct file *f;
+
+	if (argint(tf, 0, &fd) < 0)
+		return -1;
+	f = fdget(fd);
+	if (!f)
+		return -1;
+	nfd = fdalloc(f);
+	if (nfd < 0)
+		return -1;
+	filedup(f);
+	return nfd;
+}
+
+/* pipe(fd[2])：fd[0] 读端，fd[1] 写端 */
+int sys_pipe(struct trapframe *tf)
+{
+	uint uaddr;
+	struct proc *p = myproc();
+	struct file *rf, *wf;
+	int fd0, fd1;
+
+	if (argaddr(tf, 0, &uaddr) < 0)
+		return -1;
+	if (!p || !p->pagetable)
+		return -1;
+	if (pipealloc(&rf, &wf) < 0)
+		return -1;
+	fd0 = -1;
+	if ((fd0 = fdalloc(rf)) < 0 || (fd1 = fdalloc(wf)) < 0) {
+		if (fd0 >= 0)
+			p->ofile[fd0] = 0;
+		fileclose(rf);
+		fileclose(wf);
+		return -1;
+	}
+	if (copyout(p->pagetable, uaddr, &fd0, sizeof(fd0)) < 0 ||
+	    copyout(p->pagetable, uaddr + sizeof(fd0), &fd1, sizeof(fd1)) < 0) {
+		p->ofile[fd0] = 0;
+		p->ofile[fd1] = 0;
+		fileclose(rf);
+		fileclose(wf);
+		return -1;
+	}
+	return 0;
+}
+
 int sys_read(struct trapframe *tf)
 {
 	int fd, n;
@@ -178,7 +231,8 @@ int sys_read(struct trapframe *tf)
 		if (copyout(p->pagetable, uaddr + total, buf, r) < 0)
 			return -1;
 		total += r;
-		if (r < chunk)
+		/* 管道：一旦读到数据即返回（与 Linux 短读语义一致） */
+		if (r < chunk || (f->ip && f->ip->type == T_FIFO))
 			break;
 	}
 	return total;

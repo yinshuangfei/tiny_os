@@ -47,6 +47,8 @@ static unsigned char inode_to_dtype(short type)
 		return DT_CHR;
 	case T_BLK:
 		return DT_BLK;
+	case T_FIFO:
+		return DT_FIFO;
 	default:
 		return DT_UNKNOWN;
 	}
@@ -83,6 +85,7 @@ static struct inode *ialloc(short type)
 			ip->ref = 1;
 			ip->size = 0;
 			ip->data = 0;
+			ip->i_pipe = 0;
 			ip->dents = 0;
 			ip->parent = 0;
 			ip->rdev = 0;

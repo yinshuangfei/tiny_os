@@ -25,6 +25,8 @@ int read(int fd, void *buf, int n);
 int write(int, const void *, int);
 int open(const char *path, int flags);
 int close(int fd);
+int dup(int fd);
+int pipe(int fd[2]);
 int fstat(int fd, struct stat *st);
 int stat(const char *path, struct stat *st);
 int chdir(const char *path);

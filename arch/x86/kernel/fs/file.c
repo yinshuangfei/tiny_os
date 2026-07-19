@@ -60,6 +60,12 @@ void fileclose(struct file *f)
 	f->ref--;
 	if (f->ref > 0)
 		return;
+	/*
+	 * FIFO：先 pipe_release（减 readers/writers），再 iput。
+	 * 对齐 Linux f_op->release + fput。
+	 */
+	if (f->ip && f->ip->type == T_FIFO)
+		pipe_release(f);
 	if (f->type == FD_INODE || f->type == FD_CHAR || f->type == FD_BLOCK)
 		fs_iput(f->ip);
 	f->type = FD_NONE;
@@ -165,6 +171,9 @@ int fileread(struct file *f, char *dst, int n)
 	if (f->type == FD_CHAR)
 		return file_char_read(f, dst, n);
 	if (f->type == FD_INODE) {
+		/* T_FIFO：无文件偏移（pipe 流式缓冲在 i_pipe） */
+		if (f->ip && f->ip->type == T_FIFO)
+			return fs_readi(f->ip, dst, 0, (uint)n);
 		r = fs_readi(f->ip, dst, f->off, (uint)n);
 		if (r > 0)
 			f->off += r;
@@ -185,6 +194,8 @@ int filewrite(struct file *f, char *src, int n)
 	if (f->type == FD_CHAR)
 		return file_char_write(f, src, n);
 	if (f->type == FD_INODE) {
+		if (f->ip && f->ip->type == T_FIFO)
+			return fs_writei(f->ip, src, 0, (uint)n);
 		r = fs_writei(f->ip, src, f->off, (uint)n);
 		if (r > 0)
 			f->off += r;

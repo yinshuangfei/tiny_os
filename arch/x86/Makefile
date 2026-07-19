@@ -154,6 +154,7 @@ C_OBJS = \
 	$(KDIR)/fs/ext2.o \
 	$(KDIR)/fs/mount.o \
 	$(KDIR)/fs/file.o \
+	$(KDIR)/fs/pipe.o \
 	$(KDIR)/fs/sysfile.o \
 	$(KDIR)/block/genhd.o \
 	$(KDIR)/block/bio.o \

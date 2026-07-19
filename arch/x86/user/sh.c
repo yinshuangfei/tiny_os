@@ -763,7 +763,7 @@ struct builtin {
 static const struct builtin builtins[] = {
 	{ "help",    "          show this message",     cmd_help },
 	{ "echo",    " [args]   print arguments",       cmd_echo },
-	{ "cat",     " <path>   print file",            cmd_cat },
+	{ "cat",     " [path]   print file or stdin",   cmd_cat },
 	{ "cd",      " [path]   change directory",      cmd_cd },
 	{ "pwd",     "          print working directory", cmd_pwd },
 	{ "mkdir",   " <path>   create directory",      cmd_mkdir },
@@ -948,22 +948,35 @@ static int cmd_ls(int argc, char **argv)
 static int cmd_cat(int argc, char **argv)
 {
 	char buf[64];
-	int fd, n;
+	int fd, n, i, err;
 
 	if (argc < 2) {
-		printf("%s cat <path>\n", C_RED("usage:"));
-		return 1;
+		while ((n = read(0, buf, sizeof(buf))) > 0) {
+			if (write(1, buf, n) != n)
+				return 1;
+		}
+		return n < 0 ? 1 : 0;
 	}
-	fd = open(argv[1], O_RDONLY);
-	if (fd < 0) {
-		printf("%s cannot open %s\n", C_RED("cat:"), argv[1]);
-		return 1;
+
+	err = 0;
+	for (i = 1; i < argc; i++) {
+		fd = open(argv[i], O_RDONLY);
+		if (fd < 0) {
+			printf("%s cannot open %s\n", C_RED("cat:"), argv[i]);
+			err = 1;
+			continue;
+		}
+		while ((n = read(fd, buf, sizeof(buf))) > 0) {
+			if (write(1, buf, n) != n) {
+				close(fd);
+				return 1;
+			}
+		}
+		close(fd);
+		if (n < 0)
+			err = 1;
 	}
-	while ((n = read(fd, buf, sizeof(buf))) > 0) {
-		write(1, buf, n);
-	}
-	close(fd);
-	return 0;
+	return err;
 }
 
 static int cmd_pid(int argc, char **argv)
@@ -1029,6 +1042,79 @@ static int run_builtin(int argc, char **argv)
 	return 0;
 }
 
+/* 在当前进程执行命令后 exit（管道子进程用） */
+static void runcmd(int argc, char **argv) __attribute__((noreturn));
+
+static int find_pipe(char **argv, int argc)
+{
+	int i;
+
+	for (i = 0; i < argc; i++) {
+		if (strcmp(argv[i], "|") == 0)
+			return i;
+	}
+	return -1;
+}
+
+/* 递归处理管道 */
+static void runcmd(int argc, char **argv)
+{
+	int bar, p[2], status;
+
+	bar = find_pipe(argv, argc);
+	if (bar < 0) {
+		if (run_builtin(argc, argv))
+			exit(0);
+		execve(argv[0], argv, 0);
+		printf("%s exec %s failed\n", C_RED("sh:"), argv[0]);
+		exit(1);
+	}
+	if (bar == 0 || bar == argc - 1) {
+		printf("%s invalid pipe\n", C_RED("sh:"));
+		exit(1);
+	}
+
+	if (pipe(p) < 0) {
+		printf("%s pipe failed\n", C_RED("sh:"));
+		exit(1);
+	}
+
+	/* 子进程：左端，写入 */
+	if (fork() == 0) {
+		close(1);
+		if (dup(p[1]) != 1) {
+			printf("%s dup failed\n", C_RED("sh:"));
+			exit(1);
+		}
+		close(p[0]);
+		close(p[1]);
+		argv[bar] = 0;
+		if (run_builtin(bar, argv))
+			exit(0);
+		execve(argv[0], argv, 0);
+		printf("%s exec %s failed\n", C_RED("sh:"), argv[0]);
+		exit(1);
+	}
+
+	/* 子进程：右端, 读取 */
+	if (fork() == 0) {
+		close(0);
+		if (dup(p[0]) != 0) {
+			printf("%s dup failed\n", C_RED("sh:"));
+			exit(1);
+		}
+		close(p[0]);
+		close(p[1]);
+		runcmd(argc - bar - 1, argv + bar + 1);
+	}
+
+	close(p[0]);
+	close(p[1]);
+	waitpid(-1, &status, 0);
+	waitpid(-1, &status, 0);
+	exit(0);
+}
+
 /* 执行外部命令（传入完整 argv） */
 static void run_external(int argc, char **argv)
 {
@@ -1052,12 +1138,25 @@ static void run_external(int argc, char **argv)
 static void run_line(char *line)
 {
 	char *argv[MAXARGV];
-	int argc;
+	int argc, pid, status;
 
 	argc = split_argv(line, argv, MAXARGV);
 	if (argc == 0) {
 		return;
 	}
+
+	if (find_pipe(argv, argc) >= 0) {
+		pid = fork();
+		if (pid == 0)
+			runcmd(argc, argv);
+		if (pid < 0) {
+			printf("%s fork failed\n", C_RED("sh:"));
+			return;
+		}
+		waitpid(pid, &status, 0);
+		return;
+	}
+
 	if (run_builtin(argc, argv)) {
 		return;
 	}
