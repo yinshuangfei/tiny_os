@@ -166,6 +166,21 @@ int sys_dup(struct trapframe *tf)
 	return nfd;
 }
 
+/* lseek(fd, offset, whence)：成功返回新偏移 */
+int sys_lseek(struct trapframe *tf)
+{
+	int fd, offset, whence;
+	struct file *f;
+
+	if (argint(tf, 0, &fd) < 0 || argint(tf, 1, &offset) < 0 ||
+	    argint(tf, 2, &whence) < 0)
+		return -1;
+	f = fdget(fd);
+	if (!f)
+		return -1;
+	return filelseek(f, offset, whence);
+}
+
 /* pipe(fd[2])：fd[0] 读端，fd[1] 写端 */
 int sys_pipe(struct trapframe *tf)
 {

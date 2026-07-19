@@ -28,6 +28,7 @@ int sys_mkdir(struct trapframe *tf);
 int sys_rmdir(struct trapframe *tf);
 int sys_dup(struct trapframe *tf);
 int sys_pipe(struct trapframe *tf);
+int sys_lseek(struct trapframe *tf);
 int sys_kill(struct trapframe *tf);
 int sys_signal(struct trapframe *tf);
 int sys_sigreturn(struct trapframe *tf);

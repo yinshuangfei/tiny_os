@@ -27,6 +27,7 @@ int open(const char *path, int flags);
 int close(int fd);
 int dup(int fd);
 int pipe(int fd[2]);
+int lseek(int fd, int offset, int whence);
 int fstat(int fd, struct stat *st);
 int stat(const char *path, struct stat *st);
 int chdir(const char *path);

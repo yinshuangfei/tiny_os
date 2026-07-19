@@ -15,6 +15,7 @@
 #define SYS_execve	11
 #define SYS_chdir	12	/* Linux i386 __NR_chdir */
 #define SYS_stat	18	/* Linux i386 __NR_oldstat（与 fstat=28 同代） */
+#define SYS_lseek	19	/* Linux i386 __NR_lseek */
 #define SYS_getpid	20
 #define SYS_fstat	28	/* Linux i386 __NR_oldfstat */
 #define SYS_kill	37	/* Linux i386 __NR_kill */
@@ -61,6 +62,11 @@ struct stat {
 #define O_WRONLY	0x001
 #define O_RDWR		0x002
 #define O_CREATE	0x200
+
+/* lseek whence（与 Linux <unistd.h> 一致） */
+#define SEEK_SET	0
+#define SEEK_CUR	1
+#define SEEK_END	2
 #endif
 
 #endif

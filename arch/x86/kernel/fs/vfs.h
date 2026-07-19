@@ -95,6 +95,11 @@ struct file {
 #define O_RDWR		0x002
 #define O_CREATE	0x200
 
+/* lseek whence（与 Linux / 用户态 syscall.h 一致） */
+#define SEEK_SET	0
+#define SEEK_CUR	1
+#define SEEK_END	2
+
 /* VFS 根目录（由具体 FS 在 init 时 vfs_set_root） */
 void vfs_set_root(struct inode *root);
 struct inode *vfs_root(void);
@@ -119,6 +124,7 @@ struct file *filedup(struct file *f);
 void fileclose(struct file *f);
 int fileread(struct file *f, char *dst, int n);
 int filewrite(struct file *f, char *src, int n);
+int filelseek(struct file *f, int offset, int whence);
 
 int fdalloc(struct file *f);
 struct file *fdget(int fd);

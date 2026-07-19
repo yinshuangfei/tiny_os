@@ -204,6 +204,46 @@ int filewrite(struct file *f, char *src, int n)
 	return -1;
 }
 
+/*
+ * 调整文件偏移（对齐 Linux lseek 教学子集）。
+ * 成功返回新偏移；管道/字符设备不可定位，返回 -1（类 ESPIPE）。
+ */
+int filelseek(struct file *f, int offset, int whence)
+{
+	int newoff;
+	uint size;
+
+	if (!f)
+		return -1;
+	if (f->type == FD_CHAR)
+		return -1;
+	if (f->type == FD_INODE && f->ip && f->ip->type == T_FIFO)
+		return -1;
+	if (f->type != FD_INODE && f->type != FD_BLOCK)
+		return -1;
+	if (!f->ip)
+		return -1;
+
+	size = f->ip->size;
+	switch (whence) {
+	case SEEK_SET:
+		newoff = offset;
+		break;
+	case SEEK_CUR:
+		newoff = (int)f->off + offset;
+		break;
+	case SEEK_END:
+		newoff = (int)size + offset;
+		break;
+	default:
+		return -1;
+	}
+	if (newoff < 0)
+		return -1;
+	f->off = (uint)newoff;
+	return newoff;
+}
+
 /* 分配一个空闲文件描述符 */
 int fdalloc(struct file *f)
 {
