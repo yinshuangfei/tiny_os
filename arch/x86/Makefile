@@ -64,6 +64,7 @@ USER_LIB_OBJS = \
 	$(USERDIR)/lib/sleep.o \
 	$(USERDIR)/lib/wait.o \
 	$(USERDIR)/lib/sbrk.o \
+	$(USERDIR)/lib/mmap.o \
 	$(USERDIR)/lib/string.o \
 	$(USERDIR)/lib/ansi.o
 
@@ -140,6 +141,7 @@ C_OBJS = \
 	$(KDIR)/mm/buddy.o \
 	$(KDIR)/mm/slab.o \
 	$(KDIR)/mm/vm.o \
+	$(KDIR)/mm/mmap.o \
 	$(KDIR)/proc.o \
 	$(KDIR)/task_queue.o \
 	$(KDIR)/init.o \
@@ -209,6 +211,9 @@ $(USERDIR)/lib/wait.o: $(USERDIR)/lib/wait.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/lib/sbrk.o: $(USERDIR)/lib/sbrk.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(USERDIR)/lib/mmap.o: $(USERDIR)/lib/mmap.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/lib/string.o: $(USERDIR)/lib/string.c

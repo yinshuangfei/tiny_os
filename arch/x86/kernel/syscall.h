@@ -32,6 +32,8 @@ int sys_rename(struct trapframe *tf);
 int sys_dup(struct trapframe *tf);
 int sys_pipe(struct trapframe *tf);
 int sys_brk(struct trapframe *tf);
+int sys_mmap2(struct trapframe *tf);
+int sys_munmap(struct trapframe *tf);
 int sys_lseek(struct trapframe *tf);
 int sys_kill(struct trapframe *tf);
 int sys_signal(struct trapframe *tf);

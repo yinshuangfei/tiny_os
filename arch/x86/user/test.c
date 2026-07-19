@@ -526,6 +526,51 @@ void brk_test(void)
 	lib_pr_result("sbrk", ok);
 }
 
+/*
+ * 匿名 mmap / munmap：映射、读写、卸映射；非法 flags 应失败。
+ */
+void mmap_test(void)
+{
+	char *p;
+	int ok = 1;
+	int i;
+
+	p = mmap(0, 4096, PROT_READ | PROT_WRITE,
+		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED || p == 0) {
+		printf("mmap: anonymous map failed\n");
+		syscall_pr_result("mmap", 0);
+		lib_pr_result("munmap", 0);
+		return;
+	}
+
+	for (i = 0; i < 4096; i++)
+		p[i] = (char)(i & 0xff);
+	for (i = 0; i < 4096; i++) {
+		if (p[i] != (char)(i & 0xff)) {
+			printf("mmap: write/read mismatch\n");
+			ok = 0;
+			break;
+		}
+	}
+
+	if (munmap(p, 4096) < 0) {
+		printf("mmap: munmap failed\n");
+		ok = 0;
+	}
+
+	/* 非匿名应失败 */
+	p = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE, -1, 0);
+	if (p != MAP_FAILED) {
+		printf("mmap: non-anonymous should fail\n");
+		ok = 0;
+		munmap(p, 4096);
+	}
+
+	lib_pr_result("mmap", ok);
+	syscall_pr_result("munmap", ok);
+}
+
 /**
  * 可以只使用
  * int main(int argc, char *argv[])
@@ -552,5 +597,6 @@ int main(int argc, char *argv[], char *envp[])
 	wait_test();
 	cow_fork_test();
 	brk_test();
+	mmap_test();
 	exit(0);
 }

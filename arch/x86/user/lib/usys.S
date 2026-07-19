@@ -139,6 +139,40 @@ brk:
 	popl %ebx
 	ret
 
+/*
+ * mmap2(addr, len, prot, flags, fd, pgoff) — 六参数，ebp=arg5。
+ * 须保存/恢复 callee-saved 寄存器。
+ */
+.globl mmap2
+mmap2:
+	pushl %ebx
+	pushl %esi
+	pushl %edi
+	pushl %ebp
+	movl 20(%esp), %ebx
+	movl 24(%esp), %ecx
+	movl 28(%esp), %edx
+	movl 32(%esp), %esi
+	movl 36(%esp), %edi
+	movl 40(%esp), %ebp
+	movl $SYS_mmap2, %eax
+	int $0x80
+	popl %ebp
+	popl %edi
+	popl %esi
+	popl %ebx
+	ret
+
+.globl munmap
+munmap:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl $SYS_munmap, %eax
+	int $0x80
+	popl %ebx
+	ret
+
 .globl lseek
 lseek:
 	pushl %ebx

@@ -883,6 +883,7 @@ int fork_copy(struct trapframe *tf)
 	np->sz = p->sz;
 	np->brk = p->brk;
 	np->brk_start = p->brk_start;
+	vma_copy(np, p);
 	np->parent = p;
 	proc_name_set(np->name, p->name);
 

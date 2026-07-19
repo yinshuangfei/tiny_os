@@ -25,6 +25,9 @@ int waitpid(int pid, int *status, int options);
 int wait(int *status);
 void *brk(void *addr);
 void *sbrk(int incr);
+void *mmap(void *addr, unsigned int length, int prot, int flags,
+	   int fd, int offset);
+int munmap(void *addr, unsigned int length);
 int read(int fd, void *buf, int n);
 int write(int, const void *, int);
 int open(const char *path, int flags);

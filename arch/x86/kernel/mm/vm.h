@@ -37,4 +37,13 @@ int copyin(pagetable_t pgdir, void *dst, uint srcva, uint n);
 int copyout(pagetable_t pgdir, uint dstva, const void *src, uint n);
 int copyinstr(pagetable_t pgdir, char *dst, uint srcva, uint max);
 
+/* 匿名 mmap（mm/mmap.c） */
+struct proc;
+void vma_clear(struct proc *p);
+void vma_copy(struct proc *dst, struct proc *src);
+int vma_overlaps_brk(struct proc *p, uint old_brk, uint new_brk);
+uint do_mmap(struct proc *p, uint addr, uint len, int prot, int flags,
+	     int fd, uint pgoff);
+int do_munmap(struct proc *p, uint addr, uint len);
+
 #endif

@@ -28,9 +28,11 @@
 #define SYS_pipe	42	/* Linux i386 __NR_pipe */
 #define SYS_brk		45	/* Linux i386 __NR_brk */
 #define SYS_signal	48	/* Linux i386 __NR_signal */
+#define SYS_munmap	91	/* Linux i386 __NR_munmap */
 #define SYS_sigreturn	119	/* Linux i386 __NR_sigreturn */
 #define SYS_nanosleep	162	/* Linux i386 __NR_nanosleep */
 #define SYS_getcwd	183	/* Linux i386 __NR_getcwd */
+#define SYS_mmap2	192	/* Linux i386 __NR_mmap2（offset 为页偏移） */
 
 #ifndef __ASSEMBLER__
 struct timespec {
@@ -71,6 +73,19 @@ struct stat {
 #define SEEK_SET	0
 #define SEEK_CUR	1
 #define SEEK_END	2
+
+/* mmap prot / flags（与 Linux 一致；本内核先支持匿名 PRIVATE） */
+#define PROT_NONE	0x0	/* 无保护 */
+#define PROT_READ	0x1	/* 读保护 */
+#define PROT_WRITE	0x2	/* 写保护 */
+#define PROT_EXEC	0x4	/* 执行保护 */
+
+#define MAP_SHARED	0x01	/* 共享映射 */
+#define MAP_PRIVATE	0x02	/* 私有映射 */
+#define MAP_FIXED	0x10	/* 固定映射 */
+#define MAP_ANONYMOUS	0x20	/* 匿名映射 */
+
+#define MAP_FAILED	((void *)-1)	/* 映射失败 */
 #endif
 
 #endif

@@ -62,6 +62,9 @@ int sys_brk(struct trapframe *tf)
 		return (int)old;
 
 	if (addr > old) {
+		/* 不可侵入已有 mmap 区域 */
+		if (vma_overlaps_brk(p, old, addr))
+			return (int)old;
 		if (uvmalloc(p->pagetable, old, addr) == 0)
 			return (int)old;
 	} else if (addr < old) {
@@ -70,6 +73,49 @@ int sys_brk(struct trapframe *tf)
 	}
 	p->brk = addr;
 	return (int)p->brk;
+}
+
+/*
+ * mmap2(addr, len, prot, flags, fd, pgoff)：匿名映射（对齐 Linux __NR_mmap2）。
+ * 成功返回用户 VA；失败返回 -1（用户态 MAP_FAILED）。
+ */
+int sys_mmap2(struct trapframe *tf)
+{
+	uint addr, len, pgoff;
+	int prot, flags, fd;
+	struct proc *p = myproc();
+
+	if (!p || !p->pagetable)
+		return -1;
+	if (argaddr(tf, 0, &addr) < 0)
+		return -1;
+	if (argaddr(tf, 1, &len) < 0)
+		return -1;
+	if (argint(tf, 2, &prot) < 0)
+		return -1;
+	if (argint(tf, 3, &flags) < 0)
+		return -1;
+	if (argint(tf, 4, &fd) < 0)
+		return -1;
+	if (argaddr(tf, 5, &pgoff) < 0)
+		return -1;
+
+	return (int)do_mmap(p, addr, len, prot, flags, fd, pgoff);
+}
+
+int sys_munmap(struct trapframe *tf)
+{
+	uint addr, len;
+	struct proc *p = myproc();
+
+	if (!p || !p->pagetable)
+		return -1;
+	if (argaddr(tf, 0, &addr) < 0)
+		return -1;
+	if (argaddr(tf, 1, &len) < 0)
+		return -1;
+
+	return do_munmap(p, addr, len);
 }
 
 int sys_waitpid(struct trapframe *tf)

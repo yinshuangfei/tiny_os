@@ -11,6 +11,15 @@
 struct file;
 struct inode;
 
+/* 用户 mmap 区域（对齐 Linux vm_area_struct 教学子集） */
+struct vma {
+	int used;			/* 是否被使用 */
+	uint start;			/* [start, end) 页对齐 */
+	uint end;			/* [start, end) 页对齐 */
+	int prot;			/* 保护标志 PROT_READ, PROT_WRITE, PROT_EXEC */
+	int flags;			/* 标志位 MAP_SHARED, MAP_PRIVATE, MAP_FIXED, MAP_ANONYMOUS */
+};
+
 /* 用 X-Macro 维护一份 PROCSTATE_LIST */
 #define PROCSTATE_LIST \
 	X(UNUSED) \
@@ -69,6 +78,7 @@ struct proc {
 	uint sz;			/* 用户 VA 扫描上界（fork/COW，现为 USERSTACK） */
 	uint brk;			/* 程序间断点（heap end，类 Linux mm->brk） */
 	uint brk_start;			/* exec 后初始 brk（不可再缩小到其下） */
+	struct vma vmas[NVMA];		/* 匿名 mmap 区域表 */
 	char name[NNAME];
 	struct file *ofile[NOFILE];	/* 打开文件表 */
 	struct inode *cwd;		/* 当前工作目录 */
