@@ -2,33 +2,37 @@
 #include "user.h"
 #include "signal.h"
 
-static int test_check(const char *name, int ok)
+static int syscall_pr_result(const char *name, int ok)
 {
-	printf("syscall %s(): %s\n", name, ok ? C_GREEN("OK") : C_RED("FAIL"));
+	printf("* syscall %s(): %s\n", name, ok ? C_GREEN("OK") : C_RED("FAIL"));
+	return ok;
+}
+
+static int lib_pr_result(const char *name, int ok)
+{
+	printf("* lib %s(): %s\n", name, ok ? C_GREEN("OK") : C_RED("FAIL"));
 	return ok;
 }
 
 void getpid_test(void)
 {
 	int pid = getpid();
-
-	printf("get pid=%d\n", pid);
-	test_check("getpid", pid > 0 && pid < 0xff);
+	syscall_pr_result("getpid", pid > 0 && pid < 0xff);
 }
 
 void write_test(void)
 {
-	write(1, "hello, world\n", 13);
-	test_check("write", 1);
+	char *buf = "hello, world\n";
+	int rc = write(1, buf, strlen(buf));
+	syscall_pr_result("write", rc == strlen(buf));
 }
 
 void nanosleep_test(void)
 {
 	int rc;
-	struct timespec ts = { 1, 0 };	/* 1s，100Hz → 100 tick */
+	struct timespec ts = { 0, 500000000 };	/* 1s，100Hz → 100 tick */
 	rc = nanosleep(&ts, 0);
-	printf("nanosleep rc=%d\n", rc);
-	test_check("nanosleep", 1);
+	syscall_pr_result("nanosleep", rc == 0);
 }
 
 static volatile int sig_got;
@@ -50,16 +54,15 @@ void signal_test(void)
 	sig_got = 0;
 	if (kill(getpid(), SIGUSR1) < 0) {
 		printf("kill self failed\n");
-		test_check("signal", 0);
+		syscall_pr_result("signal", 0);
 		return;
 	}
 	if (sig_got != SIGUSR1) {
 		printf("FAIL: got=%d expect %d\n", sig_got, SIGUSR1);
-		test_check("signal", 0);
+		syscall_pr_result("signal", 0);
 		return;
 	}
-	printf("signal OK\n");
-	test_check("signal", 1);
+	syscall_pr_result("signal", 1);
 }
 
 /*
@@ -76,7 +79,7 @@ void lseek_test(void)
 	fd = open("/hello", O_RDONLY);
 	if (fd < 0) {
 		printf("lseek: open /hello failed\n");
-		test_check("lseek", 0);
+		syscall_pr_result("lseek", 0);
 		return;
 	}
 
@@ -139,7 +142,7 @@ void lseek_test(void)
 		close(p[1]);
 	}
 
-	test_check("lseek", ok);
+	syscall_pr_result("lseek", ok);
 }
 
 /* 写小文件；成功返回 0 */
@@ -192,8 +195,8 @@ void link_unlink_test(void)
 
 	if (write_file("/t_a", "linkdata") < 0) {
 		printf("link: create /t_a failed\n");
-		test_check("link", 0);
-		test_check("unlink", 0);
+		syscall_pr_result("link", 0);
+		syscall_pr_result("unlink", 0);
 		return;
 	}
 
@@ -211,7 +214,7 @@ void link_unlink_test(void)
 		ok = 0;
 		unlink("/t_rootlink");
 	}
-	test_check("link", ok);
+	syscall_pr_result("link", ok);
 
 	ok = 1;
 	if (unlink("/t_a") < 0) {
@@ -236,7 +239,7 @@ void link_unlink_test(void)
 		printf("unlink: dir should fail\n");
 		ok = 0;
 	}
-	test_check("unlink", ok);
+	syscall_pr_result("unlink", ok);
 }
 
 /*
@@ -255,7 +258,7 @@ void rename_test(void)
 
 	if (write_file("/t_r1", "renamed") < 0) {
 		printf("rename: create failed\n");
-		test_check("rename", 0);
+		syscall_pr_result("rename", 0);
 		return;
 	}
 
@@ -314,7 +317,7 @@ void rename_test(void)
 	unlink("/t_r2");
 	unlink("/t_sub/x");
 	rmdir("/t_sub");
-	test_check("rename", ok);
+	syscall_pr_result("rename", ok);
 }
 
 /*
@@ -335,7 +338,7 @@ void wait_test(void)
 	pid = fork();
 	if (pid < 0) {
 		printf("wait: fork failed\n");
-		test_check("wait", 0);
+		syscall_pr_result("wait", 0);
 		return;
 	}
 	if (pid == 0)
@@ -375,7 +378,7 @@ void wait_test(void)
 		ok = 0;
 	}
 
-	test_check("wait", ok);
+	lib_pr_result("wait", ok);
 }
 
 /**

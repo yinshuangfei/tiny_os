@@ -181,7 +181,7 @@ static void exit_with_xstate(int xstate)
 	if (parent)
 		wakeup(parent);
 
-	printf("exit: pid=%d xstate=%d\n", p->pid, xstate);
+	printk(KERN_DEBUG "exit: pid=%d xstate=%d\n", p->pid, xstate);
 	sched();
 	for (;;)
 		halt();
