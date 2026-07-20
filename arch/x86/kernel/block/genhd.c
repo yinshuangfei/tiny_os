@@ -35,6 +35,7 @@ struct request_queue *blk_alloc_queue(void)
 	q->queuedata = 0;
 	q->logical_block_size = BLOCK_SECTOR_SIZE;
 	initlock(&q->queue_lock, "blkq");
+	INIT_LIST_HEAD(&q->queue_head);
 	return q;
 }
 

@@ -3,9 +3,11 @@
  *
  * Linux 对应关系（简化）：
  *   gendisk          — 整盘（如 hda）
- *   request_queue    — 每盘一条队列，挂 make_request_fn
+ *   request_queue    — 每盘一条队列，挂 make_request_fn 与 queue_head
+ *   request          — 队列中的一项（本实现与 bio 1:1）
  *   bio              — 一次 I/O 描述（扇区 + 缓冲）
- *   submit_bio()     — 提交 I/O；本实现为同步 PIO，在 make_request 内完成
+ *   submit_bio()     — 提交 I/O；驱动 make_request_fn 入队并 kick
+ *   submit_bio_wait()— 睡眠直到 bi_end_io
  *
  * 驱动侧：alloc_disk → blk_alloc_queue → blk_queue_make_request →
  *         set_capacity → add_disk。
@@ -39,6 +41,7 @@ typedef int blk_status_t;
 struct gendisk;
 struct request_queue;
 struct bio;
+struct request;
 
 /* ---------- block_device_operations（Linux blkdev_ops 子集） ---------- */
 
@@ -46,6 +49,15 @@ struct block_device_operations {
 	int (*open)(struct gendisk *disk);		/* 打开 */
 	void (*release)(struct gendisk *disk);		/* 释放 */
 	int (*getgeo)(struct gendisk *disk, void *geo);	/* 获取几何信息 */
+};
+
+/* ---------- request（队列项，教学：与 bio 一对一） ---------- */
+
+struct request {
+	struct list_head queuelist;		/* 挂在 q->queue_head */
+	struct request_queue *q;		/* 所属队列 */
+	struct bio *bio;			/* 关联 bio */
+	blk_status_t error;			/* 错误状态 */
 };
 
 /* ---------- request_queue ---------- */
@@ -58,6 +70,7 @@ struct request_queue {
 	void *queuedata;				/* 驱动私有（常为 ide_disk*） */
 	unsigned int logical_block_size;		/* 逻辑块大小 */
 	struct spinlock queue_lock;			/* 队列锁 */
+	struct list_head queue_head;			/* 待处理 request FIFO */
 };
 
 /* ---------- gendisk ---------- */
@@ -99,6 +112,13 @@ struct request_queue *blk_alloc_queue(void);
 void blk_cleanup_queue(struct request_queue *q);
 void blk_queue_make_request(struct request_queue *q, make_request_fn *fn);
 void blk_queue_logical_block_size(struct request_queue *q, unsigned int size);
+
+struct request *blk_alloc_request(struct request_queue *q);
+void blk_free_request(struct request *rq);
+void blk_queue_push(struct request_queue *q, struct request *rq);
+struct request *blk_queue_pop(struct request_queue *q);
+struct request *blk_queue_peek(struct request_queue *q);
+int blk_queue_empty(struct request_queue *q);
 
 struct gendisk *alloc_disk(int minors);
 void put_disk(struct gendisk *disk);

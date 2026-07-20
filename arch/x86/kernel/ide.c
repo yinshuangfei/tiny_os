@@ -1,9 +1,12 @@
 /*
- * ATA PIO 驱动（教学用）：运行期用 IRQ 等待，探测阶段仍轮询。
+ * ATA PIO 驱动（教学用）：请求队列 + IRQ 等待。
  *
  * 每个 IDE 控制器最多 2 通道 × master/slave。
  * 通道端口由板级描述表给出；扫描到磁盘后再 kmalloc 结构体。
  * 命令：IDENTIFY(0xEC)、READ SECTORS(0x20)、WRITE SECTORS(0x30)。
+ *
+ * make_request 将 bio 封装为 request 入队；每通道一个 runner 串行执行。
+ * 探测阶段（sti 前）仍轮询 Status；运行期 IF=1 时 ide_wait 经 IRQ sleep。
  */
 #include "ide.h"
 #include "defs.h"
@@ -83,12 +86,14 @@ static const struct ide_ctl_desc ide_ctls[] = {
 	},
 };
 
-/* 运行时通道：IRQ 完成标志（每通道 outstanding=1，由 ide_lock 串行化） */
+/* 运行时通道：IRQ 完成标志 + 请求队列 runner（每通道 outstanding=1，由 ide_lock 串行化） */
 struct ide_chan {
 	ushort iobase;		/* 通道数据口基址 */
 	ushort altport;		/* 备用状态口 */
 	int irq;		/* ISA IRQ 号 */
 	volatile int done;	/* IRQ 置 1，等待方清 0，完成标志 */
+	int busy;		/* 1：已有进程在 ide_run 本通道 */
+	struct request *cur_rq;	/* 正在执行的 request（可 NULL） */
 };
 
 struct ide_disk {
@@ -144,6 +149,8 @@ static struct ide_chan *ide_chan_get(ushort iobase, ushort altport, int irq)
 	c->altport = altport;
 	c->irq = irq;
 	c->done = 0;
+	c->busy = 0;
+	c->cur_rq = 0;
 	return c;
 }
 
@@ -325,21 +332,131 @@ struct gendisk *ide_gendisk(int drive)
 	return d ? d->gd : 0;
 }
 
+/* 从共享本通道的各盘队列中取队首 request（须持 ide_lock） */
+static struct request *ide_chan_pick(struct ide_chan *c)
+{
+	int i;
+	struct ide_disk *d;
+	struct request *rq;
+
+	for (i = 0; i < ide_ndisk; i++) {
+		d = ide_tab[i];
+		if (!d || d->chan != c || !d->gd || !d->gd->queue)
+			continue;
+		rq = blk_queue_pop(d->gd->queue);
+		if (rq)
+			return rq;
+	}
+	return 0;
+}
+
+static void ide_complete_rq(struct request *rq, blk_status_t st)
+{
+	struct bio *bio;
+
+	if (!rq)
+		return;
+	bio = rq->bio;
+	if (bio) {
+		bio->bi_status = st;
+		if (bio->bi_end_io)
+			bio->bi_end_io(bio);
+	}
+	blk_free_request(rq);
+}
+
 /*
- * Linux 风格 make_request_fn：处理 bio（可多扇区），同步 PIO 完成。
- * 由 submit_bio → d->gd->queue->make_request_fn 调用。
+ * 执行单个 request（扇区循环走 ide_read/write，可 IRQ sleep）。
+ * 不持 ide_lock；完成后由调用方继续 kick。
  */
-static void ide_submit_bio(struct request_queue *q, struct bio *bio)
+static blk_status_t ide_execute_rq(struct request *rq)
 {
 	struct ide_disk *d;
+	struct bio *bio;
 	sector_t sec;
 	unsigned int left;
 	char *p;
 	unsigned int op;
 	int r;
 
-	d = q->queuedata;
-	if (!d || !bio) {
+	if (!rq || !rq->bio || !rq->q)
+		return BLK_STS_IOERR;
+
+	d = rq->q->queuedata;
+	bio = rq->bio;
+	if (!d)
+		return BLK_STS_IOERR;
+
+	sec = bio->bi_sector;
+	left = bio->bi_size;
+	p = bio->bi_data;
+	op = bio->bi_opf & REQ_OP_MASK;
+
+	while (left >= (unsigned int)SECTSIZE) {
+		if (op == REQ_OP_WRITE)
+			r = ide_write(d->drive, (uint)sec, p);
+		else
+			r = ide_read(d->drive, (uint)sec, p);
+		if (r < 0)
+			return BLK_STS_IOERR;
+		sec++;
+		p += SECTSIZE;
+		left -= SECTSIZE;
+	}
+	if (left != 0)
+		return BLK_STS_IOERR;
+	return BLK_STS_OK;
+}
+
+/*
+ * 通道队列 runner：串行取出 request 执行，直到本通道相关队列清空。
+ * 调用前须已置 chan->busy=1；返回时清 busy。
+ */
+static void ide_run(struct ide_chan *c)
+{
+	struct request *rq;
+	blk_status_t st;
+
+	if (!c)
+		return;
+
+	for (;;) {
+		acquire(&ide_lock);
+		rq = ide_chan_pick(c);
+		if (!rq) {
+			c->busy = 0;
+			c->cur_rq = 0;
+			release(&ide_lock);
+			return;
+		}
+		c->cur_rq = rq;
+		release(&ide_lock);
+
+		st = ide_execute_rq(rq);
+
+		acquire(&ide_lock);
+		c->cur_rq = 0;
+		release(&ide_lock);
+
+		/* end_io 可能唤醒 submit_bio_wait；勿持 ide_lock */
+		ide_complete_rq(rq, st);
+	}
+}
+
+/*
+ * Linux 风格 make_request_fn：bio → request 入队；若通道空闲则 kick runner。
+ * 由 submit_bio → d->gd->queue->make_request_fn 调用。
+ * 立即返回（不等待 I/O）；调用方用 submit_bio_wait 睡眠等待。
+ */
+static void ide_submit_bio(struct request_queue *q, struct bio *bio)
+{
+	struct ide_disk *d;
+	struct ide_chan *c;
+	struct request *rq;
+	int need_run;
+
+	d = q ? q->queuedata : 0;
+	if (!d || !bio || !d->chan) {
 		if (bio) {
 			bio->bi_status = BLK_STS_IOERR;
 			if (bio->bi_end_io)
@@ -348,30 +465,26 @@ static void ide_submit_bio(struct request_queue *q, struct bio *bio)
 		return;
 	}
 
-	sec = bio->bi_sector;
-	left = bio->bi_size;
-	p = bio->bi_data;
-	op = bio->bi_opf & REQ_OP_MASK;
+	rq = blk_alloc_request(q);
+	if (!rq) {
+		bio->bi_status = BLK_STS_IOERR;
+		if (bio->bi_end_io)
+			bio->bi_end_io(bio);
+		return;
+	}
+	rq->bio = bio;
 	bio->bi_status = BLK_STS_OK;
 
-	while (left >= (unsigned int)SECTSIZE) {
-		if (op == REQ_OP_WRITE)
-			r = ide_write(d->drive, (uint)sec, p);
-		else
-			r = ide_read(d->drive, (uint)sec, p);
-		if (r < 0) {
-			bio->bi_status = BLK_STS_IOERR;
-			break;
-		}
-		sec++;
-		p += SECTSIZE;
-		left -= SECTSIZE;
-	}
-	if (left != 0 && bio->bi_status == BLK_STS_OK)
-		bio->bi_status = BLK_STS_IOERR;
+	c = d->chan;
+	acquire(&ide_lock);
+	blk_queue_push(q, rq);
+	need_run = !c->busy;
+	if (need_run)
+		c->busy = 1;
+	release(&ide_lock);
 
-	if (bio->bi_end_io)
-		bio->bi_end_io(bio);
+	if (need_run)
+		ide_run(c);
 }
 
 static int ide_add_gendisk(struct ide_disk *d)

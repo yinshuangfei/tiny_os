@@ -6,6 +6,7 @@
  * 探测成功后经 block 层注册 gendisk（hda, hdb, …），上层应走
  * submit_bio / blkdev_*；ide_read/write 仍为驱动底层接口。
  *
+ * make_request 将 bio 入请求队列；每通道 runner 串行执行。
  * 运行期读写在 IF=1 时经 IRQ14/15（及 isa-ide 的 10/11）sleep 等待；
  * 探测阶段（sti 前）仍轮询 Status。
  */

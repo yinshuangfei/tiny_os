@@ -1,12 +1,71 @@
 /*
  * 块层核心：submit_bio（对齐 Linux blk-core submit_bio 简化路径）。
  *
- * Linux 异步队列 + 调度合并；此处 make_request_fn 同步完成（IDE PIO），
- * submit_bio_wait 在返回时即可读到 bi_status。
+ * Linux 异步队列 + 调度合并；此处 make_request_fn 将 bio 入队并 kick，
+ * 完成时调 bi_end_io；submit_bio_wait 睡眠直到 end_io。
  */
 #include "blk.h"
 #include "../defs.h"
 #include "../printk.h"
+#include "../proc.h"
+#include "../lock/proc_lock.h"
+
+/* 分配一个 request（教学：与 bio 一对一） */
+struct request *blk_alloc_request(struct request_queue *q)
+{
+	struct request *rq;
+
+	rq = kmalloc(sizeof(*rq));
+	if (!rq)
+		return 0;
+	memset(rq, 0, sizeof(*rq));
+	INIT_LIST_HEAD(&rq->queuelist);
+	rq->q = q;
+	rq->error = BLK_STS_OK;
+	return rq;
+}
+
+/* 释放一个 request */
+void blk_free_request(struct request *rq)
+{
+	if (!rq)
+		return;
+	kfree(rq);
+}
+
+/* 入队；调用方须已持有保护队列的锁（ide_lock 或 queue_lock） */
+void blk_queue_push(struct request_queue *q, struct request *rq)
+{
+	if (!q || !rq)
+		return;
+	list_add_tail(&rq->queuelist, &q->queue_head);
+}
+
+/* 窥视队首，不摘除 */
+struct request *blk_queue_peek(struct request_queue *q)
+{
+	if (!q || list_empty(&q->queue_head))
+		return 0;
+	return list_first_entry(&q->queue_head, struct request, queuelist);
+}
+
+/* 取出队首 */
+struct request *blk_queue_pop(struct request_queue *q)
+{
+	struct request *rq;
+
+	rq = blk_queue_peek(q);
+	if (!rq)
+		return 0;
+	list_del(&rq->queuelist);
+	return rq;
+}
+
+/* 队列是否为空 */
+int blk_queue_empty(struct request_queue *q)
+{
+	return !q || list_empty(&q->queue_head);
+}
 
 /* 提交一个 bio 结构体 */
 void submit_bio(struct bio *bio)
@@ -49,45 +108,82 @@ void submit_bio(struct bio *bio)
 	q = disk->queue;
 	/*
 	 * Linux：generic_make_request → 队列 → 驱动。
-	 * 教学实现：直接调驱动挂的 make_request_fn。
+	 * 教学实现：调驱动挂的 make_request_fn（入队并 kick）。
 	 */
 	q->make_request_fn(q, bio);
 }
 
+/* submit_bio_wait 用的完成同步对象 */
+struct bio_waiter {
+	struct spinlock lock;
+	volatile int done;
+};
+
 /* 等待完成回调 */
 static void bio_wait_end_io(struct bio *bio)
 {
-	int *done = bio->bi_private;
+	struct bio_waiter *w = bio->bi_private;
 
-	if (done)
-		*done = 1;
+	if (!w)
+		return;
+	acquire(&w->lock);
+	w->done = 1;
+	wakeup(w);
+	release(&w->lock);
+}
+
+static void bio_waiter_sleep(struct bio_waiter *w)
+{
+	struct proc *p = myproc();
+
+	if (!holding(&w->lock))
+		panic("bio_waiter_sleep");
+	if (!p) {
+		/* 早期 boot（尚无进程上下文）：只能忙等 */
+		while (!w->done) {
+			release(&w->lock);
+			acquire(&w->lock);
+		}
+		return;
+	}
+
+	acquire(&proc_lock);
+	release(&w->lock);
+	p->chan = w;
+	p->wakeup_tick = 0;
+	p->state = SLEEPING;
+	release(&proc_lock);
+	sched();
+	acquire(&w->lock);
 }
 
 /*
  * 同步提交。成功返回 0，失败返回 -1。
- * 调用方负责 bio_put。
+ * 睡眠直到 bi_end_io；调用方负责 bio_put。
  */
 int submit_bio_wait(struct bio *bio)
 {
-	int done = 0;
+	struct bio_waiter wait;
 	bio_end_io_t *saved_end;
 	void *saved_priv;
 
 	if (!bio)
 		return -1;
 
+	initlock(&wait.lock, "biowait");
+	wait.done = 0;
+
 	saved_end = bio->bi_end_io;
 	saved_priv = bio->bi_private;
 	bio->bi_end_io = bio_wait_end_io;
-	bio->bi_private = &done;
+	bio->bi_private = &wait;
 
 	submit_bio(bio);
 
-	/* 同步驱动下 end_io 已在 submit_bio 内调用 */
-	if (!done && bio->bi_status == BLK_STS_OK) {
-		/* 防御未调 end_io：仍以 status 为准 */
-		printk(KERN_ERR "block: submit_bio_wait: end_io not called\n");
-	}
+	acquire(&wait.lock);
+	while (!wait.done)
+		bio_waiter_sleep(&wait);
+	release(&wait.lock);
 
 	bio->bi_end_io = saved_end;
 	bio->bi_private = saved_priv;
