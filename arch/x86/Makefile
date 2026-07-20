@@ -66,7 +66,8 @@ USER_LIB_OBJS = \
 	$(USERDIR)/lib/sbrk.o \
 	$(USERDIR)/lib/mmap.o \
 	$(USERDIR)/lib/string.o \
-	$(USERDIR)/lib/ansi.o
+	$(USERDIR)/lib/ansi.o \
+	$(USERDIR)/lib/termios.o
 
 INITCODE_BIN=$(USERDIR)/init.bin
 INITCODE_OBJS=$(USER_LIB_OBJS) $(USERDIR)/init.o
@@ -221,6 +222,9 @@ $(USERDIR)/lib/string.o: $(USERDIR)/lib/string.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/lib/ansi.o: $(USERDIR)/lib/ansi.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(USERDIR)/lib/termios.o: $(USERDIR)/lib/termios.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/lib/usys.o: $(USERDIR)/lib/usys.S

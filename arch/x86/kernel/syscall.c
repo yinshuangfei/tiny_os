@@ -88,6 +88,7 @@ static int (*syscalls[])(struct trapframe *tf) = {
 	[SYS_brk] = sys_brk,
 	[SYS_mmap2] = sys_mmap2,
 	[SYS_munmap] = sys_munmap,
+	[SYS_ioctl] = sys_ioctl,
 	[SYS_nanosleep] = sys_nanosleep,
 	[SYS_kill] = sys_kill,
 	[SYS_signal] = sys_signal,

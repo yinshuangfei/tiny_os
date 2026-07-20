@@ -8,6 +8,7 @@
 #include "signal.h"
 #include "dirent.h"
 #include "sys/wait.h"
+#include "termios.h"
 
 struct timespec;
 
@@ -34,6 +35,7 @@ int open(const char *path, int flags);
 int close(int fd);
 int dup(int fd);
 int pipe(int fd[2]);
+int ioctl(int fd, unsigned int request, void *arg);
 int lseek(int fd, int offset, int whence);
 int fstat(int fd, struct stat *st);
 int stat(const char *path, struct stat *st);

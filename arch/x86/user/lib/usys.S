@@ -184,6 +184,17 @@ lseek:
 	popl %ebx
 	ret
 
+.globl ioctl
+ioctl:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl 16(%esp), %edx
+	movl $SYS_ioctl, %eax
+	int $0x80
+	popl %ebx
+	ret
+
 .globl fstat
 fstat:
 	pushl %ebx

@@ -1197,6 +1197,7 @@ static void on_sigint(int sig)
 int main(void)
 {
 	char line[BUFSZ];
+	struct termios cooked, raw;
 
 	/*
 	 * 不用 SIG_IGN：否则 console_getc 不会被打断，界面停在 ^C 后。
@@ -1205,12 +1206,22 @@ int main(void)
 	 */
 	signal(SIGINT, on_sigint);
 
+	/* 默认 cooked；readline 期间切 raw（关 ICANON|ECHO，保留 ISIG） */
+	if (tcgetattr(0, &cooked) < 0) {
+		cooked.c_lflag = ISIG | ICANON | ECHO;
+	}
+	raw = cooked;
+	raw.c_lflag &= ~(ICANON | ECHO);
+
 	print_banner();
 	for (;;) {
 		print_prompt();
+		tcsetattr(0, TCSANOW, &raw);
 		if (readline(line, sizeof(line)) < 0) {
+			tcsetattr(0, TCSANOW, &cooked);
 			continue;
 		}
+		tcsetattr(0, TCSANOW, &cooked);
 		hist_add(line);
 		run_line(line);
 	}

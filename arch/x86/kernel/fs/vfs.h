@@ -135,6 +135,7 @@ void fileclose(struct file *f);
 int fileread(struct file *f, char *dst, int n);
 int filewrite(struct file *f, char *src, int n);
 int filelseek(struct file *f, int offset, int whence);
+int fileioctl(struct file *f, unsigned int req, unsigned int arg);
 
 int fdalloc(struct file *f);
 struct file *fdget(int fd);

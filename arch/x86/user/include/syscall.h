@@ -33,6 +33,7 @@
 #define SYS_nanosleep	162	/* Linux i386 __NR_nanosleep */
 #define SYS_getcwd	183	/* Linux i386 __NR_getcwd */
 #define SYS_mmap2	192	/* Linux i386 __NR_mmap2（offset 为页偏移） */
+#define SYS_ioctl	54	/* Linux i386 __NR_ioctl */
 
 #ifndef __ASSEMBLER__
 struct timespec {

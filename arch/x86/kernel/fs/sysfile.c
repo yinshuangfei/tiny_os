@@ -148,6 +148,25 @@ int sys_close(struct trapframe *tf)
 	return 0;
 }
 
+/* ioctl(fd, request, arg)：目前仅 /dev/console 的 TCGETS/TCSETS */
+int sys_ioctl(struct trapframe *tf)
+{
+	int fd, req;
+	uint arg;
+	struct file *f;
+
+	if (argint(tf, 0, &fd) < 0)
+		return -1;
+	if (argint(tf, 1, &req) < 0)
+		return -1;
+	if (argaddr(tf, 2, &arg) < 0)
+		return -1;
+	f = fdget(fd);
+	if (!f)
+		return -1;
+	return fileioctl(f, (unsigned int)req, arg);
+}
+
 /* dup(oldfd)：复制到最小空闲 fd（对齐 Linux dup） */
 int sys_dup(struct trapframe *tf)
 {

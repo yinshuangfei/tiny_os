@@ -137,18 +137,28 @@ static int file_blk_rw(struct file *f, char *buf, int n, int do_write)
 	return done;
 }
 
-/* 字符设备读（目前仅 /dev/console → console_getc；信号打断返回 -1） */
+/*
+ * 字符设备读（目前仅 /dev/console → console_getc）。
+ * console_getc：>=0 字符；-1 信号打断；-2 规范模式 EOF（Ctrl+D）。
+ * 规范模式：遇 '\\n' 即返回（一行一次），与 xv6 consoleread 一致。
+ */
 static int file_char_read(struct file *f, char *dst, int n)
 {
 	int i, c;
+	int canon;
 
 	if (!f->ip || MAJOR(f->ip->rdev) != CONSOLE_MAJOR)
 		return -1;
+	canon = console_is_canon();
 	for (i = 0; i < n; i++) {
 		c = console_getc();
+		if (c == -2)
+			return i;		/* EOF：已读 i 字节（可为 0） */
 		if (c < 0)
-			return i == 0 ? -1 : i;
+			return i == 0 ? -1 : i;	/* 信号打断 */
 		dst[i] = (char)c;
+		if (canon && c == '\n')
+			return i + 1;
 	}
 	return n;
 }
@@ -161,6 +171,16 @@ static int file_char_write(struct file *f, char *src, int n)
 	if (n > 0)
 		console_write(src, (unsigned int)n);
 	return n;
+}
+
+/* 字符设备 ioctl（目前仅 /dev/console 行规程） */
+int fileioctl(struct file *f, unsigned int req, unsigned int arg)
+{
+	if (!f || f->type != FD_CHAR || !f->ip)
+		return -1;
+	if (MAJOR(f->ip->rdev) != CONSOLE_MAJOR)
+		return -1;
+	return console_ioctl(req, arg);
 }
 
 /* 从文件读取数据 */
