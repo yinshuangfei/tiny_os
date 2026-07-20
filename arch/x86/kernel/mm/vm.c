@@ -89,9 +89,10 @@ static int mappages(pagetable_t pgdir, uint va, uint size, uint pa, int perm,
 
 /*
  * 解除 va 起连续 npages 页的映射；do_free 非 0 时一并释放物理页。
- * 内核 / 用户页表共用，由 kvmunmap / uvmunmap 封装错误处理与 TLB 策略。
+ * allow_missing：按需分页空洞（从未触碰）可跳过；内核映射须 allow_missing=0。
  */
-static int unmappages(pagetable_t pgdir, uint va, uint npages, int do_free)
+static int unmappages(pagetable_t pgdir, uint va, uint npages, int do_free,
+		      int allow_missing)
 {
 	pte_t *pte;
 	uint a;
@@ -101,8 +102,11 @@ static int unmappages(pagetable_t pgdir, uint va, uint npages, int do_free)
 
 	for (a = va; a < va + npages * PGSIZE; a += PGSIZE) {
 		pte = walk(pgdir, a, 0, 0);
-		if (pte == 0 || !(*pte & PTE_P))
+		if (pte == 0 || !(*pte & PTE_P)) {
+			if (allow_missing)
+				continue;
 			return -1;
+		}
 		if (do_free)
 			put_page((void *)PTE_ADDR(*pte));
 		*pte = 0;
@@ -133,7 +137,7 @@ void kvmunmap(uint va, uint size)
 	// ——可能是 boot 区、MMIO、buddy 池里的页。kvmunmap 只拆映射，不能随便 free_page
 	if ((va % PGSIZE) != 0 || size == 0 || (size % PGSIZE) != 0)
 		panic("kvmunmap");
-	if (unmappages(kernel_pgdir, va, size / PGSIZE, 0) < 0)
+	if (unmappages(kernel_pgdir, va, size / PGSIZE, 0, 0) < 0)
 		panic("kvmunmap");
 
 	/** 刷新 TLB */
@@ -333,34 +337,87 @@ uint uvmdealloc(pagetable_t pgdir, uint oldsz, uint newsz)
 }
 
 /*
- * 将用户空间从 oldsz 增长到 newsz（分配并映射新页，清零）。
+ * 将用户堆断点从 oldsz 增长到 newsz（按需分页：不立即分配物理页）。
+ * 物理页在用户首次访问或 copyin/copyout 时由 uvm_demand_fault 填零。
  * 成功返回 newsz，失败返回 0。
  */
 uint uvmalloc(pagetable_t pgdir, uint oldsz, uint newsz)
 {
-	char *mem;
-	uint a;
-
 	if (pgdir == 0 || newsz < oldsz)
 		return 0;
 	if (newsz > USERHEAP_TOP)
 		return 0;
-
-	oldsz = PGROUNDUP(oldsz);
-	for (a = oldsz; a < newsz; a += PGSIZE) {
-		mem = alloc_page();
-		if (mem == 0) {
-			uvmdealloc(pgdir, a, oldsz);
-			return 0;
-		}
-		memset(mem, 0, PGSIZE);
-		if (uvmmap(pgdir, a, (uint)mem, PGSIZE, PTE_W | PTE_P) < 0) {
-			free_page(mem);
-			uvmdealloc(pgdir, a, oldsz);
-			return 0;
-		}
-	}
 	return newsz;
+}
+
+/*
+ * 按需填零：VA 落在堆 [brk_start, brk) 或匿名 VMA 内时分配清零页并映射。
+ * write 非 0 表示写访问（只读 VMA 拒绝）。成功返回 0。
+ */
+int uvm_demand_fault(struct proc *p, uint va, int write)
+{
+	struct vma *v;
+	char *mem;
+	int perm;
+	uint page;
+
+	if (!p || !p->pagetable)
+		return -1;
+
+	page = PGROUNDDOWN(va);
+	if (page < USERBASE || page >= USEREND)
+		return -1;
+
+	/* 已映射则无需再填（竞态下幂等） */
+	if (walkaddr(p->pagetable, page) != 0)
+		return 0;
+
+	/* 堆：页与 [brk_start, brk) 相交 */
+	if (page < p->brk && page + PGSIZE > p->brk_start) {
+		perm = PTE_P | PTE_W;
+	} else if ((v = vma_lookup(p, page)) != 0) {
+		if (!(v->prot & (PROT_READ | PROT_WRITE | PROT_EXEC)))
+			return -1;
+		if (write && !(v->prot & PROT_WRITE))
+			return -1;
+		perm = PTE_P;
+		if (v->prot & PROT_WRITE)
+			perm |= PTE_W;
+	} else {
+		return -1;
+	}
+
+	mem = alloc_page();
+	if (mem == 0)
+		return -1;
+	memset(mem, 0, PGSIZE);
+	if (uvmmap(p->pagetable, page, (uint)mem, PGSIZE, perm) < 0) {
+		free_page(mem);
+		return -1;
+	}
+	return 0;
+}
+
+/* 内核路径访问用户页前：缺页则按需填零 */
+static int ensure_user_page(pagetable_t pgdir, uint va, int write)
+{
+	struct proc *p;
+	pte_t *pte;
+
+	va = PGROUNDDOWN(va);
+	pte = walk(pgdir, va, 0, 0);
+	if (pte && (*pte & PTE_P)) {
+		if (write && (*pte & PTE_COW)) {
+			if (uvm_cow_fault(pgdir, va) < 0)
+				return -1;
+		}
+		return 0;
+	}
+
+	p = myproc();
+	if (!p || p->pagetable != pgdir)
+		return -1;
+	return uvm_demand_fault(p, va, write);
 }
 
 int uvmmap(pagetable_t pgdir, uint va, uint pa, uint size, int perm)
@@ -372,7 +429,8 @@ int uvmmap(pagetable_t pgdir, uint va, uint pa, uint size, int perm)
 
 int uvmunmap(pagetable_t pgdir, uint va, uint npages, int do_free)
 {
-	if (unmappages(pgdir, va, npages, do_free) < 0)
+	/* 允许按需分页空洞（从未触碰的页） */
+	if (unmappages(pgdir, va, npages, do_free, 1) < 0)
 		return -1;
 	/* 进程页表未必是当前 CR3，按需刷新 */
 	tlb_flush_if_active(pgdir);
@@ -433,6 +491,8 @@ int copyin(pagetable_t pgdir, void *dst, uint srcva, uint n)
 		uint i;
 
 		va = PGROUNDDOWN(srcva);
+		if (ensure_user_page(pgdir, va, 0) < 0)
+			return -1;
 		pa = walkaddr(pgdir, va);
 		if (pa == 0)
 			return -1;
@@ -451,7 +511,7 @@ int copyin(pagetable_t pgdir, void *dst, uint srcva, uint n)
 
 /*
  * 从内核缓冲区 copyout 至多 n 字节到用户页表；跨页自动拆分。
- * 写 COW 页前先 break COW（内核写不经 #PF）。
+ * 写前按需填零 / break COW（内核写不经 #PF）。
  */
 int copyout(pagetable_t pgdir, uint dstva, const void *src, uint n)
 {
@@ -462,16 +522,10 @@ int copyout(pagetable_t pgdir, uint dstva, const void *src, uint n)
 		return -1;
 	while (n > 0) {
 		uint i;
-		pte_t *pte;
 
 		va = PGROUNDDOWN(dstva);
-
-		/* 处理写 COW 页 */
-		pte = walk(pgdir, va, 0, 0);
-		if (pte && (*pte & PTE_P) && (*pte & PTE_COW)) {
-			if (uvm_cow_fault(pgdir, va) < 0)
-				return -1;
-		}
+		if (ensure_user_page(pgdir, va, 1) < 0)
+			return -1;
 		pa = walkaddr(pgdir, va);
 		if (pa == 0)
 			return -1;

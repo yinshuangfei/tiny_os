@@ -70,24 +70,35 @@ void general_protection_handler(struct trapframe *tf)
 }
 
 /*
- * 缺页：优先处理用户写 COW 页（P|W|U）；失败则杀用户进程。
+ * 缺页：先按需填零（not-present），再处理 COW 写保护；失败则杀用户进程。
  * 内核态缺页仍 panic（教学内核无 fixup）。
  */
 void page_fault_handler(struct trapframe *tf)
 {
-	uint32 fault_va;
+	uint32 fault_va;	/* 缺页的虚拟地址 */
 	struct proc *p;
 	int user;
+	int write;
 
 	__asm__ volatile ("movl %%cr2, %0" : "=r"(fault_va));
 
 	user = tf && ((tf->cs & 3) == DPL_USER);
 	p = myproc();
+	write = tf && (tf->err & PF_W);
+
+	/*
+	 * 用户 not-present（典型 err=0x4/0x6）：堆或匿名 mmap 按需填零。
+	 */
+	if (user && p && p->pagetable && (tf->err & PF_U) &&
+	    !(tf->err & PF_P)) {
+		if (uvm_demand_fault(p, fault_va, write) == 0)
+			return;
+	}
 
 	/*
 	 * 用户写已存在页（典型 err=0x7）：若为 COW，复制后返回重试指令。
 	 */
-	if (user && p && p->pagetable && (tf->err & PF_U) && (tf->err & PF_W) &&
+	if (user && p && p->pagetable && (tf->err & PF_U) && write &&
 	    (tf->err & PF_P)) {
 		if (fault_va >= USERBASE && fault_va < p->sz &&
 		    uvm_cow_fault(p->pagetable, fault_va) == 0)

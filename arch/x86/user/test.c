@@ -625,6 +625,82 @@ void fpu_test(void)
 	syscall_pr_result("fpu", ok);
 }
 
+/*
+ * 按需分页：大块 mmap/brk 不立即吃物理页；触碰后才分配；未映射页读为 0。
+ */
+void demand_paging_test(void)
+{
+	char *p, *old;
+	unsigned int free0, free1, free2;
+	int ok = 1;
+	const unsigned int nbytes = 64 * 4096;
+
+	free0 = mem_free_kb();
+	p = mmap(0, nbytes, PROT_READ | PROT_WRITE,
+		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED || p == 0) {
+		printf("demand: mmap failed\n");
+		syscall_pr_result("demand-page", 0);
+		return;
+	}
+
+	free1 = mem_free_kb();
+	/* 懒分配：64 页不应立刻消耗 ~256 KiB */
+	if (free0 > free1 && (free0 - free1) > 32) {
+		printf("demand: mmap ate %u KiB (expect lazy)\n",
+		       free0 - free1);
+		ok = 0;
+	}
+
+	/* 未触碰页读应为 0 */
+	if (p[0] != 0 || p[4096] != 0) {
+		printf("demand: untouched page not zero\n");
+		ok = 0;
+	}
+
+	p[0] = 'A';
+	p[8192] = 'B';
+	free2 = mem_free_kb();
+	/* 触碰约 3 页（0、1、2），消耗应远小于 64 页 */
+	if (free1 > free2 && (free1 - free2) > 48) {
+		printf("demand: touch ate %u KiB (too many)\n",
+		       free1 - free2);
+		ok = 0;
+	}
+	if (p[0] != 'A' || p[8192] != 'B') {
+		printf("demand: write/read mismatch\n");
+		ok = 0;
+	}
+
+	if (munmap(p, nbytes) < 0) {
+		printf("demand: munmap failed\n");
+		ok = 0;
+	}
+
+	/* brk 同样懒扩展 */
+	old = (char *)brk((void *)0);
+	free0 = mem_free_kb();
+	if (brk(old + nbytes) != old + nbytes) {
+		printf("demand: brk grow failed\n");
+		ok = 0;
+	} else {
+		free1 = mem_free_kb();
+		if (free0 > free1 && (free0 - free1) > 32) {
+			printf("demand: brk ate %u KiB eagerly\n",
+			       free0 - free1);
+			ok = 0;
+		}
+		old[0] = 'Z';
+		if (old[0] != 'Z') {
+			printf("demand: brk fault-in failed\n");
+			ok = 0;
+		}
+		brk(old);
+	}
+
+	syscall_pr_result("demand-page", ok);
+}
+
 /**
  * 可以只使用
  * int main(int argc, char *argv[])
@@ -653,5 +729,6 @@ int main(int argc, char *argv[], char *envp[])
 	brk_test();
 	mmap_test();
 	fpu_test();
+	demand_paging_test();
 	exit(0);
 }

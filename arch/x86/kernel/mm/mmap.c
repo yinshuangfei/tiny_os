@@ -1,6 +1,6 @@
 /*
  * 匿名 mmap / munmap（对齐 Linux mmap2 教学子集）。
- * 仅支持 MAP_ANONYMOUS|MAP_PRIVATE；eager 分配清零页（无 demand paging）。
+ * MAP_ANONYMOUS|MAP_PRIVATE；按需分页（只建 VMA，物理页在 #PF 时填零）。
  */
 #include "../types.h"
 #include "../defs.h"
@@ -36,15 +36,13 @@ static int region_available(struct proc *p, uint start, uint end)
 	if (vma_overlap_range(p, start, end))
 		return 0;
 	for (va = start; va < end; va += PGSIZE) {
-		/* 检查页表项是否存在, 如果存在, 则说明该地址已经被映射, 不能再次映射 */
 		if (walkaddr(p->pagetable, va) != 0)
 			return 0;
 	}
-	/* 如果所有检查都通过, 则说明该地址可以被映射 */
 	return 1;
 }
 
-/* 查找可用的映射地址 */
+/* 查找可用的映射地址（自 USERHEAP_TOP 向下） */
 static uint find_mmap_addr(struct proc *p, uint len)
 {
 	uint low, high, start;
@@ -66,20 +64,11 @@ static uint find_mmap_addr(struct proc *p, uint len)
 	}
 }
 
-/* 将保护标志转换为权限标志 */
-static int prot_to_perm(int prot)
+static int prot_ok(int prot)
 {
-	int perm;
-
-	if (!(prot & (PROT_READ | PROT_WRITE | PROT_EXEC)))
-		return -1;
-	perm = PTE_P;
-	if (prot & PROT_WRITE)
-		perm |= PTE_W;
-	return perm;
+	return (prot & (PROT_READ | PROT_WRITE | PROT_EXEC)) != 0;
 }
 
-/* 分配 VMA 区域表槽位 */
 static struct vma *vma_alloc_slot(struct proc *p)
 {
 	int i;
@@ -91,7 +80,6 @@ static struct vma *vma_alloc_slot(struct proc *p)
 	return 0;
 }
 
-/* 查找 VMA 区域表槽位 */
 static struct vma *vma_find(struct proc *p, uint start, uint end)
 {
 	int i;
@@ -105,7 +93,22 @@ static struct vma *vma_find(struct proc *p, uint start, uint end)
 	return 0;
 }
 
-/* 清空 VMA 区域表 */
+/* 按虚址查找包含该地址的 VMA（供 #PF / demand fault） */
+struct vma *vma_lookup(struct proc *p, uint va)
+{
+	int i;
+
+	if (!p)
+		return 0;
+	for (i = 0; i < NVMA; i++) {
+		if (!p->vmas[i].used)
+			continue;
+		if (va >= p->vmas[i].start && va < p->vmas[i].end)
+			return &p->vmas[i];
+	}
+	return 0;
+}
+
 void vma_clear(struct proc *p)
 {
 	int i;
@@ -116,7 +119,6 @@ void vma_clear(struct proc *p)
 		p->vmas[i].used = 0;
 }
 
-/* 复制 VMA 区域表 */
 void vma_copy(struct proc *dst, struct proc *src)
 {
 	int i;
@@ -127,7 +129,6 @@ void vma_copy(struct proc *dst, struct proc *src)
 		dst->vmas[i] = src->vmas[i];
 }
 
-/* 检查 VMA 区域表是否与堆冲突 */
 int vma_overlaps_brk(struct proc *p, uint old_brk, uint new_brk)
 {
 	if (!p || new_brk <= old_brk)
@@ -135,7 +136,6 @@ int vma_overlaps_brk(struct proc *p, uint old_brk, uint new_brk)
 	return vma_overlap_range(p, old_brk, new_brk);
 }
 
-/* 解除映射的页 */
 static void mmap_unmap_pages(struct proc *p, uint start, uint end)
 {
 	uint va;
@@ -146,15 +146,13 @@ static void mmap_unmap_pages(struct proc *p, uint start, uint end)
 
 /*
  * 匿名映射：成功返回用户 VA；失败返回 (uint)-1。
- * pgoff 忽略（匿名）。
+ * 按需分页：只登记 VMA，不立即分配物理页。
  */
 uint do_mmap(struct proc *p, uint addr, uint len, int prot, int flags,
 	     int fd, uint pgoff)
 {
 	struct vma *v;
-	uint start, a;
-	int perm;
-	char *mem;
+	uint start;
 
 	(void)pgoff;
 	if (!p || !p->pagetable || len == 0)
@@ -171,8 +169,7 @@ uint do_mmap(struct proc *p, uint addr, uint len, int prot, int flags,
 	if (fd != -1 && fd != 0xffffffff)
 		return (uint)-1;
 
-	perm = prot_to_perm(prot);
-	if (perm < 0)
+	if (!prot_ok(prot))
 		return (uint)-1;
 
 	if (flags & MAP_FIXED) {
@@ -191,27 +188,12 @@ uint do_mmap(struct proc *p, uint addr, uint len, int prot, int flags,
 	if (!v)
 		return (uint)-1;
 
-	for (a = start; a < start + len; a += PGSIZE) {
-		mem = alloc_page();
-		if (!mem)
-			goto bad;
-		memset(mem, 0, PGSIZE);
-		if (uvmmap(p->pagetable, a, (uint)mem, PGSIZE, perm) < 0) {
-			free_page(mem);
-			goto bad;
-		}
-	}
-
 	v->used = 1;
 	v->start = start;
 	v->end = start + len;
 	v->prot = prot;
 	v->flags = flags;
 	return start;
-
-bad:
-	mmap_unmap_pages(p, start, a);
-	return (uint)-1;
 }
 
 int do_munmap(struct proc *p, uint addr, uint len)
@@ -229,7 +211,7 @@ int do_munmap(struct proc *p, uint addr, uint len)
 	if (end < addr)
 		return -1;
 
-	/* 教学版：只允许整段卸映射（与创建时起止一致） */
+	/* 教学版：只允许整段卸映射 */
 	v = vma_find(p, addr, end);
 	if (!v)
 		return -1;

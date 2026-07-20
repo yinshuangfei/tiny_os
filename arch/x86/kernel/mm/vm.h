@@ -3,6 +3,9 @@
 
 #include "../types.h"
 
+struct proc;
+struct vma;
+
 extern pagetable_t kernel_pgdir;
 
 /*
@@ -29,6 +32,7 @@ void uvmfree(pagetable_t pgdir);
 void uvmcopy_kernel(pagetable_t pgdir);
 int uvmcopy(pagetable_t old, pagetable_t new, uint sz);
 int uvm_cow_fault(pagetable_t pgdir, uint va);
+int uvm_demand_fault(struct proc *p, uint va, int write);
 uint uvmalloc(pagetable_t pgdir, uint oldsz, uint newsz);
 uint uvmdealloc(pagetable_t pgdir, uint oldsz, uint newsz);
 
@@ -38,9 +42,9 @@ int copyout(pagetable_t pgdir, uint dstva, const void *src, uint n);
 int copyinstr(pagetable_t pgdir, char *dst, uint srcva, uint max);
 
 /* 匿名 mmap（mm/mmap.c） */
-struct proc;
 void vma_clear(struct proc *p);
 void vma_copy(struct proc *dst, struct proc *src);
+struct vma *vma_lookup(struct proc *p, uint va);
 int vma_overlaps_brk(struct proc *p, uint old_brk, uint new_brk);
 uint do_mmap(struct proc *p, uint addr, uint len, int prot, int flags,
 	     int fd, uint pgoff);
