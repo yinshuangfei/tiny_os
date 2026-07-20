@@ -6,6 +6,10 @@
 #define IRQ_TIMER		0x20	// Timer Interrupt (IRQ0)
 #define IRQ_KBD			0x21	// Keyboard (IRQ1)
 #define IRQ_COM1		0x24	// COM1 (IRQ4)
+#define IRQ_IDE1B		0x2a	// IDE isa 第四通道 (IRQ10)
+#define IRQ_IDE1A		0x2b	// IDE isa 第三通道 (IRQ11)
+#define IRQ_IDE0		0x2e	// IDE 主通道 (IRQ14)
+#define IRQ_IDE1		0x2f	// IDE 次通道 (IRQ15)
 #define EXC_DIVIDE_ERROR	0x00	// Divide Error
 #define EXC_INVALID_OPCODE	0x06	// #UD Invalid Opcode
 #define EXC_DEVICE_NOT_AVAILABLE 0x07	// #NM Device Not Available

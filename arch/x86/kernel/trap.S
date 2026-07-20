@@ -25,6 +25,10 @@
 .globl isr_timer
 .globl isr_kbd
 .globl isr_serial
+.globl isr_ide10
+.globl isr_ide11
+.globl isr_ide14
+.globl isr_ide15
 
 .extern divide_error_handler
 .extern device_not_available_handler
@@ -37,6 +41,10 @@
 .extern timer_trap_user
 .extern kbd_intr
 .extern uart_intr
+.extern ide_intr_irq10
+.extern ide_intr_irq11
+.extern ide_intr_irq14
+.extern ide_intr_irq15
 .extern preempt_check
 .extern signal_notify
 .extern kernel_pgdir
@@ -297,6 +305,32 @@ serial_from_kernel:
 	call uart_intr
 	IRQSTACK_RESTORE
 	iret
+
+/* --------------------------------------------------------------------------
+ * IDE IRQ10 / 11 / 14 / 15
+ * -------------------------------------------------------------------------- */
+
+.macro ISR_IDE name, handler
+\name:
+	testl $3, HW_CS(%esp)
+	jz \name\()_from_kernel
+
+	TRAP_RING3_ENTER
+	call \handler
+	TRAP_CALL_ON_KSTACK signal_notify
+	TRAP_USER_RETURN
+
+\name\()_from_kernel:
+	IRQSTACK_SWITCH
+	call \handler
+	IRQSTACK_RESTORE
+	iret
+.endm
+
+ISR_IDE isr_ide10, ide_intr_irq10
+ISR_IDE isr_ide11, ide_intr_irq11
+ISR_IDE isr_ide14, ide_intr_irq14
+ISR_IDE isr_ide15, ide_intr_irq15
 
 /* --------------------------------------------------------------------------
  * fork 子进程首次返回用户态：iret 恢复 kframe 中的 trapframe

@@ -40,10 +40,14 @@ void pic_init(void)
 	// ICW4: 8086 模式
 	outb(PIC1_DATA, 0x01);
 	outb(PIC2_DATA, 0x01);
-	// 打开 IRQ0(定时器)、IRQ1(键盘)、IRQ4(COM1)；其余屏蔽
-	// mask = 1110 1100 → 0xec
-	outb(PIC1_DATA, 0xec);
-	outb(PIC2_DATA, 0xff);
+	/*
+	 * 主片：开 IRQ0(定时器)、IRQ1(键盘)、IRQ2(级联)、IRQ4(COM1)
+	 *   mask 0xe8 = 1110 1000
+	 * 从片：开 IRQ10/11（isa-ide）、IRQ14/15（ide0 主/次）
+	 *   mask 0x33 = 0011 0011
+	 */
+	outb(PIC1_DATA, 0xe8);
+	outb(PIC2_DATA, 0x33);
 
 	// TODO: 选择性配置 IOAPIC/LAPIC
 	printk(KERN_INFO "pic: system pic(8259) initialized\n");

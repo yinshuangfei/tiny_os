@@ -1,5 +1,5 @@
 /*
- * ATA PIO 轮询驱动（教学用，无 IRQ）。
+ * ATA PIO 驱动（教学用）：运行期用 IRQ 等待，探测阶段仍轮询。
  *
  * 每个 IDE 控制器最多 2 通道 × master/slave。
  * 通道端口由板级描述表给出；扫描到磁盘后再 kmalloc 结构体。
@@ -9,8 +9,11 @@
 #include "defs.h"
 #include "x86.h"
 #include "lock/spinlock.h"
+#include "lock/proc_lock.h"
 #include "printk.h"
 #include "block/blk.h"
+#include "interrupt.h"
+#include "proc.h"
 
 /* 相对通道基址的寄存器偏移（主通道基址 0x1F0，次通道 0x170） */
 #define IDE_DATA	0	/* 数据寄存器 */
@@ -35,23 +38,24 @@
 #define IDE_CMD_WRITE	0x30	/* 写命令 */
 #define IDE_CMD_IDENTIFY 0xec	/* IDENTIFY 命令 */
 
-/* DRIVE 寄存器：LBA + master/slave（bit4） */
+/* Device Control（写 altport）：nIEN=0 允许 INTRQ；SRST=0 */
 #define IDE_SEL_LBA(unit)	(0xe0 | (((unit) & 1) << 4))
 
 #define IDE_NR_UNIT	2	/* 每通道 master/slave */
+#define IDE_MAX_CHAN	8
 
-/* 一个通道的命令口 / 备用状态口 */
+/* 一个通道的命令口 / 备用状态口 / IRQ */
 struct ide_chan_desc {
 	ushort iobase;	/* 通道数据口基址 */
-	ushort altport;	/* 备用状态口 */
+	ushort altport;	/* 备用状态口（Device Control） */
+	int irq;	/* ISA IRQ 号 */
 };
 
 /*
  * 板级 IDE 控制器描述（端口固定，磁盘结构体动态分配）。
  *
- * ide0：PCI piix3-ide，兼容主/次通道 0x1F0 / 0x170。
- * ide1：第二块控制器。QEMU 的第二个 piix3-ide 仍硬编码 0x1F0/0x170 会冲突，
- *       故用两路 isa-ide 模拟双通道扩展卡（经典第三/第四 IDE 口）。
+ * ide0：PCI piix3-ide，兼容主/次通道 0x1F0 / 0x170 → IRQ14/15。
+ * ide1：两路 isa-ide（Makefile irq=11 / irq=10）。
  */
 struct ide_ctl_desc {
 	const char *name;		/* 控制器名称 */
@@ -59,23 +63,32 @@ struct ide_ctl_desc {
 	int nchan;			/* 通道数 */
 };
 
+/* 最多支持 8 块磁盘 */
 static const struct ide_ctl_desc ide_ctls[] = {
 	{
 		"ide0",
 		{
-			{ 0x1f0, 0x3f6 },	/* pri */
-			{ 0x170, 0x376 },	/* sec */
+			{ 0x1f0, 0x3f6, IRQ_14_IDE0 },
+			{ 0x170, 0x376, IRQ_15_IDE1 },
 		},
 		2,
 	},
 	{
 		"ide1",
 		{
-			{ 0x1e8, 0x3ee },	/* 第三 IDE 口 */
-			{ 0x168, 0x36e },	/* 第四 IDE 口 */
+			{ 0x1e8, 0x3ee, IRQ_11_IDE1A },
+			{ 0x168, 0x36e, IRQ_10_IDE1B },
 		},
 		2,
 	},
+};
+
+/* 运行时通道：IRQ 完成标志（每通道 outstanding=1，由 ide_lock 串行化） */
+struct ide_chan {
+	ushort iobase;		/* 通道数据口基址 */
+	ushort altport;		/* 备用状态口 */
+	int irq;		/* ISA IRQ 号 */
+	volatile int done;	/* IRQ 置 1，等待方清 0，完成标志 */
 };
 
 struct ide_disk {
@@ -87,17 +100,51 @@ struct ide_disk {
 	char model[41];		/* IDENTIFY 型号字符串 */
 	char slot[24];		/* 如 ide1.0-master，仅日志 */
 	struct gendisk *gd;	/* block 层整盘 */
+	struct ide_chan *chan;	/* 所属通道（IRQ 等待） */
 };
 
 static struct spinlock ide_lock;
 static struct ide_disk **ide_tab;	/* 动态表：仅含已探测磁盘 */
 static int ide_ndisk;			/* 已注册磁盘数 */
+static struct ide_chan ide_chans[IDE_MAX_CHAN];
+static int ide_nchan;			/* 已注册通道数 */
+static int ide_irq_ready;		/* 已清 nIEN；真正 sleep 还须 IF=1 */
 
 static struct ide_disk *ide_get(int drive)
 {
 	if (drive < 0 || drive >= ide_ndisk || !ide_tab)
 		return 0;
 	return ide_tab[drive];
+}
+
+static struct ide_chan *ide_chan_by_irq(int irq)
+{
+	int i;
+
+	for (i = 0; i < ide_nchan; i++) {
+		if (ide_chans[i].irq == irq)
+			return &ide_chans[i];
+	}
+	return 0;
+}
+
+static struct ide_chan *ide_chan_get(ushort iobase, ushort altport, int irq)
+{
+	int i;
+	struct ide_chan *c;
+
+	for (i = 0; i < ide_nchan; i++) {
+		if (ide_chans[i].iobase == iobase)
+			return &ide_chans[i];
+	}
+	if (ide_nchan >= IDE_MAX_CHAN)
+		return 0;
+	c = &ide_chans[ide_nchan++];
+	c->iobase = iobase;
+	c->altport = altport;
+	c->irq = irq;
+	c->done = 0;
+	return c;
 }
 
 static void ide_delay(struct ide_disk *d)
@@ -110,8 +157,33 @@ static void ide_delay(struct ide_disk *d)
 	}
 }
 
-/* 等待 !(status & mask) 为真，或超时。返回最后读到的 status，超时 -1 */
-static int ide_wait(struct ide_disk *d, int mask, int check_err)
+/*
+ * 持有 ide_lock 进入；在 proc_lock 下释放后睡眠，唤醒后重新 acquire。
+ * 与 uart/console 相同，避免丢失 wakeup（持锁期间 push_off 关中断）。
+ */
+static void sleep_chan(void *chan, struct spinlock *lk)
+{
+	struct proc *p = myproc();
+
+	if (!holding(lk))
+		panic("ide sleep_chan");
+	if (!chan)
+		panic("ide sleep_chan: null");
+	if (!p)
+		panic("ide sleep_chan: no proc");
+
+	acquire(&proc_lock);
+	release(lk);
+	p->chan = chan;
+	p->wakeup_tick = 0;
+	p->state = SLEEPING;
+	release(&proc_lock);
+	sched();
+	acquire(lk);
+}
+
+/* 轮询等待（探测 / IF=0 时使用） */
+static int ide_wait_poll(struct ide_disk *d, int mask, int check_err)
 {
 	int i;
 	int r;
@@ -129,6 +201,77 @@ static int ide_wait(struct ide_disk *d, int mask, int check_err)
 }
 
 /*
+ * 等待驱动就绪：IF 开启且通道已使能 IRQ 时 sleep；否则忙等。
+ * 须持有 ide_lock。状态在循环内重读，IRQ 只负责 wakeup。
+ */
+static int ide_wait(struct ide_disk *d, int mask, int check_err)
+{
+	struct ide_chan *c;
+	int r;
+	int use_irq;
+
+	use_irq = ide_irq_ready && intr_get() && d->chan && myproc();
+	if (!use_irq)
+		return ide_wait_poll(d, mask, check_err);
+
+	c = d->chan;
+	c->done = 0;
+	for (;;) {
+		r = inb(d->iobase + IDE_STATUS);
+		if ((r & IDE_BSY) == 0 && (r & mask) == mask) {
+			if (check_err && (r & (IDE_DF | IDE_ERR)) != 0)
+				return -1;
+			return r;
+		}
+		if (c->done) {
+			c->done = 0;
+			continue;
+		}
+		sleep_chan((void *)&c->done, &ide_lock);
+		c->done = 0;
+	}
+}
+
+/* IRQ 入口：读 STATUS 清锁存，唤醒等待者 */
+static void ide_intr(int irq)
+{
+	struct ide_chan *c;
+
+	pic_eoi(irq);
+	c = ide_chan_by_irq(irq);
+	if (!c)
+		return;
+
+	/* 读主 STATUS 确认并清除 pending INTRQ */
+	(void)inb(c->iobase + IDE_STATUS);
+
+	acquire(&ide_lock);
+	c->done = 1;
+	wakeup((void *)&c->done);
+	release(&ide_lock);
+}
+
+void ide_intr_irq10(void)
+{
+	ide_intr(IRQ_10_IDE1B);
+}
+
+void ide_intr_irq11(void)
+{
+	ide_intr(IRQ_11_IDE1A);
+}
+
+void ide_intr_irq14(void)
+{
+	ide_intr(IRQ_14_IDE0);
+}
+
+void ide_intr_irq15(void)
+{
+	ide_intr(IRQ_15_IDE1);
+}
+
+/*
  * 发出读写/IDENTIFY 前的 LBA28 寻址：扇区数=1，按磁盘选通道与 master/slave。
  * cmd 为 ATA 命令字节。
  */
@@ -143,7 +286,6 @@ static void ide_start(struct ide_disk *d, uint lba, uchar cmd)
 	outb(d->iobase + IDE_CMD, cmd);
 }
 
-/* 从 IDE_DATA 寄存器读取数据 */
 static void ide_insw(struct ide_disk *d, void *buf, int words)
 {
 	ushort *p = buf;
@@ -154,7 +296,6 @@ static void ide_insw(struct ide_disk *d, void *buf, int words)
 	}
 }
 
-/* 写入数据到 IDE_DATA 寄存器 */
 static void ide_outsw(struct ide_disk *d, const void *buf, int words)
 {
 	const ushort *p = buf;
@@ -233,7 +374,6 @@ static void ide_submit_bio(struct request_queue *q, struct bio *bio)
 		bio->bi_end_io(bio);
 }
 
-/* 将 ATA 盘注册为 gendisk（hda/hdb/…，major=HD_MAJOR） */
 static int ide_add_gendisk(struct ide_disk *d)
 {
 	struct gendisk *gd;
@@ -259,19 +399,16 @@ static int ide_add_gendisk(struct ide_disk *d)
 	return 0;
 }
 
-/* 从磁盘读取数据 */
 int ide_read(int drive, uint lba, void *buf)
 {
 	struct ide_disk *d;
 	int r;
 
 	d = ide_get(drive);
-	if (!d || !buf) {
+	if (!d || !buf)
 		return -1;
-	}
-	if (d->sectors && lba >= d->sectors) {
+	if (d->sectors && lba >= d->sectors)
 		return -1;
-	}
 
 	acquire(&ide_lock);
 	ide_start(d, lba, IDE_CMD_READ);
@@ -285,19 +422,16 @@ int ide_read(int drive, uint lba, void *buf)
 	return 0;
 }
 
-/* 写入数据到磁盘 */
 int ide_write(int drive, uint lba, const void *buf)
 {
 	struct ide_disk *d;
 	int r;
 
 	d = ide_get(drive);
-	if (!d || !buf) {
+	if (!d || !buf)
 		return -1;
-	}
-	if (d->sectors && lba >= d->sectors) {
+	if (d->sectors && lba >= d->sectors)
 		return -1;
-	}
 
 	acquire(&ide_lock);
 	ide_start(d, lba, IDE_CMD_WRITE);
@@ -309,7 +443,7 @@ int ide_write(int drive, uint lba, const void *buf)
 		return -1;
 	}
 	ide_outsw(d, buf, SECTSIZE / 2);
-	/* 写完等 BSY 清、设备就绪 */
+	/* 写完等 BSY 清、设备就绪（完成 IRQ） */
 	r = ide_wait(d, IDE_DRDY, 1);
 	release(&ide_lock);
 	return r < 0 ? -1 : 0;
@@ -339,19 +473,18 @@ static int ide_identify(struct ide_disk *d)
 		return -1;	/* 无设备 */
 	}
 
-	if (ide_wait(d, IDE_DRQ, 1) < 0) {
+	/* 探测在 sti 之前：强制轮询 */
+	if (ide_wait_poll(d, IDE_DRQ, 1) < 0) {
 		return -1;
 	}
 	ide_insw(d, id, 256);
 
-	/* 型号：字内字节需交换 */
 	p = d->model;
 	for (i = 0; i < 20; i++) {
 		p[i * 2] = (char)(id[27 + i] >> 8);
 		p[i * 2 + 1] = (char)(id[27 + i] & 0xff);
 	}
 	p[40] = '\0';
-	/* 去尾空格 */
 	for (i = 39; i >= 0 && (d->model[i] == ' ' || d->model[i] == '\0'); i--) {
 		d->model[i] = '\0';
 	}
@@ -412,6 +545,7 @@ static void ide_probe_slot(const struct ide_ctl_desc *ctl, int chan, int unit)
 {
 	struct ide_disk probe;
 	struct ide_disk *d;
+	struct ide_chan *c;
 	int st;
 
 	probe.iobase = ctl->chan[chan].iobase;
@@ -419,8 +553,16 @@ static void ide_probe_slot(const struct ide_ctl_desc *ctl, int chan, int unit)
 	probe.unit = unit;
 	probe.sectors = 0;
 	probe.model[0] = '\0';
+	probe.chan = 0;
 	snprintf(probe.slot, sizeof(probe.slot), "%s.%d-%s",
 		 ctl->name, chan, unit ? "slave" : "master");
+
+	c = ide_chan_get(probe.iobase, probe.altport, ctl->chan[chan].irq);
+	if (!c) {
+		printk(KERN_ERR "ide: too many channels for %s\n", probe.slot);
+		return;
+	}
+	probe.chan = c;
 
 	/*
 	 * 选盘后读状态：0x00/0xFF 通常表示该通道无盘。
@@ -450,6 +592,7 @@ static void ide_probe_slot(const struct ide_ctl_desc *ctl, int chan, int unit)
 	*d = probe;		/* 把 probe 的内容拷贝进这块堆内存 */
 	d->gd = 0;
 	d->drive = ide_ndisk;	/* 即将占用的下标 */
+	d->chan = c;
 
 	if (ide_register(d) < 0) {
 		kfree(d);
@@ -483,16 +626,33 @@ static void ide_probe_controller(const struct ide_ctl_desc *ctl)
 	}
 }
 
+/* 清 nIEN，允许通道产生 INTRQ */
+static void ide_enable_channel_irq(struct ide_chan *c)
+{
+	/* bit1 nIEN=0；bit2 SRST=0 */
+	outb(c->altport, 0x00);
+	(void)inb(c->iobase + IDE_STATUS);	/* 清可能残留的 IRQ */
+	c->done = 0;
+}
+
 void ide_init(void)
 {
 	unsigned int i;
+	int c;
 
 	initlock(&ide_lock, "ide");
 	ide_tab = 0;
 	ide_ndisk = 0;
+	ide_nchan = 0;
+	ide_irq_ready = 0;
 
 	for (i = 0; i < sizeof(ide_ctls) / sizeof(ide_ctls[0]); i++)
 		ide_probe_controller(&ide_ctls[i]);
 
-	printk(KERN_INFO "ide: %d disk(s) registered\n", ide_ndisk);
+	/* 探测完成后再开磁盘中断（IDENTIFY/smoke 在 sti 前，已走轮询） */
+	for (c = 0; c < ide_nchan; c++)
+		ide_enable_channel_irq(&ide_chans[c]);
+	ide_irq_ready = 1;
+
+	printk(KERN_INFO "ide: %d disk(s) registered, IRQ enabled\n", ide_ndisk);
 }
