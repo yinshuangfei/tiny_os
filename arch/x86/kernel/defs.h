@@ -57,6 +57,8 @@ void consputc(int c);
 void console_write(const char *s, unsigned int n);
 void console_intr(int c);
 int console_getc(void);
+void console_set_fg(int pid);
+int console_get_fg(void);
 
 /** kbd.c — PS/2 键盘 */
 void kbd_init(void);

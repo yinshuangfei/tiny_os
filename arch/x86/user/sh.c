@@ -1089,6 +1089,7 @@ static void runcmd(int argc, char **argv)
 		close(p[0]);
 		close(p[1]);
 		argv[bar] = 0;
+		signal(SIGINT, SIG_DFL);
 		if (run_builtin(bar, argv))
 			exit(0);
 		execve(argv[0], argv, 0);
@@ -1105,6 +1106,7 @@ static void runcmd(int argc, char **argv)
 		}
 		close(p[0]);
 		close(p[1]);
+		signal(SIGINT, SIG_DFL);
 		runcmd(argc - bar - 1, argv + bar + 1);
 	}
 
@@ -1124,6 +1126,8 @@ static void run_external(int argc, char **argv)
 	(void)argc;
 	pid = fork();
 	if (pid == 0) {
+		/* exec 保留 SIG_IGN；子进程须恢复默认以便 Ctrl+C 可杀 */
+		signal(SIGINT, SIG_DFL);
 		execve(argv[0], argv, 0);
 		printf("%s exec %s failed\n", C_RED("sh:"), argv[0]);
 		exit(1);
@@ -1147,8 +1151,10 @@ static void run_line(char *line)
 
 	if (find_pipe(argv, argc) >= 0) {
 		pid = fork();
-		if (pid == 0)
+		if (pid == 0) {
+			signal(SIGINT, SIG_DFL);
 			runcmd(argc, argv);
+		}
 		if (pid < 0) {
 			printf("%s fork failed\n", C_RED("sh:"));
 			return;
@@ -1182,9 +1188,22 @@ void print_banner(void)
 	printf("\n");
 }
 
+/* Ctrl+C：不退出 shell；打断 readline，主循环重打 prompt */
+static void on_sigint(int sig)
+{
+	(void)sig;
+}
+
 int main(void)
 {
 	char line[BUFSZ];
+
+	/*
+	 * 不用 SIG_IGN：否则 console_getc 不会被打断，界面停在 ^C 后。
+	 * 空 handler → 读返回 -1 → 下面 continue 再 print_prompt。
+	 * 前台由内核 wait 维护；子进程 exec 前恢复 SIG_DFL。
+	 */
+	signal(SIGINT, on_sigint);
 
 	print_banner();
 	for (;;) {

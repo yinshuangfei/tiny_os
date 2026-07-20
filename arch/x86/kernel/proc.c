@@ -932,11 +932,15 @@ bad:
 /*
  * waitpid 内核实现：扫描 parent 的子进程，回收 ZOMBIE 并返回 pid。
  * pid==-1 表示任意子进程；无子进程返回 -1；有子进程但未退出则 sleep(parent)。
+ *
+ * 顺便维护控制台前台（无 setfg 系统调用）：
+ *   阻塞等待时 → 前台设为被等待的子进程（Ctrl+C 打到它）；
+ *   wait 返回时 → 前台交回 parent。
  */
 int wait_child(int pid, int *status, struct proc *parent)
 {
 	struct proc *np;
-	int i, havekids, found, xst;
+	int i, havekids, found, xst, fg_child;
 
 	if (!parent)
 		return -1;
@@ -945,6 +949,7 @@ int wait_child(int pid, int *status, struct proc *parent)
 		acquire(&proc_lock);
 		found = 0;
 		havekids = 0;
+		fg_child = 0;
 		for (i = 0; i < NPROC; i++) {
 			np = &proc_table[i];
 			if (np->parent != parent)
@@ -952,8 +957,11 @@ int wait_child(int pid, int *status, struct proc *parent)
 			if (np->state == UNUSED)
 				continue;
 			havekids = 1;
-			if (np->state != ZOMBIE)
+			if (np->state != ZOMBIE) {
+				if (!fg_child && (pid == -1 || np->pid == pid))
+					fg_child = np->pid;
 				continue;
+			}
 			if (pid != -1 && np->pid != pid)
 				continue;
 			found = np->pid;
@@ -962,13 +970,17 @@ int wait_child(int pid, int *status, struct proc *parent)
 			release(&proc_lock);
 			if (status)
 				*status = xst;
+			console_set_fg(parent->pid);
 			return found;
 		}
 		if (!havekids) {
 			release(&proc_lock);
+			console_set_fg(parent->pid);
 			return -1;
 		}
 		release(&proc_lock);
+		if (fg_child)
+			console_set_fg(fg_child);
 		sleep(parent);
 	}
 }

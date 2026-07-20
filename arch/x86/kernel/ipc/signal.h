@@ -37,6 +37,9 @@ struct proc;
 /* 向 pid 发送信号；成功 0，失败 -1 */
 int signal_send(int pid, int sig);
 
+/* 当前进程是否有可投递（未屏蔽且非 SIG_IGN）的 pending 信号 */
+int signal_can_interrupt(struct proc *p);
+
 /* 子进程退出时通知父进程（SIGCHLD） */
 void signal_parent_child_exit(struct proc *child);
 

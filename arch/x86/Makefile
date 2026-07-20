@@ -22,8 +22,8 @@ QEMUOPTS = -machine q35 -m $(MEM) -smp $(CPUS)
 # VNC：:N 为 display 号，TCP 端口 = 5900+N；:0 → 0.0.0.0:5900
 QEMUOPTS += -vnc 0.0.0.0:0
 # QEMUOPTS += -display none	# 仅关闭视频画面
-# QEMUOPTS += -nographic	# 彻底的纯命令行模式, redirect serial I/Os to console
-QEMUOPTS += -serial stdio -monitor none
+QEMUOPTS += -nographic	# 彻底的纯命令行模式, redirect serial I/Os to console
+# QEMUOPTS += -serial stdio -monitor none
 
 # IDE：q35 默认 AHCI，需显式加控制器；驱动按端口表扫描各通道。
 # ide0 = piix3-ide：hd0/hd1 @0x1F0，hd2 @0x170。

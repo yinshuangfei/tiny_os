@@ -20,4 +20,8 @@ void console_write(const char *s, unsigned int n);
 void console_intr(int c);
 int console_getc(void);
 
+/* 控制台前台进程（Ctrl+C → SIGINT 目标）；由 wait 维护，pid<=0 表示无 */
+void console_set_fg(int pid);
+int console_get_fg(void);
+
 #endif

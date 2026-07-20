@@ -88,6 +88,27 @@ int signal_send(int pid, int sig)
 	return 0;
 }
 
+/* 是否有应打断系统调用的 pending 信号（未屏蔽且非忽略） */
+int signal_can_interrupt(struct proc *p)
+{
+	uint bits;
+	int sig;
+
+	if (!p)
+		return 0;
+	bits = p->sigpending & ~p->sigmasked;
+	if (bits == 0)
+		return 0;
+	for (sig = 1; sig < NSIG; sig++) {
+		if (!(bits & SIGBIT(sig)))
+			continue;
+		if (p->sighand[sig] == SIG_IGN)
+			continue;
+		return 1;
+	}
+	return 0;
+}
+
 /* 子进程退出时通知父进程（SIGCHLD） */
 void signal_parent_child_exit(struct proc *child)
 {
