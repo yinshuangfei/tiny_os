@@ -134,6 +134,7 @@ C_OBJS = \
 	$(KDIR)/interrupt.o \
 	$(KDIR)/trapstack.o \
 	$(KDIR)/cpu.o \
+	$(KDIR)/fpu.o \
 	$(KDIR)/lock/spinlock.o \
 	$(KDIR)/printf.o \
 	$(KDIR)/utils.o \

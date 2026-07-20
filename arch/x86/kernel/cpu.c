@@ -37,7 +37,9 @@ void cpu_init(void)
 	}
 
 	cr0 = r_cr0();
-	cr0 &= ~CR0_EM;
+	cr0 |= CR0_MP;			/* TS=1 时 WAIT/#NM 行为完整 */
+	cr0 |= CR0_NE;			/* 原生 FPU 错误报告 */
+	cr0 &= ~CR0_EM;			/* 不用软件模拟 */
 	cr0 &= ~CR0_TS;
 	w_cr0(cr0);
 
@@ -45,5 +47,6 @@ void cpu_init(void)
 	cr4 |= CR4_OSFXSR | CR4_OSXMMEXCPT;
 	w_cr4(cr4);
 
-	printk(KERN_INFO "cpu: SSE enabled\n");
+	fpu_init();
+	printk(KERN_INFO "cpu: FPU/SSE enabled\n");
 }

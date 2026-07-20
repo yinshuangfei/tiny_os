@@ -170,8 +170,10 @@ static inline int cpu_has_cpuid(void)
 }
 
 /** CR0 flags */
+#define CR0_MP  0x00000002	/* monitor coprocessor（TS=1 时 WAIT 也 #NM） */
 #define CR0_EM  0x00000004	/* emulation (FP/SSE trap if set) */
 #define CR0_TS  0x00000008	/* task switched (FP/SSE trap if set) */
+#define CR0_NE  0x00000020	/* native FPU error reporting */
 #define CR0_PG  0x80000000	/* paging */
 
 /** CR4 flags */

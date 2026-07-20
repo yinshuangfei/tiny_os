@@ -7,6 +7,7 @@
 #include "mm/vm.h"
 #include "trap.h"
 #include "ipc/signal.h"
+#include "fpu.h"
 
 struct file;
 struct inode;
@@ -79,6 +80,12 @@ struct proc {
 	uint brk;			/* 程序间断点（heap end，类 Linux mm->brk） */
 	uint brk_start;			/* exec 后初始 brk（不可再缩小到其下） */
 	struct vma vmas[NVMA];		/* 匿名 mmap 区域表 */
+
+	/* FPU/SSE（FXSAVE 区须 16 字节对齐） */
+	int fpu_used;			/* 1：fpu_state 有效（曾用过或继承） */
+	/* fxsave 存储的内容，区须 16 字节对齐 */
+	__attribute__((aligned(16))) unsigned char fpu_state[FX_SIZE];
+
 	char name[NNAME];
 	struct file *ofile[NOFILE];	/* 打开文件表 */
 	struct inode *cwd;		/* 当前工作目录 */

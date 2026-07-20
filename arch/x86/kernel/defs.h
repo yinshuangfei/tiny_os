@@ -23,8 +23,15 @@ unsigned int page_refcount(void *addr);
 unsigned int pmm_nr_free_pages(void);
 unsigned int pmm_nr_pages(void);
 
-/** cpu.c */
 void cpu_init(void);
+
+/** fpu.c — 每进程 FXSAVE 与 lazy #NM */
+void fpu_init(void);
+void fpu_switch_away(void);
+void fpu_drop(struct proc *p);
+void fpu_clear(struct proc *p);
+void fpu_fork(struct proc *child, struct proc *parent);
+void fpu_nm(struct trapframe *tf);
 
 /** printf.c / printk */
 #include "printk.h"

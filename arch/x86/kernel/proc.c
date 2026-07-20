@@ -168,6 +168,8 @@ static void exit_with_xstate(int xstate)
 		p->sz = 0;
 	}
 
+	fpu_drop(p);
+
 	acquire(&proc_lock);
 	parent = p->parent;
 	reparent(p);
@@ -204,6 +206,7 @@ void exit_signal(int sig)
 void context_switch(struct context *old, struct context *new)
 {
 	intr_off();
+	fpu_switch_away();
 	swtch(old, new);
 }
 
@@ -585,6 +588,8 @@ void proc_free(struct proc *p)
 	if (!p || p->state == UNUSED)
 		return;
 
+	fpu_drop(p);
+
 	acquire(&proc_lock);
 	if (p->pagetable) {
 		uvmfree(p->pagetable);
@@ -909,6 +914,7 @@ int fork_copy(struct trapframe *tf)
 		np->cwd = fs_idup(p->cwd);
 
 	signal_fork(np, p);
+	fpu_fork(np, p);
 	fork_user_ctx_init(np);
 
 	acquire(&proc_lock);

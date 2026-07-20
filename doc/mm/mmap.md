@@ -17,4 +17,11 @@ VMA 是 Virtual Memory Area（虚拟内存区域）的简称。
 # linux 每进程 mmap 区域数上限
 在 Linux 系统中，控制单个进程内存映射（mmap）区域数量上限的参数是 vm.max_map_count。
 该参数的默认上限通常为 1048576 或 65536.
+- 当前上限：
 cat /proc/sys/vm/max_map_count
+- 当前进程已使用的映射数：
+wc -l /proc/<pid>/maps
+
+
+# 映射类型
+- 匿名映射

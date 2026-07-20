@@ -571,6 +571,60 @@ void mmap_test(void)
 	syscall_pr_result("munmap", ok);
 }
 
+/*
+ * FPU/SSE：x87 算术、%f 打印，以及 fork 后 XMM 寄存器隔离（lazy FXSAVE）。
+ */
+void fpu_test(void)
+{
+	float a, b, c, got;
+	int pid, status, ok = 1;
+	int i;
+	struct timespec ts;
+	static const float child_val = 2.5f;
+	static const float parent_val = 7.25f;
+
+	a = 1.5f;
+	b = 2.25f;
+	c = a + b * 2.0f;	/* 6.0 */
+	if (c < 5.9f || c > 6.1f) {
+		printf("fpu: arith fail c=%f\n", (double)c);
+		ok = 0;
+	}
+
+	pid = fork();
+	if (pid < 0) {
+		printf("fpu: fork failed\n");
+		ok = 0;
+	} else if (pid == 0) {
+		__asm__ volatile("movss %0, %%xmm0" : : "m"(child_val) : "xmm0");
+		ts.tv_sec = 0;
+		ts.tv_nsec = 20000000;	/* 20ms，给父进程抢占机会 */
+		for (i = 0; i < 5; i++)
+			nanosleep(&ts, 0);
+		__asm__ volatile("movss %%xmm0, %0" : "=m"(got) : : "xmm0");
+		exit((got > 2.4f && got < 2.6f) ? 0 : 1);
+	} else {
+		ts.tv_sec = 0;
+		ts.tv_nsec = 10000000;
+		nanosleep(&ts, 0);
+		__asm__ volatile("movss %0, %%xmm0" : : "m"(parent_val) : "xmm0");
+		for (i = 0; i < 5; i++)
+			nanosleep(&ts, 0);
+		if (waitpid(pid, &status, 0) != pid ||
+		    !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+			printf("fpu: child xmm corrupted status=0x%x\n", status);
+			ok = 0;
+		}
+		__asm__ volatile("movss %%xmm0, %0" : "=m"(got) : : "xmm0");
+		if (got < 7.2f || got > 7.3f) {
+			printf("fpu: parent xmm corrupted got=%f\n", (double)got);
+			ok = 0;
+		}
+	}
+
+	syscall_pr_result("fpu", ok);
+}
+
 /**
  * 可以只使用
  * int main(int argc, char *argv[])
@@ -598,5 +652,6 @@ int main(int argc, char *argv[], char *envp[])
 	cow_fork_test();
 	brk_test();
 	mmap_test();
+	fpu_test();
 	exit(0);
 }

@@ -131,6 +131,41 @@ static void print_ptr_to(printf_putc_t put, void *arg, unsigned int val)
 	print_uint_to(put, arg, val, 16, 0, 0, 0);
 }
 
+/* 简易 %f：默认 4 位小数（无 libm） */
+static void print_float_to(printf_putc_t put, void *arg, double val)
+{
+	int neg, ipart, i, digit;
+	double frac;
+
+	if (val != val) {
+		print_str_to(put, arg, "nan", 0);
+		return;
+	}
+	neg = 0;
+	if (val < 0.0) {
+		neg = 1;
+		val = -val;
+	}
+	if (neg)
+		put('-', arg);
+
+	ipart = (int)val;
+	print_int_to(put, arg, ipart, 0, 0);
+	put('.', arg);
+
+	frac = val - (double)ipart;
+	for (i = 0; i < 4; i++) {
+		frac *= 10.0;
+		digit = (int)frac;
+		if (digit < 0)
+			digit = 0;
+		if (digit > 9)
+			digit = 9;
+		put('0' + digit, arg);
+		frac -= (double)digit;
+	}
+}
+
 static void vprintf_to(printf_putc_t put, void *arg, const char *fmt, va_list ap)
 {
 	int width, zeropad;
@@ -186,6 +221,9 @@ static void vprintf_to(printf_putc_t put, void *arg, const char *fmt, va_list ap
 		case 'p':
 			print_ptr_to(put, arg,
 				     (unsigned int)va_arg(ap, void *));
+			break;
+		case 'f':
+			print_float_to(put, arg, va_arg(ap, double));
 			break;
 		default:
 			put('%', arg);

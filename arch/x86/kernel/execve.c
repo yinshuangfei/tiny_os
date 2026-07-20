@@ -335,6 +335,7 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 	p->brk = heap_end;
 	p->brk_start = heap_end;
 	vma_clear(p);
+	fpu_clear(p);
 	proc_name_from_path(p, name);
 	signal_exec_reset(p);
 

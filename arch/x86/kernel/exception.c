@@ -44,13 +44,12 @@ void divide_error_handler(struct trapframe *tf)
 
 void device_not_available_handler(struct trapframe *tf)
 {
-	uint32 cr0;
-
-	printf("device not available (#NM) at eip=0x%x\n", tf->eip);
-	/* lazy FPU：清 TS 后返回，让当前上下文继续执行 SSE/FP 指令 */
-	cr0 = r_cr0();
-	cr0 &= ~CR0_TS;
-	w_cr0(cr0);
+	/* handle device not available (#NM) */
+	/*
+	 * 延迟切换:
+	 * TS 是“延迟切换”的钩子；真正切换发生在 #NM 里, 也就是这里。
+	 */
+	fpu_nm(tf);
 }
 
 void invalid_opcode_handler(struct trapframe *tf)
@@ -108,7 +107,16 @@ void page_fault_handler(struct trapframe *tf)
 
 void simd_fp_handler(struct trapframe *tf)
 {
-	printf("simd fp exception (#XM) at eip=0x%x\n", tf->eip);
+	/* handle simd fp exception (#XM)*/
+	struct proc *p = myproc();
+	int user;
+
+	user = tf && ((tf->cs & 3) == DPL_USER);
+	printk(KERN_ERR "simd fp exception (#XM) at eip=0x%x pid=%d\n",
+	       tf ? tf->eip : 0, p ? p->pid : -1);
+	if (user && p && p->pagetable) {
+		exit_signal(SIGFPE);
+	}
 	panic("simd fp exception");
 }
 
