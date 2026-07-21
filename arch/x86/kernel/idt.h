@@ -45,5 +45,6 @@ uint8 idt_get_type_attr(int vec);
 
 void idt_set_gate(int vec, void (*handler)(void), uint16 selector, uint8 type_attr);
 void idt_init(void);
+void idt_load_ap(void);
 
 #endif

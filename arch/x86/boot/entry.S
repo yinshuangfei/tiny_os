@@ -7,7 +7,7 @@
 .extern main
 .extern edata
 .extern end
-.extern kernel_stack
+.extern kernel_stacks
 
 .set KSTACKSIZE, 4096
 
@@ -15,8 +15,8 @@ _start:
 	cli
 	cld
 
-	/* 设置内核栈, 给 scheduler 使用 */
-	movl $(kernel_stack + KSTACKSIZE), %esp
+	/* BSP 调度栈 = kernel_stacks[0] */
+	movl $(kernel_stacks + KSTACKSIZE), %esp
 
 	/* clear .bss */
 	movl $edata, %edi

@@ -204,7 +204,7 @@ void gdt_test(void)
 	pass &= test_check("gdt[5] TSS",
 			   (gdt_get_access(5) & GDT_ACCESS_MASK) ==
 			   (GDT_TSS & GDT_ACCESS_MASK));
-	pass &= test_check("TR == SEG_TSS", r_tr() == SEG_TSS);
+	pass &= test_check("TR == SEG_TSS", r_tr() == SEG_TSS(0));
 	pass &= test_check("TSS.ss0 == SEG_KDATA", tss_get_ss0() == SEG_KDATA);
 	pass &= test_check("TSS.esp0 set",
 			   tss_get_esp0() == (uint32)INTERRUPT_STACK_TOP ||

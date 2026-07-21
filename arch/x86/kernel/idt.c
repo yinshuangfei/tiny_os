@@ -43,6 +43,12 @@ static void idt_load(void)
 	__asm__ volatile ("lidt %0" : : "m"(ptr));
 }
 
+/* AP：IDTR 为 per-CPU，须对本核 lidt（与 BSP 共用同一张 idt[]） */
+void idt_load_ap(void)
+{
+	idt_load();
+}
+
 void idt_init(void)
 {
 	// ISR 是 Interrupt Service Routine

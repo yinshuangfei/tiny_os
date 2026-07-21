@@ -48,7 +48,8 @@ struct context {
 };
 
 struct cpu {
-	int id;
+	int id;			/* 逻辑 CPU 号 */
+	int apicid;		/* Local APIC ID */
 	struct proc *proc;	/* 当前运行进程, 内核态及用户态 */
 	struct proc *last_sched;/* 最近一次 sched() 的进程，供回收 ZOMBIE */
 	struct context context;	/* scheduler 上下文，swtch 回到此处 */
@@ -98,7 +99,7 @@ struct proc {
 	int sighandling;		/* 是否正在处理信号 */
 };
 
-extern struct cpu cpus[NCPU];
+extern struct cpu cpus[NR_CPUS];
 struct cpu *mycpu(void);
 extern const char *procstate_str[];
 extern struct proc *proc_table;
@@ -107,8 +108,10 @@ extern struct proc *kthreadd_task;
 
 void user_enter_ring3(struct proc *p) __attribute__((noreturn));
 
-/* 当前运行在 ring3 的进程页表；trap 返回用户态前写回 CR3 */
-extern pagetable_t current_user_pgdir;
+/* 当前运行在 ring3 的进程页表（每 CPU）；trap 返回用户态前写回 CR3 */
+extern pagetable_t cpu_user_pgdir[NR_CPUS];
+pagetable_t get_user_pgdir(void);
+void set_user_pgdir(pagetable_t pgdir);
 
 struct proc *myproc(void);
 

@@ -701,6 +701,72 @@ void demand_paging_test(void)
 	syscall_pr_result("demand-page", ok);
 }
 
+/*
+ * SMP：多子进程忙等后报告 sched_getcpu；若 get_nprocs()>1 则期望 >=2 个不同 CPU。
+ */
+void smp_test(void)
+{
+	int i, pid, status, cpu, nc, nchild;
+	int seen[8];
+	int distinct;
+
+	nc = get_nprocs();
+	cpu = sched_getcpu();
+	printf("smp: ncpu=%d current_cpu=%d\n", nc, cpu);
+
+	if (nc < 1) {
+		syscall_pr_result("smp", 0);
+		return;
+	}
+
+	for (i = 0; i < 8; i++)
+		seen[i] = 0;
+	if (cpu >= 0 && cpu < 8)
+		seen[cpu] = 1;
+
+	nchild = nc > 1 ? 8 : 2;
+	for (i = 0; i < nchild; i++) {
+		pid = fork();
+		if (pid < 0) {
+			printf("smp: fork failed\n");
+			syscall_pr_result("smp", 0);
+			return;
+		}
+		if (pid == 0) {
+			volatile int x;
+			int c;
+
+			for (x = 0; x < 2000000; x++)
+				;
+			c = sched_getcpu();
+			exit(c & 0xff);
+		}
+	}
+
+	for (i = 0; i < nchild; i++) {
+		if (wait(&status) < 0)
+			break;
+		if (WIFEXITED(status)) {
+			cpu = WEXITSTATUS(status);
+			if (cpu >= 0 && cpu < 8)
+				seen[cpu] = 1;
+			printf("smp: child exited cpu=%d\n", cpu);
+		}
+	}
+
+	distinct = 0;
+	for (i = 0; i < 8; i++) {
+		if (seen[i])
+			distinct++;
+	}
+	printf("smp: distinct_cpus=%d\n", distinct);
+
+	if (nc == 1)
+		syscall_pr_result("smp", distinct >= 1);
+	else
+		syscall_pr_result("smp", distinct >= 2);
+}
+
 /**
  * 可以只使用
  * int main(int argc, char *argv[])
@@ -730,5 +796,6 @@ int main(int argc, char *argv[], char *envp[])
 	mmap_test();
 	fpu_test();
 	demand_paging_test();
+	smp_test();
 	exit(0);
 }

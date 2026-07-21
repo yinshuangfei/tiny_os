@@ -44,6 +44,21 @@ getpid:
 	int $0x80
 	ret
 
+/*
+ * getcpu(unsigned *cpu, unsigned *node [, void *tcache])
+ * 对齐 Linux：成功返回 0；tcache 可省略（传 0）。
+ */
+.globl getcpu
+getcpu:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl 16(%esp), %edx		/* tcache，可为垃圾/0 */
+	movl $SYS_getcpu, %eax
+	int $0x80
+	popl %ebx
+	ret
+
 .globl write
 write:
 	pushl %ebx

@@ -12,7 +12,13 @@ OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
 ifndef CPUS
-CPUS := 1
+CPUS := 4
+endif
+
+# NR_CPUS = Linux NR_CPUS（静态上界）；CPUS ≈ maxcpus / QEMU -smp
+NR_CPUS ?= 256
+ifeq ($(shell test $(CPUS) -gt $(NR_CPUS) && echo yes),yes)
+$(error CPUS=$(CPUS) > NR_CPUS=$(NR_CPUS); use e.g. make NR_CPUS=$(CPUS) CPUS=$(CPUS))
 endif
 
 MEM ?= 128M
@@ -54,6 +60,7 @@ QEMUOPTS += -device ide-hd,drive=hd5,bus=ide1b.0,unit=0
 
 CFLAGS := -m32 -ffreestanding -fno-pic -fno-stack-protector -nostdlib -Wall
 CFLAGS += -fno-asynchronous-unwind-tables -fno-unwind-tables
+CFLAGS += -DNR_CPUS=$(NR_CPUS) -DSETUP_MAX_CPUS=$(CPUS)
 USER_CFLAGS := $(CFLAGS) -I$(USERDIR)/include -ffreestanding -fno-builtin
 
 # 用户程序产物（须在 hd.img 规则之前定义，否则依赖展开为空）
@@ -67,7 +74,8 @@ USER_LIB_OBJS = \
 	$(USERDIR)/lib/mmap.o \
 	$(USERDIR)/lib/string.o \
 	$(USERDIR)/lib/ansi.o \
-	$(USERDIR)/lib/termios.o
+	$(USERDIR)/lib/termios.o \
+	$(USERDIR)/lib/sched.o
 
 INITCODE_BIN=$(USERDIR)/init.bin
 INITCODE_OBJS=$(USER_LIB_OBJS) $(USERDIR)/init.o
@@ -135,6 +143,7 @@ C_OBJS = \
 	$(KDIR)/interrupt.o \
 	$(KDIR)/lapic.o \
 	$(KDIR)/ioapic.o \
+	$(KDIR)/mp.o \
 	$(KDIR)/trapstack.o \
 	$(KDIR)/cpu.o \
 	$(KDIR)/fpu.o \
@@ -175,6 +184,7 @@ AS_OBJS = \
 	$(KDIR)/trapuser.o \
 	$(KDIR)/swtch.o \
 	$(KDIR)/userbins.o \
+	$(KDIR)/trampoline.o \
 
 OBJS = $(C_OBJS) $(AS_OBJS)
 
@@ -229,6 +239,9 @@ $(USERDIR)/lib/ansi.o: $(USERDIR)/lib/ansi.c
 $(USERDIR)/lib/termios.o: $(USERDIR)/lib/termios.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
+$(USERDIR)/lib/sched.o: $(USERDIR)/lib/sched.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
 $(USERDIR)/lib/usys.o: $(USERDIR)/lib/usys.S
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
@@ -245,6 +258,9 @@ $(KDIR)/trapuser.o: $(KDIR)/trapuser.S
 	$(AS) --32 $< -o $@
 
 $(KDIR)/swtch.o: $(KDIR)/swtch.S
+	$(AS) --32 $< -o $@
+
+$(KDIR)/trampoline.o: $(KDIR)/trampoline.S
 	$(AS) --32 $< -o $@
 
 # 语法: 目标列表: 目标模式: 依赖模式
@@ -291,7 +307,7 @@ compile_commands.json:
 clean:
 	rm -f *.o *.elf *.bin *.img *.map *.vmdk *.tmp main.s test64.* \
 	setup.elf setup.bin kernel_body.elf kernel_body.bin $(HD_IMG) \
-	$(BOOTDIR)/*.o $(BOOTDIR)/*.bin \
+	$(BOOTDIR)/*.o $(BOOTDIR)/*.bin $(BOOTDIR)/*.elf \
 	$(USERDIR)/*.o $(USERDIR)/*.elf $(USERDIR)/*.bin \
 	$(USERDIR)/lib/*.o \
 	$(OBJS)

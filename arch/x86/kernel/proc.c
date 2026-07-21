@@ -18,6 +18,7 @@
 #include "gdt.h"
 #include "fs/fs.h"
 #include "ipc/signal.h"
+#include "mp.h"
 
 /* 进程表 */
 struct proc *proc_table;
@@ -27,7 +28,17 @@ struct proc *initproc;
 struct proc *kthreadd_task;
 
 /* trap 路径在返回 ring3 前据此恢复用户 CR3 */
-pagetable_t current_user_pgdir;
+pagetable_t cpu_user_pgdir[NR_CPUS];
+
+pagetable_t get_user_pgdir(void)
+{
+	return cpu_user_pgdir[cpu_id()];
+}
+
+void set_user_pgdir(pagetable_t pgdir)
+{
+	cpu_user_pgdir[cpu_id()] = pgdir;
+}
 
 /* 进程表锁 */
 struct spinlock proc_lock;
@@ -53,7 +64,7 @@ static struct list_head kthread_create_list;
 /* kthreadd 创建请求队列是否已初始化 */
 static int kthread_create_inited;
 
-struct cpu cpus[NCPU];
+struct cpu cpus[NR_CPUS];
 
 /* 分配新 pid；调用方须持有 proc_lock */
 static int alloc_pid(void)
@@ -161,8 +172,8 @@ static void exit_with_xstate(int xstate)
 	}
 
 	if (p->pagetable) {
-		if (current_user_pgdir == p->pagetable)
-			current_user_pgdir = 0;
+		if (get_user_pgdir() == p->pagetable)
+			set_user_pgdir(0);
 		uvmfree(p->pagetable);
 		p->pagetable = 0;
 		p->sz = 0;
@@ -352,7 +363,7 @@ void user_enter_ring3(struct proc *p)
 	if (!p->pagetable || !p->kframe)
 		panic("user_enter_ring3: no user image");
 
-	current_user_pgdir = p->pagetable;
+	set_user_pgdir(p->pagetable);
 	tss_set_esp0((uint)p->kstack + KSTACKSIZE);
 
 	printk(KERN_DEBUG "user_start: pid=%d eip=0x%x esp=0x%x pgdir=%p\n",
@@ -807,7 +818,7 @@ void scheduler(void)
 	struct proc *p;
 	struct proc *prev;
 
-	printf("scheduler: starting ...\n");
+	printf("scheduler: cpu%d starting ...\n", cpu_id());
 
 	c->proc = 0;
 	for (;;) {
@@ -825,7 +836,7 @@ void scheduler(void)
 				tss_set_esp0((uint)p->kstack + KSTACKSIZE);
 			/* fork 子进程首次调度时尚未经过 ring3 trap，须在此更新 */
 			if (p->pagetable)
-				current_user_pgdir = p->pagetable;
+				set_user_pgdir(p->pagetable);
 
 			prepare_context(p);
 			release(&proc_lock);

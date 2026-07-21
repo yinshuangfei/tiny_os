@@ -1,11 +1,18 @@
 #include "types.h"
+#include "param.h"
 #include "mm/memlayout.h"
 
-/* 内核主栈（main/普通内核代码）
- * scheduler 跑在 kernel_stack 上
- * 不属于任何 struct proc
-*/
-char kernel_stack[KSTACKSIZE] __attribute__((aligned(16)));
+/* 每 CPU 调度栈；BSP entry.S 使用 kernel_stacks[0] */
+char kernel_stacks[NR_CPUS][KSTACKSIZE] __attribute__((aligned(16)));
+char interrupt_stacks[NR_CPUS][KSTACKSIZE] __attribute__((aligned(16)));
 
-/* 中断/异常栈：trap 入口切换到此，避免与主栈嵌套冲突 */
-char interrupt_stack[KSTACKSIZE] __attribute__((aligned(16)));
+uint32 interrupt_stack_tops[NR_CPUS];
+
+void trapstack_init(void)
+{
+	int i;
+
+	for (i = 0; i < NR_CPUS; i++)
+		interrupt_stack_tops[i] =
+			(uint32)&interrupt_stacks[i][0] + KSTACKSIZE;
+}

@@ -16,6 +16,15 @@ int execve(const char *filename, char *const argv[], char *const envp[]);
 int exit(int) __attribute__((noreturn));
 int fork(void);
 int getpid(void);
+/*
+ * getcpu(2)：对齐 Linux i386 __NR_getcpu；写入 *cpu / *node，成功返回 0。
+ * node 可为 NULL；无 NUMA 时写 0。
+ */
+int getcpu(unsigned int *cpu, unsigned int *node);
+/* sched_getcpu(3)：当前逻辑 CPU 号（封装 getcpu） */
+int sched_getcpu(void);
+/* get_nprocs(3)：在线 CPU 数（读 /proc/cpuinfo；Linux 无 SYS_ncpu） */
+int get_nprocs(void);
 int kill(int pid, int sig);
 sighandler_t signal(int sig, sighandler_t handler);
 int sigreturn(void);

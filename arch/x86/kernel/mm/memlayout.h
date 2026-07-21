@@ -65,11 +65,16 @@
  * p->kstack + 0    ─┴─ 栈底
 */
 
-extern char kernel_stack[KSTACKSIZE];
-extern char interrupt_stack[KSTACKSIZE];
+#include "../param.h"
 
-#define KERNEL_STACK_TOP    (kernel_stack + KSTACKSIZE)
-#define INTERRUPT_STACK_TOP (interrupt_stack + KSTACKSIZE)
+extern char kernel_stacks[NR_CPUS][KSTACKSIZE];
+extern char interrupt_stacks[NR_CPUS][KSTACKSIZE];
+extern unsigned int interrupt_stack_tops[NR_CPUS];
+
+void trapstack_init(void);
+
+#define KERNEL_STACK_TOP    (kernel_stacks[0] + KSTACKSIZE)
+#define INTERRUPT_STACK_TOP (interrupt_stacks[0] + KSTACKSIZE)
 
 /*
  * page_storage 等元数据数组上限；实际 RAM 由 mem_probe() 探测，

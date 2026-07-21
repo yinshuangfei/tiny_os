@@ -14,7 +14,9 @@
 /* 陷入时硬件帧：testl $3, HW_CS(%esp) 判断 ring3（CS.RPL） */
 .set HW_CS, 4
 
-.globl interrupt_stack
+.globl interrupt_stack_tops
+.globl lapic
+.globl cpu_user_pgdir
 .globl isr_divide_error
 .globl isr_device_not_available
 .globl isr_invalid_opcode
@@ -48,19 +50,29 @@
 .extern preempt_check
 .extern signal_notify
 .extern kernel_pgdir
-.extern current_user_pgdir
+.extern cpu_user_pgdir
+.extern interrupt_stack_tops
+.extern lapic
 
 /* --------------------------------------------------------------------------
- * 中断栈切换
+ * 中断栈切换（per-CPU：下标 = LAPIC ID，教学约定与逻辑 CPU 号一致）
  * -------------------------------------------------------------------------- */
 
 /*
- * 切换到 interrupt_stack，栈顶保存原 ESP（指向 trapframe）。
- * C 处理在中断栈上执行；返回前用 IRQSTACK_RESTORE 回到被中断上下文。
+ * 切换到本 CPU interrupt_stack。
+ * 先保存原 %esp，再切栈，并在新栈上压入旧 esp 供 IRQSTACK_RESTORE。
+ * 可破坏 eax/ecx。
  */
 .macro IRQSTACK_SWITCH
 	movl %esp, %eax		# eax = 指向 trapframe (edi)
-	movl $(interrupt_stack + KSTACKSIZE), %esp	# 切到 interrupt_stack 栈顶
+	movl lapic, %ecx
+	testl %ecx, %ecx
+	jz 1f
+	movl 0x20(%ecx), %ecx		/* LAPIC ID */
+	shrl $24, %ecx
+	jmp 2f
+1:	xorl %ecx, %ecx
+2:	movl interrupt_stack_tops(,%ecx,4), %esp	# 切到 interrupt_stack 栈顶
 	pushl %eax		# 中断栈栈顶，保存「原栈顶」，供 RESTORE
 .endm
 
@@ -164,8 +176,17 @@
 /* 恢复用户页表：用 ecx 作暂存，勿破坏 eax 中的 syscall 返回值 */
 .macro RESTORE_USER_PGDIR
 	pushl %ecx
-	movl current_user_pgdir, %ecx
-	movl %ecx, %cr3
+	pushl %edx
+	movl lapic, %ecx
+	testl %ecx, %ecx
+	jz 1f
+	movl 0x20(%ecx), %ecx
+	shrl $24, %ecx
+	jmp 2f
+1:	xorl %ecx, %ecx
+2:	movl cpu_user_pgdir(,%ecx,4), %edx
+	movl %edx, %cr3
+	popl %edx
 	popl %ecx
 .endm
 

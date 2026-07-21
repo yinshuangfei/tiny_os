@@ -10,6 +10,7 @@
 #include "timer.h"
 #include "x86.h"
 #include "mm/memlayout.h"
+#include "mp.h"
 
 #define NSEC_PER_SEC  1000000000u
 #define NSEC_PER_TICK (NSEC_PER_SEC / TIMER_HZ)
@@ -35,6 +36,36 @@ int sys_getpid(struct trapframe *tf)
 {
 	(void)tf;
 	return myproc()->pid;
+}
+
+/*
+ * getcpu(2)：对齐 Linux —— 写入 *cpu / *node，成功返回 0。
+ * 内核系统调用有第三参数 tcache（自 2.6.24 起忽略）；
+ * node 无 NUMA 时写 0。返回当前逻辑 CPU（教学约定 = APIC ID）。
+ */
+int sys_getcpu(struct trapframe *tf)
+{
+	uint ucpu, unode;
+	unsigned int v;
+	struct proc *p = myproc();
+
+	if (!p || !p->pagetable)
+		return -1;
+	if (argaddr(tf, 0, &ucpu) < 0 || argaddr(tf, 1, &unode) < 0)
+		return -1;
+	/* arg2 = tcache，忽略 */
+
+	v = (unsigned int)cpu_id();
+	if (ucpu != 0 &&
+	    copyout(p->pagetable, ucpu, &v, sizeof(v)) < 0)
+		return -1;
+
+	v = 0;	/* 单节点 / 无 NUMA */
+	if (unode != 0 &&
+	    copyout(p->pagetable, unode, &v, sizeof(v)) < 0)
+		return -1;
+
+	return 0;
 }
 
 int sys_fork(struct trapframe *tf)

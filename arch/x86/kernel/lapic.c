@@ -35,8 +35,10 @@
 
 #define PIT_FREQ	1193182u	/* PIT 频率 */
 
-static volatile uint32 *lapic;
+/* 导出给 trap.S：按 LAPIC ID 选 per-CPU 中断栈 */
+volatile uint32 *lapic;
 static int lapic_ok;
+static uint32 lapic_ticr;	/* 校准后的 Initial Count，AP 复用 */
 
 static uint32 lapic_r(int index)
 {
@@ -155,9 +157,20 @@ void lapic_timer_init(unsigned int hz)
 
 	lapic_w(LAPIC_TICR, ticr);
 	lapic_w(LAPIC_TIMER, TIMER_PERIODIC | (uint32)IRQ_TIMER);
+	lapic_ticr = ticr;
 
 	printk(KERN_INFO "lapic: timer %u Hz (ticr=%u, 10ms_delta=%u)\n",
 	       hz, ticr, delta);
+}
+
+/* AP：复用 BSP 校准值，避免再占 PIT */
+void lapic_timer_init_ap(void)
+{
+	if (!lapic_ok || !lapic || lapic_ticr == 0)
+		return;
+	lapic_w(LAPIC_TDCR, TDCR_DIV1);
+	lapic_w(LAPIC_TICR, lapic_ticr);
+	lapic_w(LAPIC_TIMER, TIMER_PERIODIC | (uint32)IRQ_TIMER);
 }
 
 void lapic_eoi(void)
@@ -171,4 +184,65 @@ uint32 lapic_id(void)
 	if (!lapic)
 		return 0;
 	return lapic_r(LAPIC_ID) >> 24;
+}
+
+void lapic_microdelay(unsigned int us)
+{
+	/* 粗延时：PIT ch2 忙等，至少 1ms 精度时向上取整 */
+	unsigned int ms;
+
+	if (us == 0)
+		return;
+	ms = (us + 999) / 1000;
+	if (ms == 0)
+		ms = 1;
+	pit_busywait_ms(ms);
+}
+
+/*
+ * INIT-SIPI-SIPI 启动 AP（addr 须 4KiB 对齐，落在 <1MiB）。
+ */
+#define ICR_INIT	0x00000500
+#define ICR_STARTUP	0x00000600
+#define ICR_ASSERT	0x00004000
+#define ICR_LEVEL	0x00008000
+#define ICR_DELIVS	0x00001000
+
+/* 按 Intel 规定的 INIT → SIPI → SIPI 把指定 AP 从 addr 拉起来 */
+void lapic_startap(uint32 apicid, uint32 addr)
+{
+	int i;
+	uint16 *wrv;
+
+	if (!lapic)
+		return;
+
+	/*
+	 * 可选：CMOS 关机码 + 热复位向量（部分真实硬件需要；QEMU 通常可省略）。
+	 */
+	outb(0x70, 0xf);	/* 关闭 NMI */
+	outb(0x71, 0x0a);
+	wrv = (uint16 *)0x467;		/* 0x40:0x67 */
+	wrv[0] = 0;
+	wrv[1] = addr >> 4;
+
+	/* INIT */
+	lapic_w(LAPIC_ICRHI, apicid << 24);
+	lapic_w(LAPIC_ICRLO, ICR_INIT | ICR_LEVEL | ICR_ASSERT);
+	while (lapic_r(LAPIC_ICRLO) & ICR_DELIVS)
+		;
+	lapic_microdelay(200);
+	lapic_w(LAPIC_ICRLO, ICR_INIT | ICR_LEVEL);
+	while (lapic_r(LAPIC_ICRLO) & ICR_DELIVS)
+		;
+	lapic_microdelay(10000);
+
+	/* SIPI × 2，向量 = 页号, 真正告诉 AP 从哪开始跑 */
+	for (i = 0; i < 2; i++) {
+		lapic_w(LAPIC_ICRHI, apicid << 24);
+		lapic_w(LAPIC_ICRLO, ICR_STARTUP | (addr >> 12));
+		while (lapic_r(LAPIC_ICRLO) & ICR_DELIVS)
+			;
+		lapic_microdelay(200);
+	}
 }

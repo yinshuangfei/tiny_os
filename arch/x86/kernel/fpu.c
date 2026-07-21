@@ -1,18 +1,22 @@
 /*
  * 每进程 FPU/SSE 状态（FXSAVE 512 字节）与 lazy 切换。
  *
- * 调度切走时置 CR0.TS；下次 FP/SSE 指令触发 #NM，再保存旧 owner、恢复当前。
+ * 调度切走时：若本核 owner 是当前进程则先 fxsave，再置 CR0.TS；
+ * 下次 FP/SSE 指令触发 #NM，再恢复当前进程状态。
+ * SMP：每核独立 FPU，故 fpu_owner 为 per-CPU。
  */
 #include "types.h"
 #include "defs.h"
+#include "param.h"
 #include "proc.h"
+#include "mp.h"
 #include "x86.h"
 #include "trap.h"
 
 #define MXCSR_DEFAULT	0x1f80u	/* 屏蔽全部 SSE 异常（Intel 上电默认） */
 
-/* 当前占用 FPU/SSE 硬件的进程；NULL 表示硬件状态可丢弃 */
-static struct proc *fpu_owner;
+/* 各核当前占用 FPU/SSE 硬件的进程；NULL 表示可丢弃 */
+static struct proc *fpu_owner[NR_CPUS];
 
 /* 清空 TS 标志 */
 static inline void fpu_clts(void)
@@ -47,21 +51,39 @@ static void fpu_hw_init(void)
 /* cpu_init 在开启 OSFXSR 后调用：内核启动时干净 x87/MXCSR */
 void fpu_init(void)
 {
+	int i;
+
 	fpu_hw_init();
-	fpu_owner = 0;
+	for (i = 0; i < NR_CPUS; i++)
+		fpu_owner[i] = 0;
 }
 
-/* 进程即将被切走：置 TS，下次 FP/SSE 再懒切换 */
+/* 进程即将被切走：写回本核 dirty FPU，置 TS */
 void fpu_switch_away(void)
 {
+	struct proc *p = myproc();
+	int id = cpu_id();
+
+	if (p && fpu_owner[id] == p) {
+		fpu_clts();
+		fxsave(p->fpu_state);
+		p->fpu_used = 1;
+		fpu_owner[id] = 0;
+	}
 	w_cr0(r_cr0() | CR0_TS);
 }
 
 /* 清空 FPU/SSE 状态 */
 void fpu_drop(struct proc *p)
 {
-	if (p && fpu_owner == p)
-		fpu_owner = 0;
+	int i;
+
+	if (!p)
+		return;
+	for (i = 0; i < NR_CPUS; i++) {
+		if (fpu_owner[i] == p)
+			fpu_owner[i] = 0;
+	}
 }
 
 /* exec 后丢弃旧映像的浮点状态 */
@@ -76,20 +98,27 @@ void fpu_clear(struct proc *p)
 /* fork：子进程继承父进程已保存的 FPU 映像 */
 void fpu_fork(struct proc *child, struct proc *parent)
 {
+	int id;
+
 	if (!child || !parent) {
 		if (child)
 			child->fpu_used = 0;
 		return;
 	}
-	if (!parent->fpu_used) {
+	if (!parent->fpu_used && fpu_owner[cpu_id()] != parent) {
 		child->fpu_used = 0;
 		return;
 	}
-	/* 父仍占用硬件时先写回内存，再拷贝 */
-	if (fpu_owner == parent) {
+	/* 父仍占用本核硬件时先写回内存，再拷贝 */
+	id = cpu_id();
+	if (fpu_owner[id] == parent) {
 		fpu_clts();
 		fxsave(parent->fpu_state);
-		/* 父仍是 owner；保持 TS 清，或由后续 switch_away 再置 */
+		parent->fpu_used = 1;
+	}
+	if (!parent->fpu_used) {
+		child->fpu_used = 0;
+		return;
 	}
 	memcpy(child->fpu_state, parent->fpu_state, FX_SIZE);
 	child->fpu_used = 1;
@@ -101,6 +130,7 @@ void fpu_fork(struct proc *child, struct proc *parent)
 void fpu_nm(struct trapframe *tf)
 {
 	struct proc *p = myproc();
+	int id = cpu_id();
 
 	(void)tf;
 	fpu_clts();
@@ -108,12 +138,12 @@ void fpu_nm(struct trapframe *tf)
 	if (!p)
 		return;
 
-	if (fpu_owner == p)
+	if (fpu_owner[id] == p)
 		return;
 
-	if (fpu_owner) {
-		fxsave(fpu_owner->fpu_state);
-		fpu_owner->fpu_used = 1;
+	if (fpu_owner[id]) {
+		fxsave(fpu_owner[id]->fpu_state);
+		fpu_owner[id]->fpu_used = 1;
 	}
 
 	if (p->fpu_used)
@@ -122,5 +152,5 @@ void fpu_nm(struct trapframe *tf)
 		fpu_hw_init();
 		p->fpu_used = 1;
 	}
-	fpu_owner = p;
+	fpu_owner[id] = p;
 }

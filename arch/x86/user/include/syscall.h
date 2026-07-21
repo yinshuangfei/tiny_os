@@ -28,12 +28,13 @@
 #define SYS_pipe	42	/* Linux i386 __NR_pipe */
 #define SYS_brk		45	/* Linux i386 __NR_brk */
 #define SYS_signal	48	/* Linux i386 __NR_signal */
+#define SYS_ioctl	54	/* Linux i386 __NR_ioctl */
 #define SYS_munmap	91	/* Linux i386 __NR_munmap */
 #define SYS_sigreturn	119	/* Linux i386 __NR_sigreturn */
 #define SYS_nanosleep	162	/* Linux i386 __NR_nanosleep */
 #define SYS_getcwd	183	/* Linux i386 __NR_getcwd */
 #define SYS_mmap2	192	/* Linux i386 __NR_mmap2（offset 为页偏移） */
-#define SYS_ioctl	54	/* Linux i386 __NR_ioctl */
+#define SYS_getcpu	318	/* Linux i386 __NR_getcpu */
 
 #ifndef __ASSEMBLER__
 struct timespec {

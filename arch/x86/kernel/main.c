@@ -4,6 +4,8 @@
 #include "idt.h"
 #include "x86.h"
 #include "fs/mount.h"
+#include "mp.h"
+#include "mm/memlayout.h"
 
 #define MAJOR_VERSION 0
 #define MINOR_VERSION 0
@@ -17,6 +19,8 @@ void main(void)
 	vga_init();
 	/* 注册 tty0(VGA) + ttyS0(串口)；此后 printk 同时输出到两处 */
 	console_init();
+	/* 初始化陷阱栈 */
+	trapstack_init();
 	printk(KERN_INFO "Tiny-OS (%d.%d.%d) booting ...\n",
 		MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION);
 	/* 初始化 GDT */
@@ -61,6 +65,12 @@ void main(void)
 	 * 先创建 init/kthreadd，再开中断。
 	 */
 	rest_init();
+	/*
+	 * 启动 AP（须在 apic、proc、printf 之后）。
+	 * SETUP_MAX_CPUS 由 make CPUS= 传入（对齐 Linux maxcpus / -smp）。
+	 * AP 进入 scheduler 与 BSP 并行抢就绪队列。
+	 */
+	mp_init();
 	sti();
 	/* 启动内核线程调度器 */
 	scheduler();

@@ -24,6 +24,7 @@ unsigned int pmm_nr_free_pages(void);
 unsigned int pmm_nr_pages(void);
 
 void cpu_init(void);
+void cpu_init_ap(void);
 
 /** fpu.c — 每进程 FXSAVE 与 lazy #NM */
 void fpu_init(void);
@@ -61,6 +62,8 @@ int console_ioctl(unsigned int req, unsigned int uarg);
 int console_is_canon(void);
 void console_set_fg(int pid);
 int console_get_fg(void);
+void trapstack_init(void);
+void mp_init(void);
 
 /** interrupt.c — 8259 / APIC */
 void pic_eoi(int irq);

@@ -93,6 +93,7 @@ static int (*syscalls[])(struct trapframe *tf) = {
 	[SYS_kill] = sys_kill,
 	[SYS_signal] = sys_signal,
 	[SYS_sigreturn] = sys_sigreturn,
+	[SYS_getcpu] = sys_getcpu,
 };
 
 void syscall(struct trapframe *tf)

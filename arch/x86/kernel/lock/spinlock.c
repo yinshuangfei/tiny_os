@@ -3,10 +3,11 @@
 #include "spinlock.h"
 #include "../proc.h"
 #include "../x86.h"
+#include "../mp.h"
 
 struct cpu *mycpu(void)
 {
-	return &cpus[0];
+	return &cpus[cpu_id()];
 }
 
 void initlock(struct spinlock *lk, char *name)

@@ -1,14 +1,16 @@
 /*
- * 简易 procfs：提供 /proc/meminfo（对齐 Linux /proc/meminfo 教学子集）。
+ * 简易 procfs：提供 /proc/meminfo、/proc/cpuinfo（对齐 Linux 教学子集）。
  * 内容在每次 read 时动态生成，不缓存到 inode->data。
  */
 #include "../types.h"
 #include "../defs.h"
 #include "../printk.h"
 #include "../mm/memlayout.h"
+#include "../mp.h"
 #include "fs.h"
 
 #define MEMINFO_BUF	512
+#define CPUINFO_BUF	256
 
 static int proc_meminfo_read(struct inode *ip, char *dst, uint off, uint n)
 {
@@ -73,7 +75,67 @@ static const struct inode_operations proc_meminfo_iops = {
 };
 
 /*
- * 初始化 procfs，创建 /proc/meminfo 文件。
+ * /proc/cpuinfo：每 online CPU 一段 "processor : N"。
+ * 字段名对齐 Linux，供用户态 get_nprocs(3) 计数（Linux 无 SYS_ncpu）。
+ */
+static int proc_cpuinfo_read(struct inode *ip, char *dst, uint off, uint n)
+{
+	char buf[CPUINFO_BUF];
+	uint len;
+	int i, nc;
+
+	(void)ip;
+	nc = num_online_cpus();
+	if (nc < 1)
+		nc = 1;
+
+	len = 0;
+	for (i = 0; i < nc; i++) {
+		int w = snprintf(buf + len, sizeof(buf) - len,
+				 "processor\t: %d\n", i);
+		if (w < 0)
+			break;
+		len += (uint)w;
+		if (len >= sizeof(buf) - 1) {
+			len = sizeof(buf) - 1;
+			break;
+		}
+	}
+
+	/* 供 fstat / 首次 open 后观察；每次读刷新 */
+	if (ip)
+		ip->size = len;
+	if (off >= len)
+		return 0;
+	if (off + n > len)
+		n = len - off;
+	memcpy(dst, buf + off, n);
+	return (int)n;
+}
+
+static int proc_cpuinfo_write(struct inode *ip, char *src, uint off, uint n)
+{
+	(void)ip;
+	(void)src;
+	(void)off;
+	(void)n;
+	return -1;
+}
+
+static void proc_cpuinfo_evict(struct inode *ip)
+{
+	/* 无私有缓冲 */
+	(void)ip;
+}
+
+static const struct inode_operations proc_cpuinfo_iops = {
+	.read	= proc_cpuinfo_read,
+	.write	= proc_cpuinfo_write,
+	.evict	= proc_cpuinfo_evict,
+};
+
+/*
+ * 初始化 procfs，创建 /proc/meminfo、/proc/cpuinfo。
  */
 void proc_init(void)
 {
@@ -92,5 +154,15 @@ void proc_init(void)
 	ip->size = 0;
 	fs_iput(ip);
 
-	printk(KERN_INFO "fs: /proc/meminfo ready\n");
+	ip = fs_create("/proc/cpuinfo", T_FILE);
+	if (!ip)
+		panic("proc_init: /proc/cpuinfo");
+
+	/* 覆盖 ramfs 默认 i_op，改为动态生成 */
+	ip->i_op = &proc_cpuinfo_iops;
+	ip->data = 0;
+	ip->size = 0;
+	fs_iput(ip);
+
+	printk(KERN_INFO "fs: /proc/meminfo,/proc/cpuinfo ready\n");
 }

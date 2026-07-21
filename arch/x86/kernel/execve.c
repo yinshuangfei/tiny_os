@@ -346,7 +346,7 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 	tf->ds = SEG_UDATA | DPL_USER;
 	tf->eflags = 0x202;
 
-	current_user_pgdir = newpg;
+	set_user_pgdir(newpg);
 	uvmfree(oldpg);
 
 	printk(KERN_DEBUG "execve: pid=%d name=%s eip=0x%x esp=0x%x\n",

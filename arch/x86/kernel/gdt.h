@@ -2,7 +2,7 @@
 #define __GDT_H__
 
 #include "types.h"
-
+#include "param.h"
 /* DPL: Descriptor Privilege Level */
 #define DPL_KERNEL		0	// 内核态
 #define DPL_USER		3	// 用户态
@@ -12,7 +12,8 @@
 #define SEG_KDATA		0x10	// 内核数据段，DPL=0
 #define SEG_UCODE		0x18	// 用户代码段，DPL=3
 #define SEG_UDATA		0x20	// 用户数据段，DPL=3
-#define SEG_TSS			0x28	// 32 位可用 TSS，DPL=0
+/* TSS：GDT index 5+i → 选择子 0x28+i*8 */
+#define SEG_TSS(i)		(0x28 + ((i) << 3))
 
 /* GDT access 字节：P=1, S=1, Type/DPL 因段类型而异 */
 #define GDT_KERNEL_CODE		0x9a	// 可执行、可读，DPL=0
@@ -23,10 +24,9 @@
 
 /* granularity：G=1, D/B=1, limit[19:16]=0xF → 4GB 平坦段 */
 #define GDT_GRAN_4GB		0xcf
+#define GDT_ACCESS_MASK		0xfe
 
-#define GDT_ACCESS_MASK		0xfe	/* 忽略 CPU 自动置位的 Accessed 位 */
-
-#define GDT_ENTRIES		6
+#define GDT_ENTRIES		(5 + NR_CPUS)
 
 struct gdt_entry {
 	uint16 limit_low;	// 段界限 0-15
@@ -79,7 +79,9 @@ uint8 gdt_get_access(int idx);
 uint8 gdt_get_granularity(int idx);
 
 void gdt_init(void);
+void gdt_load_ap(int cpu);
 void tss_init(void);
+void tss_init_cpu(int cpu);
 void tss_set_esp0(uint32 esp);
 uint32 tss_get_esp0(void);
 uint32 tss_get_ss0(void);

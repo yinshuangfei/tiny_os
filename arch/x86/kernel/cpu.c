@@ -50,3 +50,22 @@ void cpu_init(void)
 	fpu_init();
 	printk(KERN_INFO "cpu: FPU/SSE enabled\n");
 }
+
+/* AP：只开本核 CR0/CR4 SSE，勿调用 fpu_init（会清空各核 fpu_owner） */
+/* AP 是 Application Processor（应用处理器），相对的是 BSP（Bootstrap Processor，引导处理器） */
+void cpu_init_ap(void)
+{
+	uint cr0, cr4;
+
+	if (!cpu_has_sse())
+		return;
+
+	cr0 = r_cr0();
+	cr0 |= CR0_MP | CR0_NE;
+	cr0 &= ~(CR0_EM | CR0_TS);
+	w_cr0(cr0);
+
+	cr4 = r_cr4();
+	cr4 |= CR4_OSFXSR | CR4_OSXMMEXCPT;
+	w_cr4(cr4);
+}
