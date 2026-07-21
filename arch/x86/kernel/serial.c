@@ -166,7 +166,7 @@ void uart_intr(void)
 	int put_tx = 0;
 
 	/* 发送 EOI（中断结束）， 允许下一个中断 */
-	pic_eoi(IRQ_4_COM1);
+	irq_eoi(IRQ_4_COM1);
 
 	acquire(&uart_lock);
 

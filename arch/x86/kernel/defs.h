@@ -62,6 +62,12 @@ int console_is_canon(void);
 void console_set_fg(int pid);
 int console_get_fg(void);
 
+/** interrupt.c — 8259 / APIC */
+void pic_eoi(int irq);
+void pic_init(void);
+void irq_eoi(int irq);
+int apic_init(void);
+
 /** kbd.c — PS/2 键盘 */
 void kbd_init(void);
 void kbd_intr(void);

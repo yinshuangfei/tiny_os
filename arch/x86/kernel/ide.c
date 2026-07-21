@@ -244,7 +244,7 @@ static void ide_intr(int irq)
 {
 	struct ide_chan *c;
 
-	pic_eoi(irq);
+	irq_eoi(irq);
 	c = ide_chan_by_irq(irq);
 	if (!c)
 		return;

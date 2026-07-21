@@ -219,6 +219,23 @@ static inline void w_cr4(uint val)
 	__asm__ volatile ("movl %0, %%cr4" : : "r"(val));
 }
 
+/** MSR：Local APIC base 等（须 64 位；勿用本仓库 uint64=unsigned long） */
+static inline unsigned long long rdmsr(uint32 msr)
+{
+	uint32 lo, hi;
+
+	__asm__ volatile ("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
+	return ((unsigned long long)hi << 32) | lo;
+}
+
+static inline void wrmsr(uint32 msr, unsigned long long val)
+{
+	uint32 lo = (uint32)val;
+	uint32 hi = (uint32)(val >> 32);
+
+	__asm__ volatile ("wrmsr" : : "c"(msr), "a"(lo), "d"(hi));
+}
+
 static inline uint r_esp(void)
 {
 	uint esp;

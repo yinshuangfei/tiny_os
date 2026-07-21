@@ -11,6 +11,14 @@
 #define IRQ_15_IDE1		15	/* 次 IDE 通道 */
 
 void pic_eoi(int irq);
+void pic_disable(void);
 void pic_init(void);
+
+/* 统一中断结束：APIC 或 8259 */
+void irq_eoi(int irq);
+int irq_using_apic(void);
+
+/* Local APIC + IOAPIC；须在分页后、sti 前调用 */
+int apic_init(void);
 
 #endif

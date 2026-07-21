@@ -133,6 +133,8 @@ C_OBJS = \
 	$(KDIR)/gdt.o \
 	$(KDIR)/idt.o \
 	$(KDIR)/interrupt.o \
+	$(KDIR)/lapic.o \
+	$(KDIR)/ioapic.o \
 	$(KDIR)/trapstack.o \
 	$(KDIR)/cpu.o \
 	$(KDIR)/fpu.o \

@@ -171,7 +171,7 @@ void kbd_intr(void)
 {
 	int data, c;
 
-	pic_eoi(IRQ_1_KEYBOARD);
+	irq_eoi(IRQ_1_KEYBOARD);
 
 	while (inb(KBD_STATUS) & KBD_STAT_OBF) {
 		data = inb(KBD_DATA) & 0xff;

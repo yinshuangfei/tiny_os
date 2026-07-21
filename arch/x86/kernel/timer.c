@@ -38,8 +38,8 @@ void pit_init(void)
 
 void timer_handler(void)
 {
-	/* IRQ0：先 EOI 再干活，避免 8259 边沿模式下 handler 过长丢中断 */
-	pic_eoi(IRQ_0_TIMER);
+	/* IRQ0：先 EOI 再干活 */
+	irq_eoi(IRQ_0_TIMER);
 	ticks++;
 	sched_tick();
 }

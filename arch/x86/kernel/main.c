@@ -27,7 +27,7 @@ void main(void)
 	cpu_init();
 	/* 探测物理内存大小（须在 pmm_init / kvm_init 之前） */
 	mem_probe();
-	/* 初始化 PIC/APIC（打开 IRQ0/1/4） */
+	/* 初始化 PIC（无 APIC 时的回退）；随后分页并尝试 APIC */
 	pic_init();
 	/* PS/2 键盘（IRQ1 → console 输入） */
 	kbd_init();
@@ -37,6 +37,8 @@ void main(void)
 	kmem_init();
 	/* 初始化页表并开启分页 */
 	kvm_init();
+	/* Local APIC + IOAPIC（失败则继续用 8259） */
+	apic_init();
 	/* 初始化进程表 */
 	procinit();
 	/* 内存文件系统 */
@@ -49,13 +51,14 @@ void main(void)
 	mount_init();
 	/* printf 自旋锁（须在 sti 之前，避免定时器 IRQ 交错输出） */
 	printfinit();
-	/* 初始化时钟（尚未 sti，不会抢占） */
-	pit_init();
+	/*
+	 * 时钟：有 APIC 时已由 lapic_timer_init 提供；
+	 * 否则用 8254 PIT → PIC IRQ0。
+	 */
+	if (!irq_using_apic())
+		pit_init();
 	/*
 	 * 先创建 init/kthreadd，再开中断。
-	 * 若先 sti，定时器可能在 rest_init 中途打断；虽然 swapper 无 kstack
-	 * 通常不会被 preempt，但 boot 阶段持锁/分配时开中断仍不安全，
-	 * 且曾出现偶发「init 创建成功、kthreadd 分配失败」。
 	 */
 	rest_init();
 	sti();
