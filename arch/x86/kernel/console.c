@@ -18,6 +18,9 @@
 #include "lock/proc_lock.h"
 #include "ipc/signal.h"
 #include "mm/vm.h"
+#include "driver/chrdev.h"
+#include "fs/vfs.h"
+#include "major.h"
 
 #define CONS_BUF	256
 #define ASCII_ETX	0x03	/* Ctrl+C */
@@ -357,6 +360,49 @@ int console_ioctl(unsigned int req, uint uarg)
 	}
 }
 
+/*
+ * /dev/console 的 file_operations（经 register_chrdev 挂到 CONSOLE_MAJOR）。
+ */
+static int console_fop_read(struct file *f, char *dst, int n)
+{
+	int i, c;
+	int canon;
+
+	(void)f;
+	canon = console_is_canon();
+	for (i = 0; i < n; i++) {
+		c = console_getc();
+		if (c == -2)
+			return i;
+		if (c < 0)
+			return i == 0 ? -1 : i;
+		dst[i] = (char)c;
+		if (canon && c == '\n')
+			return i + 1;
+	}
+	return n;
+}
+
+static int console_fop_write(struct file *f, char *src, int n)
+{
+	(void)f;
+	if (n > 0)
+		console_write(src, (unsigned int)n);
+	return n;
+}
+
+static int console_fop_ioctl(struct file *f, unsigned int req, unsigned int arg)
+{
+	(void)f;
+	return console_ioctl(req, arg);
+}
+
+static const struct file_operations console_fops = {
+	.read = console_fop_read,
+	.write = console_fop_write,
+	.ioctl = console_fop_ioctl,
+};
+
 void console_init(void)
 {
 	initlock(&cons_lock, "console");
@@ -364,6 +410,17 @@ void console_init(void)
 	cons_fg_pid = 0;
 	cons_lflag = ISIG | ICANON | ECHO;
 
+	/* 仅注册 printk 输出后端；/dev/console 见 console_register_device() */
 	register_console(&uart_console);
 	register_console(&vga_console);
+}
+
+/*
+ * 对齐 Linux：早期 console_init 只服务 printk；
+ * chrdev 子系统就绪后再 register_chrdev（类似 tty/console 驱动挂接）。
+ */
+void console_register_device(void)
+{
+	if (register_chrdev(CONSOLE_MAJOR, "console", &console_fops) < 0)
+		panic("console: register_chrdev");
 }

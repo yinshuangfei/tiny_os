@@ -7,9 +7,10 @@
  *   major  名称             类型    节点
  *   ─────────────────────────────────────────
  *     0    UNNAMED_MAJOR    —       未命名 / 无效
- *     1    CONSOLE_MAJOR    字符    /dev/console（写 → 已注册 console）
- *     3    HD_MAJOR         块      /dev/hda …
+ *     1    CONSOLE_MAJOR    字符    /dev/console（register_chrdev）
+ *     3    HD_MAJOR         块      /dev/hda …（register_blkdev + gendisk）
  *
+ * 字符设备经 driver/chrdev.c；块设备经 gendisk + register_blkdev。
  * 新增设备时在此表登记，禁止在驱动里散落魔法数字。
  */
 #ifndef __MAJOR_H__

@@ -7,10 +7,13 @@
 #include "../printk.h"
 #include "../mm/memlayout.h"
 #include "../mp.h"
+#include "../driver/chrdev.h"
+#include "../driver/device.h"
 #include "fs.h"
 
 #define MEMINFO_BUF	512
 #define CPUINFO_BUF	256
+#define DEVICES_BUF	512
 
 static int proc_meminfo_read(struct inode *ip, char *dst, uint off, uint n)
 {
@@ -134,8 +137,84 @@ static const struct inode_operations proc_cpuinfo_iops = {
 	.evict	= proc_cpuinfo_evict,
 };
 
+struct devices_fill {
+	char *buf;
+	uint size;
+	uint len;
+};
+
+static void devices_add_chr(unsigned int major, const char *name, void *arg)
+{
+	struct devices_fill *f = arg;
+	int w;
+
+	if (f->len >= f->size - 1)
+		return;
+	w = snprintf(f->buf + f->len, f->size - f->len, "%3u %s\n", major, name);
+	if (w > 0)
+		f->len += (uint)w;
+}
+
+static void devices_add_blk(unsigned int major, const char *name, void *arg)
+{
+	devices_add_chr(major, name, arg);
+}
+
 /*
- * 初始化 procfs，创建 /proc/meminfo、/proc/cpuinfo。
+ * /proc/devices：对齐 Linux 字符/块主设备号列表。
+ */
+static int proc_devices_read(struct inode *ip, char *dst, uint off, uint n)
+{
+	char buf[DEVICES_BUF];
+	struct devices_fill fill;
+	uint len;
+
+	fill.buf = buf;
+	fill.size = sizeof(buf);
+	fill.len = 0;
+
+	fill.len += (uint)snprintf(buf + fill.len, sizeof(buf) - fill.len,
+				   "Character devices:\n");
+	chrdev_for_each(devices_add_chr, &fill);
+	fill.len += (uint)snprintf(buf + fill.len, sizeof(buf) - fill.len,
+				   "\nBlock devices:\n");
+	blkdev_for_each(devices_add_blk, &fill);
+
+	len = fill.len;
+	if (len >= sizeof(buf))
+		len = sizeof(buf) - 1;
+	if (ip)
+		ip->size = len;
+	if (off >= len)
+		return 0;
+	if (off + n > len)
+		n = len - off;
+	memcpy(dst, buf + off, n);
+	return (int)n;
+}
+
+static int proc_devices_write(struct inode *ip, char *src, uint off, uint n)
+{
+	(void)ip;
+	(void)src;
+	(void)off;
+	(void)n;
+	return -1;
+}
+
+static void proc_devices_evict(struct inode *ip)
+{
+	(void)ip;
+}
+
+static const struct inode_operations proc_devices_iops = {
+	.read	= proc_devices_read,
+	.write	= proc_devices_write,
+	.evict	= proc_devices_evict,
+};
+
+/*
+ * 初始化 procfs，创建 /proc/meminfo、/proc/cpuinfo、/proc/devices。
  */
 void proc_init(void)
 {
@@ -164,5 +243,13 @@ void proc_init(void)
 	ip->size = 0;
 	fs_iput(ip);
 
-	printk(KERN_INFO "fs: /proc/meminfo,/proc/cpuinfo ready\n");
+	ip = fs_create("/proc/devices", T_FILE);
+	if (!ip)
+		panic("proc_init: /proc/devices");
+	ip->i_op = &proc_devices_iops;
+	ip->data = 0;
+	ip->size = 0;
+	fs_iput(ip);
+
+	printk(KERN_INFO "fs: /proc/meminfo,/proc/cpuinfo,/proc/devices ready\n");
 }

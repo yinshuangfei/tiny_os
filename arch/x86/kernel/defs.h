@@ -54,6 +54,7 @@ void uart_intr(void);
 
 /** console.c — 系统控制台（printk / /dev/console） */
 void console_init(void);
+void console_register_device(void);
 void consputc(int c);
 void console_write(const char *s, unsigned int n);
 void console_intr(int c);
@@ -94,9 +95,9 @@ void vga_putc_at(int row, int col, char c);
 
 /** fs */
 void fs_init(void);
-
-/** block/ — Linux 风格块设备层 */
 void blk_init(void);
+void driver_core_init(void);
+void chrdev_init(void);
 
 /** ide.c — ATA PIO（多控制器扫描；drive 为逻辑盘号） */
 void ide_init(void);

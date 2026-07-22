@@ -173,6 +173,8 @@ C_OBJS = \
 	$(KDIR)/fs/file.o \
 	$(KDIR)/fs/pipe.o \
 	$(KDIR)/fs/sysfile.o \
+	$(KDIR)/driver/chrdev.o \
+	$(KDIR)/driver/device.o \
 	$(KDIR)/block/genhd.o \
 	$(KDIR)/block/bio.o \
 	$(KDIR)/block/blk-core.o \

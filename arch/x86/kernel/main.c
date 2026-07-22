@@ -39,6 +39,15 @@ void main(void)
 	pmm_init();
 	/* 内核小对象堆（PCB 等动态结构） */
 	kmem_init();
+	/*
+	 * 字符设备表（对齐 Linux fs/char_dev.c::chrdev_init）。
+	 * 须在各驱动 register_chrdev 之前；早于 fs_init 创建 /dev 节点。
+	 */
+	chrdev_init();
+	/* 设备模型：bus/device/driver + blkdev 名表（drivers/base） */
+	driver_core_init();
+	/* /dev/console → CONSOLE_MAJOR（须在 chrdev_init 之后） */
+	console_register_device();
 	/* 初始化页表并开启分页 */
 	kvm_init();
 	/* Local APIC + IOAPIC（失败则继续用 8259） */

@@ -24,6 +24,8 @@ struct console {
 };
 
 void console_init(void);
+/* 在 chrdev_init 之后调用：register_chrdev(/dev/console) */
+void console_register_device(void);
 void register_console(struct console *con);
 void consputc(int c);
 void console_write(const char *s, unsigned int n);

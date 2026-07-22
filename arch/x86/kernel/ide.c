@@ -17,6 +17,8 @@
 #include "block/blk.h"
 #include "interrupt.h"
 #include "proc.h"
+#include "driver/device.h"
+#include "major.h"
 
 /* 相对通道基址的寄存器偏移（主通道基址 0x1F0，次通道 0x170） */
 #define IDE_DATA	0	/* 数据寄存器 */
@@ -106,6 +108,7 @@ struct ide_disk {
 	char slot[24];		/* 如 ide1.0-master，仅日志 */
 	struct gendisk *gd;	/* block 层整盘 */
 	struct ide_chan *chan;	/* 所属通道（IRQ 等待） */
+	struct device device;	/* driver core：platform 设备 */
 };
 
 static struct spinlock ide_lock;
@@ -509,6 +512,13 @@ static int ide_add_gendisk(struct ide_disk *d)
 
 	d->gd = gd;
 	add_disk(gd);
+
+	/* 挂到 platform 总线，供 driver core / 调试枚举 */
+	d->device.name = gd->disk_name;
+	d->device.bus = &platform_bus_type;
+	d->device.devt = MKDEV(gd->major, gd->first_minor);
+	d->device.driver_data = d;
+	device_register(&d->device);
 	return 0;
 }
 
@@ -757,6 +767,8 @@ void ide_init(void)
 	ide_tab = 0;
 	ide_ndisk = 0;
 	ide_nchan = 0;
+
+	register_blkdev(HD_MAJOR, "ide");
 	ide_irq_ready = 0;
 
 	for (i = 0; i < sizeof(ide_ctls) / sizeof(ide_ctls[0]); i++)
