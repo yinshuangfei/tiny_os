@@ -150,6 +150,7 @@ C_OBJS = \
 	$(KDIR)/lock/spinlock.o \
 	$(KDIR)/printf.o \
 	$(KDIR)/utils.o \
+	$(KDIR)/string.o \
 	$(KDIR)/mm/mem.o \
 	$(KDIR)/mm/buddy.o \
 	$(KDIR)/mm/slab.o \
@@ -167,7 +168,12 @@ C_OBJS = \
 	$(KDIR)/fs/inode.o \
 	$(KDIR)/fs/namei.o \
 	$(KDIR)/fs/ramfs.o \
-	$(KDIR)/fs/procfs.o \
+	$(KDIR)/fs/proc/inode.o \
+	$(KDIR)/fs/proc/root.o \
+	$(KDIR)/fs/proc/base.o \
+	$(KDIR)/fs/proc/meminfo.o \
+	$(KDIR)/fs/proc/cpuinfo.o \
+	$(KDIR)/fs/proc/devices.o \
 	$(KDIR)/fs/ext2.o \
 	$(KDIR)/fs/mount.o \
 	$(KDIR)/fs/file.o \

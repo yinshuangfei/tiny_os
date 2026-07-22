@@ -48,11 +48,13 @@ int ioctl(int fd, unsigned int request, void *arg);
 int lseek(int fd, int offset, int whence);
 int fstat(int fd, struct stat *st);
 int stat(const char *path, struct stat *st);
+int readlink(const char *path, char *buf, int bufsiz);
 int chdir(const char *path);
 int getcwd(char *buf, int size);
 int mkdir(const char *path, int mode);
 int rmdir(const char *path);
 int link(const char *oldpath, const char *newpath);
+int symlink(const char *target, const char *linkpath);
 int unlink(const char *path);
 int rename(const char *oldpath, const char *newpath);
 

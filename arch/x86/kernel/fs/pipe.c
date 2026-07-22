@@ -42,7 +42,6 @@ static const struct inode_operations pipe_iops = {
 	.mkdir = 0,
 	.rmdir = 0,
 	.mknod = 0,
-	.get_name = 0,
 	.evict = pipe_evict,
 	.read = pipe_read,
 	.write = pipe_write,

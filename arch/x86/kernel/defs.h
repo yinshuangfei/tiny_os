@@ -11,6 +11,14 @@
 /** mm/ — 物理探测、buddy、slab、页表（对齐 Linux mm/） */
 void *memset(void *dst, int c, uint n);
 void *memcpy(void *dst, const void *src, uint n);
+
+/** string.c — 字符串（对齐 Linux lib/string.c 子集） */
+int strcmp(const char *a, const char *b);
+int strncmp(const char *a, const char *b, uint n);
+char *strcpy(char *dst, const char *src);
+char *strncpy(char *dst, const char *src, uint n);
+uint strlen(const char *s);
+
 void pmm_init(void);
 void mem_probe(void);
 void *alloc_pages(unsigned int order);

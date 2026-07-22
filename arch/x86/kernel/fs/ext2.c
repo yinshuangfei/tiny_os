@@ -151,6 +151,15 @@ static int namecmp_n(const char *a, const char *b, int n)
 	return b[n] ? 1 : 0;
 }
 
+static void namecpy_dir(char *dst, const char *src)
+{
+	int i;
+
+	for (i = 0; i < DIRSIZ - 1 && src[i]; i++)
+		dst[i] = src[i];
+	dst[i] = '\0';
+}
+
 /* 从块设备读取一个扇区到 buf */
 static int ext2_read_sect(sector_t sec, void *buf)
 {
@@ -456,45 +465,13 @@ static struct inode *ext2_lookup(struct inode *dir, const char *name)
 	if (ext2_dir_iterate(dir, lookup_cb, &a) != 1 || !a.inum)
 		return 0;
 	ip = ext2_iget(a.inum);
-	if (ip && !ip->parent)
-		ip->parent = dir;
+	if (ip) {
+		if (!ip->parent)
+			ip->parent = dir;
+		/* 缓存路径分量名，供 getcwd（类 dentry.d_name） */
+		namecpy_dir(ip->name, name);
+	}
 	return ip;
-}
-
-struct getname_arg {
-	uint32 inum;
-	char *name;
-	int found;
-};
-
-static int getname_cb(struct ext2_dir_entry *de, void *arg)
-{
-	struct getname_arg *a = arg;
-	int i, n;
-
-	if (de->inode != a->inum)
-		return 0;
-	n = de->name_len;
-	if (n > DIRSIZ - 1)
-		n = DIRSIZ - 1;
-	for (i = 0; i < n; i++)
-		a->name[i] = de->name[i];
-	a->name[n] = '\0';
-	a->found = 1;
-	return 1;
-}
-
-static int ext2_get_name(struct inode *dir, struct inode *child, char *name)
-{
-	struct getname_arg a;
-
-	if (!dir || !child || !name || dir->type != T_DIR)
-		return -1;
-	a.inum = child->inum;
-	a.name = name;
-	a.found = 0;
-	ext2_dir_iterate(dir, getname_cb, &a);
-	return a.found ? 0 : -1;
 }
 
 struct readdir_arg {
@@ -631,6 +608,7 @@ static void ext2_evict(struct inode *ip)
 	ip->size = 0;
 	ip->ref = 0;
 	ip->parent = 0;
+	ip->name[0] = '\0';
 	ip->i_op = 0;
 	ip->data = 0;
 	ip->dents = 0;
@@ -644,7 +622,6 @@ static const struct inode_operations ext2_iops = {
 	.mkdir		= ext2_mkdir,
 	.rmdir		= ext2_rmdir,
 	.mknod		= ext2_mknod,
-	.get_name	= ext2_get_name,
 	.evict		= ext2_evict,
 	.read		= ext2_read,
 	.write		= ext2_write,

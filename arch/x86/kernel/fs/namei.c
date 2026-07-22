@@ -8,6 +8,8 @@
 #include "../proc.h"
 #include "vfs.h"
 
+#define MAXSYMLINKS	8
+
 /* 简单名字比较（与路径分量 DIRSIZ 对齐） */
 static int namecmp(const char *a, const char *b)
 {
@@ -42,18 +44,60 @@ static const char *skipelem(const char *path, char *name)
 	return path;
 }
 
+/* 教学：仅支持单分量相对目标（如 /proc/self → "N"） */
+static struct inode *follow_symlink(struct inode *link, int *depth)
+{
+	char target[DIRSIZ];
+	struct inode *parent, *next;
+	int n, i;
+
+	if (++(*depth) > MAXSYMLINKS) {
+		fs_iput(link);
+		return 0;
+	}
+	n = fs_readi(link, target, 0, DIRSIZ - 1);
+	if (n <= 0) {
+		fs_iput(link);
+		return 0;
+	}
+	target[n] = '\0';
+	if (target[0] == '/') {
+		fs_iput(link);
+		return 0;
+	}
+	for (i = 0; target[i]; i++) {
+		if (target[i] == '/') {
+			fs_iput(link);
+			return 0;
+		}
+	}
+	parent = link->parent;
+	if (!parent || !parent->i_op || !parent->i_op->lookup) {
+		fs_iput(link);
+		return 0;
+	}
+	parent = fs_idup(parent);
+	fs_iput(link);
+	next = parent->i_op->lookup(parent, target);
+	fs_iput(parent);
+	return next;
+}
+
 /*
  * 解析路径。
  * - 以 '/' 开头：从 vfs_root；否则从当前进程 cwd。
  * - 支持 "." / ".."。
+ * - follow：末分量是否跟随符号链接（open/stat=1，readlink=0）；中间分量总是跟随。
  * - nameiparent != 0 时返回父目录，name 为最后组件。
  * - nameiparent == 0 时返回目标 inode。
  */
-static struct inode *namex(const char *path, int nameiparent, char *name)
+static struct inode *namex(const char *path, int nameiparent, char *name,
+			   int follow)
 {
 	struct inode *ip, *next;
 	struct proc *p;
 	const char *s;
+	int depth;
 
 	if (!path || path[0] == 0)
 		return 0;
@@ -94,6 +138,16 @@ static struct inode *namex(const char *path, int nameiparent, char *name)
 		fs_iput(ip);
 		if (!next)
 			return 0;
+
+		depth = 0;
+		while (next->type == T_LNK) {
+			/* 末分量且 nofollow：留给 readlink */
+			if (*s == 0 && !follow)
+				break;
+			next = follow_symlink(next, &depth);
+			if (!next)
+				return 0;
+		}
 		ip = next;
 	}
 	if (nameiparent) {
@@ -103,19 +157,30 @@ static struct inode *namex(const char *path, int nameiparent, char *name)
 	return ip;
 }
 
-/* 根据路径查找 inode */
+/* 根据路径查找 inode（跟随符号链接） */
 struct inode *fs_namei(const char *path)
 {
 	char name[DIRSIZ];
 
-	return namex(path, 0, name);
+	return namex(path, 0, name, 1);
 }
 
+/* 不跟随末分量符号链接（供 readlink） */
+struct inode *fs_namei_nofollow(const char *path)
+{
+	char name[DIRSIZ];
+
+	return namex(path, 0, name, 0);
+}
+
+/*
+ * getcwd：沿 parent 链用各 inode->name 拼路径（对齐 Linux d_path / dentry.d_name）。
+ * 不经 i_op（Linux inode_operations 无 get_name）。
+ */
 int fs_getcwd(char *buf, int max)
 {
 	struct proc *p = myproc();
 	struct inode *ip, *stack[NINODE];
-	char name[DIRSIZ];
 	struct inode *root;
 	int nstack, i, len, nlen, j;
 
@@ -140,20 +205,16 @@ int fs_getcwd(char *buf, int max)
 
 	len = 0;
 	for (i = nstack - 1; i >= 0; i--) {
-		if (!stack[i]->parent || !stack[i]->parent->i_op ||
-		    !stack[i]->parent->i_op->get_name)
-			return -1;
-		if (stack[i]->parent->i_op->get_name(stack[i]->parent,
-						     stack[i], name) < 0)
+		if (!stack[i]->name[0])
 			return -1;
 		nlen = 0;
-		while (name[nlen])
+		while (stack[i]->name[nlen])
 			nlen++;
 		if (len + 1 + nlen + 1 > max)
 			return -1;
 		buf[len++] = '/';
 		for (j = 0; j < nlen; j++)
-			buf[len++] = name[j];
+			buf[len++] = stack[i]->name[j];
 	}
 	buf[len++] = '\0';
 	return len;
@@ -164,7 +225,7 @@ struct inode *fs_create(const char *path, short type)
 	char name[DIRSIZ];
 	struct inode *dp, *ip;
 
-	dp = namex(path, 1, name);
+	dp = namex(path, 1, name, 1);
 	if (!dp)
 		return 0;
 	if (name[0] == 0) {
@@ -193,7 +254,7 @@ struct inode *fs_mknod(const char *path, short type,
 	if (type != T_CHAR && type != T_BLK)
 		return 0;
 
-	dp = namex(path, 1, name);
+	dp = namex(path, 1, name, 1);
 	if (!dp)
 		return 0;
 	if (name[0] == 0 || !dp->i_op || !dp->i_op->mknod) {
@@ -233,7 +294,7 @@ int fs_mkdir(const char *path)
 	if (!path || !path[0])
 		return -1;
 
-	dp = namex(path, 1, name);
+	dp = namex(path, 1, name, 1);
 	if (!dp)
 		return -1;
 	if (name[0] == 0 ||
@@ -262,7 +323,7 @@ int fs_rmdir(const char *path)
 	if (!path || !path[0])
 		return -1;
 
-	dp = namex(path, 1, name);
+	dp = namex(path, 1, name, 1);
 	if (!dp)
 		return -1;
 	if (name[0] == 0 ||
@@ -314,7 +375,7 @@ int fs_link(const char *oldpath, const char *newpath)
 		return -1;
 	}
 
-	dp = namex(newpath, 1, name);
+	dp = namex(newpath, 1, name, 1);
 	if (!dp) {
 		fs_iput(ip);
 		return -1;
@@ -342,6 +403,36 @@ int fs_link(const char *oldpath, const char *newpath)
 	return 0;
 }
 
+/* symlink(target, linkpath)：创建符号链接 */
+int fs_symlink(const char *target, const char *linkpath)
+{
+	char name[DIRSIZ];
+	struct inode *dp;
+
+	if (!target || !linkpath || !linkpath[0])
+		return -1;
+
+	dp = namex(linkpath, 1, name, 1);
+	if (!dp)
+		return -1;
+	if (name[0] == 0 ||
+	    namecmp(name, ".") == 0 ||
+	    namecmp(name, "..") == 0) {
+		fs_iput(dp);
+		return -1;
+	}
+	if (!dp->i_op || !dp->i_op->symlink) {
+		fs_iput(dp);
+		return -1;
+	}
+	if (dp->i_op->symlink(dp, name, target) < 0) {
+		fs_iput(dp);
+		return -1;
+	}
+	fs_iput(dp);
+	return 0;
+}
+
 /* unlink(path)：删除非目录目录项 */
 int fs_unlink(const char *path)
 {
@@ -351,7 +442,7 @@ int fs_unlink(const char *path)
 	if (!path || !path[0])
 		return -1;
 
-	dp = namex(path, 1, name);
+	dp = namex(path, 1, name, 1);
 	if (!dp)
 		return -1;
 	if (name[0] == 0 ||
@@ -394,7 +485,7 @@ int fs_rename(const char *oldpath, const char *newpath)
 	if (!oldpath || !oldpath[0] || !newpath || !newpath[0])
 		return -1;
 
-	old_dir = namex(oldpath, 1, oldname);
+	old_dir = namex(oldpath, 1, oldname, 1);
 	if (!old_dir)
 		return -1;
 	if (oldname[0] == 0 ||
@@ -404,7 +495,7 @@ int fs_rename(const char *oldpath, const char *newpath)
 		return -1;
 	}
 
-	new_dir = namex(newpath, 1, newname);
+	new_dir = namex(newpath, 1, newname, 1);
 	if (!new_dir) {
 		fs_iput(old_dir);
 		return -1;

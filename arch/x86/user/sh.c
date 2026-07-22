@@ -901,7 +901,9 @@ static int cmd_ls(int argc, char **argv)
 	const char *path;
 	struct dirent de;
 	struct stat st;
-	int fd, n;
+	char linkpath[BUFSZ];
+	char target[NAME_MAX + 1];
+	int fd, n, tn, plen;
 
 	path = (argc >= 2) ? argv[1] : ".";
 	fd = open(path, O_RDONLY);
@@ -920,6 +922,8 @@ static int cmd_ls(int argc, char **argv)
 		close(fd);
 		return 0;
 	}
+
+	plen = (int)strlen(path);
 	while ((n = read(fd, &de, sizeof(de))) > 0) {
 		if (n < (int)sizeof(de) || de.d_reclen < sizeof(de)) {
 			printf("%s short dirent\n", C_RED("ls:"));
@@ -929,6 +933,47 @@ static int cmd_ls(int argc, char **argv)
 		if (de.d_type == DT_DIR) {
 			print_colored(ANSI_FG_BBLUE, de.d_name);
 			printf("/\n");
+		} else if (de.d_type == DT_LNK) {
+			/*
+			 * 对齐 Linux ls：青色链接名 + " -> " + 按目标类型着色
+			 */
+			if (plen + 1 + (int)strlen(de.d_name) + 1 > BUFSZ) {
+				print_colored(ANSI_FG_BCYAN, de.d_name);
+				printf("\n");
+			} else {
+				struct stat tst;
+
+				if (strcmp(path, "/") == 0)
+					snprintf(linkpath, sizeof(linkpath),
+						 "/%s", de.d_name);
+				else
+					snprintf(linkpath, sizeof(linkpath),
+						 "%s/%s", path, de.d_name);
+				tn = readlink(linkpath, target,
+					      sizeof(target) - 1);
+				print_colored(ANSI_FG_BCYAN, de.d_name);
+				if (tn > 0) {
+					target[tn] = '\0';
+					printf(" -> ");
+					/* stat 跟随链接，按最终类型上色 */
+					if (stat(linkpath, &tst) < 0)
+						print_colored(ANSI_FG_BRED,
+							      target);
+					else if (S_ISDIR(tst.st_mode))
+						print_colored(ANSI_FG_BBLUE,
+							      target);
+					else if (S_ISCHR(tst.st_mode) ||
+						 S_ISBLK(tst.st_mode))
+						print_colored(ANSI_FG_BYELLOW,
+							      target);
+					else if (S_ISLNK(tst.st_mode))
+						print_colored(ANSI_FG_BCYAN,
+							      target);
+					else
+						printf("%s", target);
+				}
+				printf("\n");
+			}
 		} else if (de.d_type == DT_CHR || de.d_type == DT_BLK) {
 			print_colored(ANSI_FG_BYELLOW, de.d_name);
 			printf("\n");

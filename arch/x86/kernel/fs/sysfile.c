@@ -69,6 +69,8 @@ static unsigned short inode_to_mode(short type)
 		return S_IFBLK;
 	case T_FIFO:
 		return S_IFIFO;
+	case T_LNK:
+		return S_IFLNK;
 	default:
 		return 0;
 	}
@@ -128,6 +130,44 @@ int sys_stat(struct trapframe *tf)
 	if (copyout(p->pagetable, uaddr, &st, sizeof(st)) < 0)
 		return -1;
 	return 0;
+}
+
+/*
+ * readlink(path, buf, bufsiz)：读取符号链接目标（不跟随）。
+ * 成功返回写入字节数（不含 '\0'），对齐 Linux readlink(2)。
+ */
+int sys_readlink(struct trapframe *tf)
+{
+	char path[NNAME];
+	char kbuf[DIRSIZ];
+	uint uaddr;
+	int bufsiz, n;
+	struct proc *p = myproc();
+	struct inode *ip;
+
+	if (argstr(tf, 0, path, NNAME) < 0 || argaddr(tf, 1, &uaddr) < 0 ||
+	    argint(tf, 2, &bufsiz) < 0)
+		return -1;
+	if (!p || !p->pagetable || bufsiz <= 0)
+		return -1;
+
+	ip = fs_namei_nofollow(path);
+	if (!ip)
+		return -1;
+	if (ip->type != T_LNK) {
+		fs_iput(ip);
+		return -1;
+	}
+
+	n = fs_readi(ip, kbuf, 0, DIRSIZ);
+	fs_iput(ip);
+	if (n < 0)
+		return -1;
+	if (n > bufsiz)
+		n = bufsiz;
+	if (copyout(p->pagetable, uaddr, kbuf, n) < 0)
+		return -1;
+	return n;
 }
 
 int sys_close(struct trapframe *tf)
@@ -327,6 +367,17 @@ int sys_link(struct trapframe *tf)
 	    argstr(tf, 1, newpath, NNAME) < 0)
 		return -1;
 	return fs_link(oldpath, newpath);
+}
+
+/* symlink(target, linkpath)：对齐 Linux symlink(2) */
+int sys_symlink(struct trapframe *tf)
+{
+	char target[NNAME], linkpath[NNAME];
+
+	if (argstr(tf, 0, target, NNAME) < 0 ||
+	    argstr(tf, 1, linkpath, NNAME) < 0)
+		return -1;
+	return fs_symlink(target, linkpath);
 }
 
 /* unlink(path) */

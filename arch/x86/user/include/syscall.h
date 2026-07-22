@@ -29,6 +29,8 @@
 #define SYS_brk		45	/* Linux i386 __NR_brk */
 #define SYS_signal	48	/* Linux i386 __NR_signal */
 #define SYS_ioctl	54	/* Linux i386 __NR_ioctl */
+#define SYS_symlink	83	/* Linux i386 __NR_symlink */
+#define SYS_readlink	85	/* Linux i386 __NR_readlink */
 #define SYS_munmap	91	/* Linux i386 __NR_munmap */
 #define SYS_sigreturn	119	/* Linux i386 __NR_sigreturn */
 #define SYS_nanosleep	162	/* Linux i386 __NR_nanosleep */
@@ -52,12 +54,14 @@ struct timespec {
 #define S_IFCHR		0020000
 #define S_IFBLK		0060000
 #define S_IFREG		0100000
+#define S_IFLNK		0120000
 
 #define S_ISFIFO(m)	(((m) & S_IFMT) == S_IFIFO)
 #define S_ISDIR(m)	(((m) & S_IFMT) == S_IFDIR)
 #define S_ISCHR(m)	(((m) & S_IFMT) == S_IFCHR)
 #define S_ISBLK(m)	(((m) & S_IFMT) == S_IFBLK)
 #define S_ISREG(m)	(((m) & S_IFMT) == S_IFREG)
+#define S_ISLNK(m)	(((m) & S_IFMT) == S_IFLNK)
 
 struct stat {
 	unsigned short	st_mode;

@@ -8,6 +8,6 @@
 #include "vfs.h"
 
 void fs_init(void);
-void proc_init(void);
+void proc_init(void);	/* fs/proc/root.c */
 
 #endif

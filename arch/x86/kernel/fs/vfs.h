@@ -26,6 +26,7 @@ enum inode_type {
 	T_CHAR	= 3,			/* 字符设备（如 console） */
 	T_BLK	= 4,			/* 块设备（如 hda） */
 	T_FIFO	= 5,			/* 管道 / FIFO（S_IFIFO） */
+	T_LNK	= 6,			/* 符号链接（S_IFLNK） */
 };
 
 struct proc;
@@ -51,6 +52,8 @@ struct inode_operations {
 	int (*mkdir)(struct inode *dir, const char *name);
 	int (*rmdir)(struct inode *dir, const char *name);
 	int (*mknod)(struct inode *dir, const char *name, short type, dev_t rdev);
+	/* 符号链接：dir/name → target（字符串） */
+	int (*symlink)(struct inode *dir, const char *name, const char *target);
 	/* 硬链接：在 dir 下新增 name → ip（不可链接目录） */
 	int (*link)(struct inode *dir, const char *name, struct inode *ip);
 	/* 删除目录项（不可删目录，目录用 rmdir） */
@@ -58,7 +61,6 @@ struct inode_operations {
 	/* 同文件系统内重命名/移动 */
 	int (*rename)(struct inode *old_dir, const char *old_name,
 		      struct inode *new_dir, const char *new_name);
-	int (*get_name)(struct inode *dir, struct inode *child, char *name);
 	void (*evict)(struct inode *ip);
 	int (*read)(struct inode *ip, char *dst, uint off, uint n);
 	int (*write)(struct inode *ip, char *src, uint off, uint n);
@@ -74,6 +76,7 @@ struct inode {
 	struct pipe *i_pipe;		/* T_FIFO：pipe_inode_info（类 Linux i_pipe） */
 	struct dentry *dents;		/* T_DIR 子项（后端私有用法） */
 	struct inode *parent;		/* 父目录（root->parent == root） */
+	char name[DIRSIZ];		/* 在父目录中的名（类 Linux dentry.d_name） */
 	const struct inode_operations *i_op; /* 后端操作表 */
 };
 
@@ -113,12 +116,14 @@ struct inode *vfs_root(void);
 
 /* 路径 / inode（对外仍用 fs_* 名） */
 struct inode *fs_namei(const char *path);
+struct inode *fs_namei_nofollow(const char *path);
 struct inode *fs_create(const char *path, short type);
 struct inode *fs_mknod(const char *path, short type,
 		       unsigned int major, unsigned int minor);
 int fs_mkdir(const char *path);
 int fs_rmdir(const char *path);
 int fs_link(const char *oldpath, const char *newpath);
+int fs_symlink(const char *target, const char *linkpath);
 int fs_unlink(const char *path);
 int fs_rename(const char *oldpath, const char *newpath);
 void fs_iput(struct inode *ip);

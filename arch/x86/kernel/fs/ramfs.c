@@ -18,11 +18,12 @@ static int ramfs_mkdir(struct inode *dir, const char *name);
 static int ramfs_rmdir(struct inode *dir, const char *name);
 static int ramfs_mknod(struct inode *dir, const char *name, short type,
 		       dev_t rdev);
+static int ramfs_symlink(struct inode *dir, const char *name,
+			 const char *target);
 static int ramfs_hardlink(struct inode *dir, const char *name, struct inode *ip);
 static int ramfs_unlink(struct inode *dir, const char *name);
 static int ramfs_rename(struct inode *old_dir, const char *old_name,
 			struct inode *new_dir, const char *new_name);
-static int ramfs_get_name(struct inode *dir, struct inode *child, char *name);
 static void ramfs_evict(struct inode *ip);
 static int ramfs_read(struct inode *ip, char *dst, uint off, uint n);
 static int ramfs_write(struct inode *ip, char *src, uint off, uint n);
@@ -33,10 +34,10 @@ static const struct inode_operations ramfs_iops = {
 	.mkdir		= ramfs_mkdir,
 	.rmdir		= ramfs_rmdir,
 	.mknod		= ramfs_mknod,
+	.symlink	= ramfs_symlink,
 	.link		= ramfs_hardlink,
 	.unlink		= ramfs_unlink,
 	.rename		= ramfs_rename,
-	.get_name	= ramfs_get_name,
 	.evict		= ramfs_evict,
 	.read		= ramfs_read,
 	.write		= ramfs_write,
@@ -56,6 +57,8 @@ static unsigned char inode_to_dtype(short type)
 		return DT_BLK;
 	case T_FIFO:
 		return DT_FIFO;
+	case T_LNK:
+		return DT_LNK;
 	default:
 		return DT_UNKNOWN;
 	}
@@ -96,6 +99,7 @@ static struct inode *ialloc(short type)
 			ip->dents = 0;
 			ip->parent = 0;
 			ip->rdev = 0;
+			ip->name[0] = '\0';
 			ip->i_op = &ramfs_iops;
 			return ip;
 		}
@@ -129,6 +133,7 @@ static int dirlink(struct inode *dp, const char *name, struct inode *ip)
 	if (!d)
 		return -1;
 	namecpy(d->name, name);
+	namecpy(ip->name, name);	/* getcwd / d_path 用 */
 	d->ip = fs_idup(ip);
 	if (!ip->parent)
 		ip->parent = dp;
@@ -247,6 +252,35 @@ static int ramfs_mknod(struct inode *dir, const char *name, short type,
 	return 0;
 }
 
+static int ramfs_symlink(struct inode *dir, const char *name,
+			 const char *target)
+{
+	struct inode *ip;
+	uint len;
+
+	if (!dir || !name || !name[0] || !target || dir->type != T_DIR)
+		return -1;
+	if (dirlookup(dir, name))
+		return -1;
+	len = strlen(target);
+	ip = ialloc(T_LNK);
+	if (!ip)
+		return -1;
+	ip->data = kmalloc(len + 1);
+	if (!ip->data) {
+		fs_iput(ip);
+		return -1;
+	}
+	strcpy(ip->data, target);
+	ip->size = len;
+	if (dirlink(dir, name, ip) < 0) {
+		fs_iput(ip);
+		return -1;
+	}
+	fs_iput(ip);
+	return 0;
+}
+
 /* 硬链接（i_op->link）；与对外挂接用的 ramfs_link() 分离 */
 static int ramfs_hardlink(struct inode *dir, const char *name, struct inode *ip)
 {
@@ -306,6 +340,7 @@ static int ramfs_rename(struct inode *old_dir, const char *old_name,
 	/* 同目录：直接改名 */
 	if (old_dir == new_dir) {
 		namecpy(de->name, new_name);
+		namecpy(ip->name, new_name);
 		return 0;
 	}
 
@@ -326,21 +361,6 @@ static int ramfs_rename(struct inode *old_dir, const char *old_name,
 	return 0;
 }
 
-static int ramfs_get_name(struct inode *dir, struct inode *child, char *name)
-{
-	struct dentry *d;
-
-	if (!dir || !child || dir->type != T_DIR)
-		return -1;
-	for (d = dir->dents; d; d = d->next) {
-		if (d->ip == child) {
-			namecpy(name, d->name);
-			return 0;
-		}
-	}
-	return -1;
-}
-
 static void ramfs_evict(struct inode *ip)
 {
 	struct dentry *d, *n;
@@ -356,6 +376,7 @@ static void ramfs_evict(struct inode *ip)
 	}
 	ip->dents = 0;
 	ip->parent = 0;
+	ip->name[0] = '\0';
 	ip->i_op = 0;
 	ip->rdev = 0;
 	ip->type = 0;
@@ -405,7 +426,7 @@ static int ramfs_read(struct inode *ip, char *dst, uint off, uint n)
 		return -1;
 	if (ip->type == T_DIR)
 		return ramfs_readdir(ip, dst, off, n);
-	if (ip->type != T_FILE)
+	if (ip->type != T_FILE && ip->type != T_LNK)
 		return -1;
 	if (off > ip->size)
 		return 0;

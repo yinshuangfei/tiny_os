@@ -230,6 +230,17 @@ stat:
 	popl %ebx
 	ret
 
+.globl readlink
+readlink:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl 16(%esp), %edx
+	movl $SYS_readlink, %eax
+	int $0x80
+	popl %ebx
+	ret
+
 .globl chdir
 chdir:
 	pushl %ebx
@@ -274,6 +285,16 @@ link:
 	movl 8(%esp), %ebx
 	movl 12(%esp), %ecx
 	movl $SYS_link, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl symlink
+symlink:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl $SYS_symlink, %eax
 	int $0x80
 	popl %ebx
 	ret
