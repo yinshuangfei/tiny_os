@@ -17,6 +17,8 @@ static const struct {
 	{ "meminfo",	meminfo_show },
 	{ "cpuinfo",	cpuinfo_show },
 	{ "devices",	devices_show },
+	{ "uptime",	uptime_show },
+	{ "partitions",	partitions_show },
 };
 
 #define PROC_ROOT_NFILES \
@@ -50,7 +52,7 @@ static struct inode *proc_root_lookup(struct inode *dir, const char *name)
 	if (pid < 0 || !proc_alive(pid))
 		return 0;
 
-	return procfs_get(pid, PF_PID_DIR, proc_dir);
+	return procfs_get(pid, PF_PID_DIR, 0, proc_dir);
 }
 
 /*
@@ -161,5 +163,5 @@ void proc_init(void)
 		panic("proc_init: namei /proc");
 	proc_dir->i_op = &proc_root_iops;
 
-	printk(KERN_INFO "fs: /proc ready (meminfo,cpuinfo,devices,self,<pid>)\n");
+	printk(KERN_INFO "fs: /proc ready (meminfo,cpuinfo,devices,uptime,partitions,self,<pid>)\n");
 }

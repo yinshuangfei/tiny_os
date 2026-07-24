@@ -5,6 +5,8 @@
 #include "../../defs.h"
 #include "../../param.h"
 #include "../../proc.h"
+#include "../../mm/memlayout.h"
+#include "../../mm/vm.h"
 #include "../../lock/spinlock.h"
 #include "../../lock/proc_lock.h"
 #include "../fs.h"
@@ -32,8 +34,6 @@ void proc_nop_evict(struct inode *ip)
 int proc_copy_buf(struct inode *ip, const char *buf, uint len,
 		  char *dst, uint off, uint n)
 {
-	if (len >= PROCFS_BUF)
-		len = PROCFS_BUF - 1;
 	if (ip)
 		ip->size = len;
 	if (off >= len)
@@ -95,6 +95,39 @@ int parse_pid_name(const char *name)
 	return pid;
 }
 
+/* 虚拟地址空间约数：[USERBASE,brk) + 栈页 + 匿名 VMA */
+static uint calc_vmsize_kb(struct proc *p)
+{
+	uint bytes = 0;
+	int i;
+
+	/* 内核线程无用户地址空间 */
+	if (!p->pagetable && p->brk <= USERBASE)
+		return 0;
+	if (p->brk > USERBASE)
+		bytes += p->brk - USERBASE;
+	bytes += PGSIZE;
+	for (i = 0; i < NVMA; i++) {
+		if (p->vmas[i].used)
+			bytes += p->vmas[i].end - p->vmas[i].start;
+	}
+	return bytes / 1024;
+}
+
+/* 常驻集：用户页表中 PTE_P 页数（类 get_mm_rss 教学近似） */
+static uint calc_vmrss_kb(pagetable_t pgdir)
+{
+	uint va, pages = 0;
+
+	if (!pgdir)
+		return 0;
+	for (va = USERBASE; va < USEREND; va += PGSIZE) {
+		if (walkaddr(pgdir, va))
+			pages++;
+	}
+	return pages * (PGSIZE / 1024);
+}
+
 /* 获取进程快照 */
 int snap_proc(int pid, struct proc_snap *s)
 {
@@ -111,6 +144,11 @@ int snap_proc(int pid, struct proc_snap *s)
 		s->state = p->state;
 		s->sz = p->sz;
 		s->brk = p->brk;
+		s->brk_start = p->brk_start;
+		s->vmsize_kb = calc_vmsize_kb(p);
+		s->vmrss_kb = calc_vmrss_kb(p->pagetable);
+		s->has_user_mm = p->pagetable != 0 || p->brk > USERBASE;
+		memcpy(s->vmas, p->vmas, sizeof(s->vmas));
 		strncpy(s->name, p->name, NNAME - 1);
 		s->name[NNAME - 1] = '\0';
 		release(&proc_lock);
@@ -148,6 +186,7 @@ void procfs_node_evict(struct inode *ip)
 		return;
 	n->kind = PF_FREE;
 	n->pid = 0;
+	n->aux = 0;
 	memset(ip, 0, sizeof(*ip));
 }
 
@@ -160,6 +199,10 @@ static const char *kind_name(int kind)
 		return "cmdline";
 	case PF_STAT:
 		return "stat";
+	case PF_MAPS:
+		return "maps";
+	case PF_FD_DIR:
+		return "fd";
 	default:
 		return 0;
 	}
@@ -205,8 +248,8 @@ const struct inode_operations proc_self_iops = {
 	.write	= proc_ro_write,
 };
 
-/* 获取 procfs_node */
-struct inode *procfs_get(int pid, int kind, struct inode *parent)
+/* 获取 procfs_node；aux 仅 PF_FD 使用 */
+struct inode *procfs_get(int pid, int kind, int aux, struct inode *parent)
 {
 	int i;
 	struct procfs_node *free_n = 0;
@@ -217,7 +260,8 @@ struct inode *procfs_get(int pid, int kind, struct inode *parent)
 	for (i = 0; i < PROCFS_NNODES; i++) {
 		struct procfs_node *n = &procfs_nodes[i];
 
-		if (n->kind == kind && n->pid == pid && n->inode.type != 0) {
+		if (n->kind == kind && n->pid == pid && n->inode.type != 0 &&
+		    (kind != PF_FD || n->aux == aux)) {
 			ip = fs_idup(&n->inode);
 			release(&procfs_lock);
 			return ip;
@@ -234,6 +278,7 @@ struct inode *procfs_get(int pid, int kind, struct inode *parent)
 	memset(ip, 0, sizeof(*ip));
 	free_n->pid = pid;
 	free_n->kind = kind;
+	free_n->aux = aux;
 	ip->inum = PROC_INO_BASE | ((uint)(free_n - procfs_nodes) + 1);
 	ip->ref = 1;
 	ip->parent = parent ? parent : proc_dir;
@@ -242,6 +287,14 @@ struct inode *procfs_get(int pid, int kind, struct inode *parent)
 		ip->type = T_DIR;
 		ip->i_op = &proc_pid_dir_iops;
 		snprintf(ip->name, DIRSIZ, "%d", pid);
+	} else if (kind == PF_FD_DIR) {
+		ip->type = T_DIR;
+		ip->i_op = &proc_fd_dir_iops;
+		strncpy(ip->name, "fd", DIRSIZ - 1);
+	} else if (kind == PF_FD) {
+		ip->type = T_LNK;
+		ip->i_op = &proc_fd_link_iops;
+		snprintf(ip->name, DIRSIZ, "%d", aux);
 	} else {
 		nm = kind_name(kind);
 		if (!nm) {

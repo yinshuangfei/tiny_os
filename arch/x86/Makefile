@@ -174,6 +174,8 @@ C_OBJS = \
 	$(KDIR)/fs/proc/meminfo.o \
 	$(KDIR)/fs/proc/cpuinfo.o \
 	$(KDIR)/fs/proc/devices.o \
+	$(KDIR)/fs/proc/uptime.o \
+	$(KDIR)/fs/proc/partitions.o \
 	$(KDIR)/fs/ext2.o \
 	$(KDIR)/fs/mount.o \
 	$(KDIR)/fs/file.o \
