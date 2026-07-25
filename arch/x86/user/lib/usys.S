@@ -136,6 +136,27 @@ dup:
 	popl %ebx
 	ret
 
+.globl fcntl
+fcntl:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl 16(%esp), %edx
+	movl $SYS_fcntl, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl flock
+flock:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl $SYS_flock, %eax
+	int $0x80
+	popl %ebx
+	ret
+
 .globl pipe
 pipe:
 	pushl %ebx

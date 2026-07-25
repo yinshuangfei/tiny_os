@@ -702,6 +702,158 @@ void demand_paging_test(void)
 }
 
 /*
+ * fcntl：F_GETFL/F_SETFL、F_GETFD/F_SETFD、F_DUPFD、F_DUPFD_CLOEXEC。
+ */
+void fcntl_test(void)
+{
+	int fd, nfd, fl, ok;
+
+	ok = 1;
+	fd = open("/hello", O_RDONLY);
+	if (fd < 0) {
+		printf("fcntl: open /hello failed\n");
+		syscall_pr_result("fcntl", 0);
+		return;
+	}
+
+	fl = fcntl(fd, F_GETFL, 0);
+	if (fl < 0 || (fl & O_ACCMODE) != O_RDONLY) {
+		printf("fcntl F_GETFL: fl=%d\n", fl);
+		ok = 0;
+	}
+
+	if (fcntl(fd, F_SETFL, O_APPEND | O_NONBLOCK) < 0) {
+		printf("fcntl F_SETFL failed\n");
+		ok = 0;
+	}
+	fl = fcntl(fd, F_GETFL, 0);
+	if (fl < 0 || (fl & O_ACCMODE) != O_RDONLY ||
+	    !(fl & O_APPEND) || !(fl & O_NONBLOCK)) {
+		printf("fcntl F_GETFL after SETFL: fl=%d\n", fl);
+		ok = 0;
+	}
+
+	if (fcntl(fd, F_SETFD, FD_CLOEXEC) < 0) {
+		printf("fcntl F_SETFD failed\n");
+		ok = 0;
+	}
+	if (fcntl(fd, F_GETFD, 0) != FD_CLOEXEC) {
+		printf("fcntl F_GETFD expect CLOEXEC\n");
+		ok = 0;
+	}
+	if (fcntl(fd, F_SETFD, 0) < 0 || fcntl(fd, F_GETFD, 0) != 0) {
+		printf("fcntl clear CLOEXEC failed\n");
+		ok = 0;
+	}
+
+	nfd = fcntl(fd, F_DUPFD, fd + 1);
+	if (nfd < fd + 1) {
+		printf("fcntl F_DUPFD: nfd=%d\n", nfd);
+		ok = 0;
+	} else {
+		close(nfd);
+	}
+
+	nfd = fcntl(fd, F_DUPFD_CLOEXEC, 0);
+	if (nfd < 0) {
+		printf("fcntl F_DUPFD_CLOEXEC failed\n");
+		ok = 0;
+	} else {
+		if (fcntl(nfd, F_GETFD, 0) != FD_CLOEXEC) {
+			printf("fcntl DUPFD_CLOEXEC flag missing\n");
+			ok = 0;
+		}
+		close(nfd);
+	}
+
+	close(fd);
+	syscall_pr_result("fcntl", ok);
+}
+
+/*
+ * flock：排他/共享、LOCK_NB 冲突、解锁与关闭释放。
+ */
+void flock_test(void)
+{
+	int fd1, fd2, ok;
+
+	ok = 1;
+	unlink("/t_flock");
+	fd1 = open("/t_flock", O_CREATE | O_RDWR);
+	if (fd1 < 0) {
+		printf("flock: create /t_flock failed\n");
+		syscall_pr_result("flock", 0);
+		return;
+	}
+	write(fd1, "x", 1);
+
+	if (flock(fd1, LOCK_EX) < 0) {
+		printf("flock LOCK_EX failed\n");
+		ok = 0;
+	}
+
+	fd2 = open("/t_flock", O_RDWR);
+	if (fd2 < 0) {
+		printf("flock: second open failed\n");
+		close(fd1);
+		syscall_pr_result("flock", 0);
+		return;
+	}
+
+	/* 另一 open file description 不可再加排他锁 */
+	if (flock(fd2, LOCK_EX | LOCK_NB) == 0) {
+		printf("flock LOCK_EX|NB should fail while EX held\n");
+		ok = 0;
+		flock(fd2, LOCK_UN);
+	}
+	if (flock(fd2, LOCK_SH | LOCK_NB) == 0) {
+		printf("flock LOCK_SH|NB should fail while EX held\n");
+		ok = 0;
+		flock(fd2, LOCK_UN);
+	}
+
+	if (flock(fd1, LOCK_UN) < 0) {
+		printf("flock LOCK_UN failed\n");
+		ok = 0;
+	}
+	if (flock(fd2, LOCK_EX | LOCK_NB) < 0) {
+		printf("flock LOCK_EX after unlock failed\n");
+		ok = 0;
+	}
+	flock(fd2, LOCK_UN);
+
+	/* 两把共享锁可并存 */
+	if (flock(fd1, LOCK_SH) < 0 || flock(fd2, LOCK_SH | LOCK_NB) < 0) {
+		printf("flock dual LOCK_SH failed\n");
+		ok = 0;
+	}
+	/* 有人持 SH 时不可再加 EX */
+	if (flock(fd1, LOCK_EX | LOCK_NB) == 0) {
+		printf("flock upgrade EX|NB should fail with other SH\n");
+		ok = 0;
+		flock(fd1, LOCK_UN);
+	}
+	flock(fd1, LOCK_UN);
+	flock(fd2, LOCK_UN);
+
+	/* 关闭释放锁：fd1 持 EX，关闭后 fd2 可获得 */
+	if (flock(fd1, LOCK_EX) < 0) {
+		printf("flock re-LOCK_EX failed\n");
+		ok = 0;
+	}
+	close(fd1);
+	if (flock(fd2, LOCK_EX | LOCK_NB) < 0) {
+		printf("flock after close should succeed\n");
+		ok = 0;
+	}
+	flock(fd2, LOCK_UN);
+	close(fd2);
+	unlink("/t_flock");
+
+	syscall_pr_result("flock", ok);
+}
+
+/*
  * SMP：多子进程忙等后报告 sched_getcpu；若 get_nprocs()>1 则期望 >=2 个不同 CPU。
  */
 void smp_test(void)
@@ -788,6 +940,8 @@ int main(int argc, char *argv[], char *envp[])
 	nanosleep_test();
 	signal_test();
 	lseek_test();
+	fcntl_test();
+	flock_test();
 	link_unlink_test();
 	rename_test();
 	wait_test();

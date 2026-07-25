@@ -95,6 +95,8 @@ struct file {
 	int ref;			/* 引用计数 */
 	char readable;			/* 可读标志 */
 	char writable;			/* 可写标志 */
+	int flags;			/* 打开标志（类 Linux f_flags） */
+	int flock;			/* flock 锁类型：0 / LOCK_SH / LOCK_EX */
 	struct inode *ip;		/* 指向的 inode（Linux f_inode） */
 	uint off;			/* 文件偏移量（Linux f_pos） */
 };
@@ -103,7 +105,24 @@ struct file {
 #define O_RDONLY	0x000
 #define O_WRONLY	0x001
 #define O_RDWR		0x002
+#define O_ACCMODE	0x003
 #define O_CREATE	0x200
+#define O_APPEND	0x400
+#define O_NONBLOCK	0x800
+
+/* fcntl cmd / fd flags（与 user/include/syscall.h 一致） */
+#define F_DUPFD		0
+#define F_GETFD		1
+#define F_SETFD		2
+#define F_GETFL		3
+#define F_SETFL		4
+#define F_DUPFD_CLOEXEC	1030
+#define FD_CLOEXEC	1
+
+#define LOCK_SH		1
+#define LOCK_EX		2
+#define LOCK_NB		4
+#define LOCK_UN		8
 
 /* lseek whence（与 Linux / 用户态 syscall.h 一致） */
 #define SEEK_SET	0
@@ -141,12 +160,15 @@ int fileread(struct file *f, char *dst, int n);
 int filewrite(struct file *f, char *src, int n);
 int filelseek(struct file *f, int offset, int whence);
 int fileioctl(struct file *f, unsigned int req, unsigned int arg);
+int fileflock(struct file *f, int op);
 
 int fdalloc(struct file *f);
+int fdalloc_ge(struct file *f, int minfd);
 struct file *fdget(int fd);
 void fd_install_stdio(struct proc *p);
 void fd_copy(struct proc *dst, struct proc *src);
 void fd_closeall(struct proc *p);
+void fd_close_on_exec(struct proc *p);
 
 /* 将 inode 链到 ramfs 目录（跨后端挂接，如 ext2 → /mnt） */
 int ramfs_link(struct inode *dir, const char *name, struct inode *ip);

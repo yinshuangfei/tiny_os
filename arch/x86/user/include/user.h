@@ -45,6 +45,8 @@ int close(int fd);
 int dup(int fd);
 int pipe(int fd[2]);
 int ioctl(int fd, unsigned int request, void *arg);
+int fcntl(int fd, int cmd, int arg);
+int flock(int fd, int operation);
 int lseek(int fd, int offset, int whence);
 int fstat(int fd, struct stat *st);
 int stat(const char *path, struct stat *st);

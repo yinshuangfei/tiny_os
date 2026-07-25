@@ -351,6 +351,7 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 
 	printk(KERN_DEBUG "execve: pid=%d name=%s eip=0x%x esp=0x%x\n",
 	       p->pid, p->name, tf->eip, tf->esp);
+	fd_close_on_exec(p);
 	return 0;
 
 bad:

@@ -262,12 +262,14 @@ int pipealloc(struct file **f0, struct file **f1)
 	(*f0)->type = FD_INODE;
 	(*f0)->readable = 1;
 	(*f0)->writable = 0;
+	(*f0)->flags = O_RDONLY;
 	(*f0)->ip = ip;
 	(*f0)->off = 0;
 
 	(*f1)->type = FD_INODE;
 	(*f1)->readable = 0;
 	(*f1)->writable = 1;
+	(*f1)->flags = O_WRONLY;
 	(*f1)->ip = ip;
 	(*f1)->off = 0;
 	return 0;

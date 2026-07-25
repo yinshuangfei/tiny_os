@@ -89,6 +89,7 @@ struct proc {
 
 	char name[NNAME];
 	struct file *ofile[NOFILE];	/* 打开文件表 */
+	unsigned char fdflags[NOFILE];	/* 每 fd 标志（FD_CLOEXEC） */
 	struct inode *cwd;		/* 当前工作目录 */
 
 	/* 信号（ipc/signal.c） */

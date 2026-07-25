@@ -54,6 +54,8 @@ int sys_open(struct trapframe *tf)
 	f->off = 0;
 	f->readable = !(flags & O_WRONLY);
 	f->writable = (flags & O_WRONLY) || (flags & O_RDWR);
+	/* 保留访问模式与状态位；O_CREATE 等创建位不进入 f_flags */
+	f->flags = flags & (O_ACCMODE | O_APPEND | O_NONBLOCK);
 	return fd;
 }
 
@@ -185,6 +187,7 @@ int sys_close(struct trapframe *tf)
 	if (!f)
 		return -1;
 	p->ofile[fd] = 0;
+	p->fdflags[fd] = 0;
 	fileclose(f);
 	return 0;
 }
@@ -206,6 +209,74 @@ int sys_ioctl(struct trapframe *tf)
 	if (!f)
 		return -1;
 	return fileioctl(f, (unsigned int)req, arg);
+}
+
+/*
+ * fcntl(fd, cmd, arg)：教学子集。
+ * F_DUPFD / F_DUPFD_CLOEXEC / F_GETFD / F_SETFD / F_GETFL / F_SETFL
+ */
+int sys_fcntl(struct trapframe *tf)
+{
+	int fd, cmd, arg, nfd;
+	struct proc *p = myproc();
+	struct file *f;
+
+	if (argint(tf, 0, &fd) < 0 || argint(tf, 1, &cmd) < 0)
+		return -1;
+	if (argint(tf, 2, &arg) < 0)
+		return -1;
+	if (!p || fd < 0 || fd >= NOFILE)
+		return -1;
+	f = p->ofile[fd];
+	if (!f)
+		return -1;
+
+	switch (cmd) {
+	case F_DUPFD:
+	case F_DUPFD_CLOEXEC:
+		if (arg < 0)
+			return -1;
+		nfd = fdalloc_ge(f, arg);
+		if (nfd < 0)
+			return -1;
+		filedup(f);
+		if (cmd == F_DUPFD_CLOEXEC)
+			p->fdflags[nfd] = FD_CLOEXEC;
+		return nfd;
+
+	case F_GETFD:
+		return (int)p->fdflags[fd];
+
+	case F_SETFD:
+		p->fdflags[fd] = (unsigned char)(arg & FD_CLOEXEC);
+		return 0;
+
+	case F_GETFL:
+		return f->flags;
+
+	case F_SETFL:
+		/* 访问模式不可改；仅允许状态位 */
+		f->flags = (f->flags & O_ACCMODE) |
+			   (arg & (O_APPEND | O_NONBLOCK));
+		return 0;
+
+	default:
+		return -1;
+	}
+}
+
+/* flock(fd, operation)：对齐 Linux flock(2) */
+int sys_flock(struct trapframe *tf)
+{
+	int fd, op;
+	struct file *f;
+
+	if (argint(tf, 0, &fd) < 0 || argint(tf, 1, &op) < 0)
+		return -1;
+	f = fdget(fd);
+	if (!f)
+		return -1;
+	return fileflock(f, op);
 }
 
 /* dup(oldfd)：复制到最小空闲 fd（对齐 Linux dup） */

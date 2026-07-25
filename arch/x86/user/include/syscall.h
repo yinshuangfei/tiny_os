@@ -31,10 +31,12 @@
 #define SYS_brk		45	/* Linux i386 __NR_brk */
 #define SYS_signal	48	/* Linux i386 __NR_signal */
 #define SYS_ioctl	54	/* Linux i386 __NR_ioctl */
+#define SYS_fcntl	55	/* Linux i386 __NR_fcntl */
 #define SYS_symlink	83	/* Linux i386 __NR_symlink */
 #define SYS_readlink	85	/* Linux i386 __NR_readlink */
 #define SYS_munmap	91	/* Linux i386 __NR_munmap */
 #define SYS_sigreturn	119	/* Linux i386 __NR_sigreturn */
+#define SYS_flock	143	/* Linux i386 __NR_flock */
 #define SYS_nanosleep	162	/* Linux i386 __NR_nanosleep */
 #define SYS_getcwd	183	/* Linux i386 __NR_getcwd */
 #define SYS_mmap2	192	/* Linux i386 __NR_mmap2（offset 为页偏移） */
@@ -75,7 +77,26 @@ struct stat {
 #define O_RDONLY	0x000
 #define O_WRONLY	0x001
 #define O_RDWR		0x002
+#define O_ACCMODE	0x003
 #define O_CREATE	0x200
+#define O_APPEND	0x400	/* Linux O_APPEND */
+#define O_NONBLOCK	0x800	/* Linux O_NONBLOCK */
+
+/* fcntl(2) cmd（对齐 Linux） */
+#define F_DUPFD		0
+#define F_GETFD		1
+#define F_SETFD		2
+#define F_GETFL		3
+#define F_SETFL		4
+#define F_DUPFD_CLOEXEC	1030
+
+#define FD_CLOEXEC	1
+
+/* flock(2) operation（对齐 Linux） */
+#define LOCK_SH		1	/* 共享锁 */
+#define LOCK_EX		2	/* 排他锁 */
+#define LOCK_NB		4	/* 非阻塞 */
+#define LOCK_UN		8	/* 解锁 */
 
 /* lseek whence（与 Linux <unistd.h> 一致） */
 #define SEEK_SET	0
