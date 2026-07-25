@@ -30,6 +30,8 @@ int sys_mkdir(struct trapframe *tf);
 int sys_rmdir(struct trapframe *tf);
 int sys_link(struct trapframe *tf);
 int sys_symlink(struct trapframe *tf);
+int sys_mount(struct trapframe *tf);
+int sys_umount(struct trapframe *tf);
 int sys_unlink(struct trapframe *tf);
 int sys_rename(struct trapframe *tf);
 int sys_dup(struct trapframe *tf);

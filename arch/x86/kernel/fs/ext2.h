@@ -15,5 +15,6 @@ struct inode;
 void ext2_init(void);
 
 struct inode *ext2_fill_super(struct gendisk *gd);
+void ext2_put_super(void);
 
 #endif

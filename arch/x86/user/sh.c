@@ -747,6 +747,8 @@ static int cmd_cd(int argc, char **argv);
 static int cmd_pwd(int argc, char **argv);
 static int cmd_mkdir(int argc, char **argv);
 static int cmd_rmdir(int argc, char **argv);
+static int cmd_mount(int argc, char **argv);
+static int cmd_umount(int argc, char **argv);
 static int cmd_ls(int argc, char **argv);
 static int cmd_history(int argc, char **argv);
 static int cmd_pid(int argc, char **argv);
@@ -768,6 +770,8 @@ static const struct builtin builtins[] = {
 	{ "pwd",     "          print working directory", cmd_pwd },
 	{ "mkdir",   " <path>   create directory",      cmd_mkdir },
 	{ "rmdir",   " <path>   remove empty directory", cmd_rmdir },
+	{ "mount",   " <dev> <dir> [type]  mount fs",   cmd_mount },
+	{ "umount",  " <dir>    unmount filesystem",    cmd_umount },
 	{ "ls",      " [path]   list directory",        cmd_ls },
 	{ "history", " [-c]     list/clear history",    cmd_history },
 	{ "pid",     "          print shell pid",       cmd_pid },
@@ -873,6 +877,69 @@ static int cmd_rmdir(int argc, char **argv)
 	}
 	if (rmdir(argv[1]) < 0) {
 		printf("%s %s: failed\n", C_RED("rmdir:"), argv[1]);
+		return 1;
+	}
+	return 0;
+}
+
+/*
+ * mount <source> <target> [fstype]
+ * 也可：mount -t <fstype> <source> <target>
+ */
+static int cmd_mount(int argc, char **argv)
+{
+	const char *source, *target, *fstype;
+	int i;
+
+	source = 0;
+	target = 0;
+	fstype = 0;
+
+	for (i = 1; i < argc; i++) {
+		if (strcmp(argv[i], "-t") == 0) {
+			if (i + 1 >= argc) {
+				printf("%s usage: mount [-t type] <dev> <dir>\n",
+				       C_RED("mount:"));
+				return 1;
+			}
+			fstype = argv[++i];
+			continue;
+		}
+		if (!source)
+			source = argv[i];
+		else if (!target)
+			target = argv[i];
+		else if (!fstype)
+			fstype = argv[i];
+		else {
+			printf("%s usage: mount [-t type] <dev> <dir>\n",
+			       C_RED("mount:"));
+			return 1;
+		}
+	}
+
+	if (!source || !target) {
+		printf("%s usage: mount [-t type] <dev> <dir>\n",
+		       C_RED("mount:"));
+		return 1;
+	}
+
+	if (mount(source, target, fstype, 0, 0) < 0) {
+		printf("%s %s on %s: failed\n",
+		       C_RED("mount:"), source, target);
+		return 1;
+	}
+	return 0;
+}
+
+static int cmd_umount(int argc, char **argv)
+{
+	if (argc < 2) {
+		printf("%s usage: umount <dir>\n", C_RED("umount:"));
+		return 1;
+	}
+	if (umount(argv[1]) < 0) {
+		printf("%s %s: failed\n", C_RED("umount:"), argv[1]);
 		return 1;
 	}
 	return 0;

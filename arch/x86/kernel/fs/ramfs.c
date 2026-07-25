@@ -121,7 +121,7 @@ static struct dentry *dirlookup(struct inode *dp, const char *name)
 }
 
 /* 在目录中添加一个名为 name，inode 为 ip 的目录项 */
-static int dirlink(struct inode *dp, const char *name, struct inode *ip)
+static int add_dentry(struct inode *dp, const char *name, struct inode *ip)
 {
 	struct dentry *d;
 
@@ -145,7 +145,7 @@ static int dirlink(struct inode *dp, const char *name, struct inode *ip)
 /* 供其它 FS 挂接到 ramfs 目录（如 ext2 → /mnt） */
 int ramfs_link(struct inode *dir, const char *name, struct inode *ip)
 {
-	return dirlink(dir, name, ip);
+	return add_dentry(dir, name, ip);
 }
 
 static int dirunlink(struct inode *dp, const char *name)
@@ -170,6 +170,12 @@ static int dirunlink(struct inode *dp, const char *name)
 	return -1;
 }
 
+/* umount：摘除挂载点目录项（不检查是否为空） */
+int ramfs_detach(struct inode *dir, const char *name)
+{
+	return dirunlink(dir, name);
+}
+
 /* ---------- inode_operations ---------- */
 
 static struct inode *ramfs_lookup(struct inode *dir, const char *name)
@@ -192,7 +198,7 @@ static int ramfs_create(struct inode *dir, const char *name, short type,
 	ip = ialloc(type);
 	if (!ip)
 		return -1;
-	if (dirlink(dir, name, ip) < 0) {
+	if (add_dentry(dir, name, ip) < 0) {
 		fs_iput(ip);	/* ref→0 → evict */
 		return -1;
 	}
@@ -209,7 +215,7 @@ static int ramfs_mkdir(struct inode *dir, const char *name)
 	ip = ialloc(T_DIR);
 	if (!ip)
 		return -1;
-	if (dirlink(dir, name, ip) < 0) {
+	if (add_dentry(dir, name, ip) < 0) {
 		fs_iput(ip);
 		return -1;
 	}
@@ -244,7 +250,7 @@ static int ramfs_mknod(struct inode *dir, const char *name, short type,
 	if (!ip)
 		return -1;
 	ip->rdev = rdev;
-	if (dirlink(dir, name, ip) < 0) {
+	if (add_dentry(dir, name, ip) < 0) {
 		fs_iput(ip);
 		return -1;
 	}
@@ -273,7 +279,7 @@ static int ramfs_symlink(struct inode *dir, const char *name,
 	}
 	strcpy(ip->data, target);
 	ip->size = len;
-	if (dirlink(dir, name, ip) < 0) {
+	if (add_dentry(dir, name, ip) < 0) {
 		fs_iput(ip);
 		return -1;
 	}
@@ -288,7 +294,7 @@ static int ramfs_hardlink(struct inode *dir, const char *name, struct inode *ip)
 		return -1;
 	if (ip->type == T_DIR)
 		return -1;
-	return dirlink(dir, name, ip);
+	return add_dentry(dir, name, ip);
 }
 
 static int ramfs_unlink(struct inode *dir, const char *name)
@@ -350,8 +356,8 @@ static int ramfs_rename(struct inode *old_dir, const char *old_name,
 		fs_iput(ip);
 		return -1;
 	}
-	if (dirlink(new_dir, new_name, ip) < 0) {
-		(void)dirlink(old_dir, old_name, ip);
+	if (add_dentry(new_dir, new_name, ip) < 0) {
+		(void)add_dentry(old_dir, old_name, ip);
 		fs_iput(ip);
 		return -1;
 	}
@@ -498,7 +504,7 @@ void fs_init(void)
 	vfs_set_root(root);
 
 	dev = ialloc(T_DIR);
-	if (!dev || dirlink(root, "dev", dev) < 0)
+	if (!dev || add_dentry(root, "dev", dev) < 0)
 		panic("fs_init: /dev");
 	fs_iput(dev);
 
@@ -506,7 +512,7 @@ void fs_init(void)
 	if (!console)
 		panic("fs_init: console");
 	console->rdev = MKDEV(CONSOLE_MAJOR, CONSOLE_MINOR);
-	if (dirlink(dev, "console", console) < 0)
+	if (add_dentry(dev, "console", console) < 0)
 		panic("fs_init: /dev/console");
 	fs_iput(console);
 

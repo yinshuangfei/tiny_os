@@ -19,6 +19,7 @@ static const struct {
 	{ "devices",	devices_show },
 	{ "uptime",	uptime_show },
 	{ "partitions",	partitions_show },
+	{ "mounts",	mounts_show },
 };
 
 #define PROC_ROOT_NFILES \
@@ -163,5 +164,5 @@ void proc_init(void)
 		panic("proc_init: namei /proc");
 	proc_dir->i_op = &proc_root_iops;
 
-	printk(KERN_INFO "fs: /proc ready (meminfo,cpuinfo,devices,uptime,partitions,self,<pid>)\n");
+	printk(KERN_INFO "fs: /proc ready (meminfo,cpuinfo,devices,uptime,partitions,mounts,self,<pid>)\n");
 }

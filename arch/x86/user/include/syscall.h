@@ -19,6 +19,8 @@
 #define SYS_stat	18	/* Linux i386 __NR_oldstat（与 fstat=28 同代） */
 #define SYS_lseek	19	/* Linux i386 __NR_lseek */
 #define SYS_getpid	20
+#define SYS_mount	21	/* Linux i386 __NR_mount */
+#define SYS_umount	22	/* Linux i386 __NR_umount */
 #define SYS_fstat	28	/* Linux i386 __NR_oldfstat */
 #define SYS_kill	37	/* Linux i386 __NR_kill */
 #define SYS_rename	38	/* Linux i386 __NR_rename */

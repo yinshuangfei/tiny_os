@@ -176,6 +176,7 @@ C_OBJS = \
 	$(KDIR)/fs/proc/devices.o \
 	$(KDIR)/fs/proc/uptime.o \
 	$(KDIR)/fs/proc/partitions.o \
+	$(KDIR)/fs/proc/mounts.o \
 	$(KDIR)/fs/ext2.o \
 	$(KDIR)/fs/mount.o \
 	$(KDIR)/fs/file.o \

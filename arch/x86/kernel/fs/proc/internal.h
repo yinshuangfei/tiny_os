@@ -9,7 +9,7 @@
 #include "../../proc.h"
 #include "../vfs.h"
 
-#define PROCFS_BUF	512
+#define PROCFS_BUF	1024
 #define PROCFS_MAPS_BUF	2048
 #define PROCFS_NNODES	128
 #define PROC_INO_BASE	0x80000000u
@@ -87,5 +87,6 @@ int cpuinfo_show(char *buf, uint size);
 int devices_show(char *buf, uint size);
 int uptime_show(char *buf, uint size);
 int partitions_show(char *buf, uint size);
+int mounts_show(char *buf, uint size);
 
 #endif

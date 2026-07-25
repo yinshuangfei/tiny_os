@@ -55,6 +55,9 @@ int mkdir(const char *path, int mode);
 int rmdir(const char *path);
 int link(const char *oldpath, const char *newpath);
 int symlink(const char *target, const char *linkpath);
+int mount(const char *source, const char *target, const char *fstype,
+	  unsigned long flags, const void *data);
+int umount(const char *target);
 int unlink(const char *path);
 int rename(const char *oldpath, const char *newpath);
 

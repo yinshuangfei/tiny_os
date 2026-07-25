@@ -299,6 +299,36 @@ symlink:
 	popl %ebx
 	ret
 
+/*
+ * mount(source, target, fstype, flags, data) — 五参数。
+ * 对齐 Linux mount(2)；ebx..edi = arg0..arg4。
+ */
+.globl mount
+mount:
+	pushl %ebx
+	pushl %esi
+	pushl %edi
+	movl 16(%esp), %ebx
+	movl 20(%esp), %ecx
+	movl 24(%esp), %edx
+	movl 28(%esp), %esi
+	movl 32(%esp), %edi
+	movl $SYS_mount, %eax
+	int $0x80
+	popl %edi
+	popl %esi
+	popl %ebx
+	ret
+
+.globl umount
+umount:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl $SYS_umount, %eax
+	int $0x80
+	popl %ebx
+	ret
+
 .globl unlink
 unlink:
 	pushl %ebx

@@ -8,6 +8,7 @@
 #include "../proc.h"
 #include "../syscall.h"
 #include "fs.h"
+#include "mount.h"
 
 int sys_open(struct trapframe *tf)
 {
@@ -378,6 +379,45 @@ int sys_symlink(struct trapframe *tf)
 	    argstr(tf, 1, linkpath, NNAME) < 0)
 		return -1;
 	return fs_symlink(target, linkpath);
+}
+
+/*
+ * mount(source, target, filesystemtype, mountflags, data)
+ * 对齐 Linux mount(2)；flags/data 暂忽略，filesystemtype 可为 NULL。
+ */
+int sys_mount(struct trapframe *tf)
+{
+	char source[NNAME], target[NNAME], fstype[NNAME];
+	const char *fstype_p;
+	uint fstype_addr;
+	int flags;
+
+	if (argstr(tf, 0, source, NNAME) < 0 ||
+	    argstr(tf, 1, target, NNAME) < 0)
+		return -1;
+	if (argaddr(tf, 2, &fstype_addr) < 0)
+		return -1;
+	fstype_p = 0;
+	if (fstype_addr) {
+		if (argstr(tf, 2, fstype, NNAME) < 0)
+			return -1;
+		fstype_p = fstype;
+	}
+	if (argint(tf, 3, &flags) < 0)
+		return -1;
+	(void)flags;
+	/* arg4 data：暂未使用 */
+	return do_mount(source, target, fstype_p);
+}
+
+/* umount(target)：对齐 Linux umount(2) */
+int sys_umount(struct trapframe *tf)
+{
+	char target[NNAME];
+
+	if (argstr(tf, 0, target, NNAME) < 0)
+		return -1;
+	return do_umount(target);
 }
 
 /* unlink(path) */

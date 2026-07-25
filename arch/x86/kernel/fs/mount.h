@@ -16,13 +16,25 @@ struct file_system_type {
 	uint magic_off;			/* 魔数在设备上的字节偏移 */
 	ushort magic;			/* 小端魔数，如 ext2 的 0xEF53 */
 	struct inode *(*fill_super)(struct gendisk *gd);
+	void (*kill_sb)(void);		/* 卸载时清理（可选） */
 	struct file_system_type *next;
 };
 
 int register_filesystem(struct file_system_type *fs);
 
-/* 识别并挂载单个块设备到 dir_name（如 "mnt"） */
-int do_mount(const char *dev_name, const char *dir_name);
+/*
+ * 挂载块设备到 dir_name。
+ * dev_name：块设备名（"hda" 或 "/dev/hda"）；
+ * dir_name：挂载点（已存在的空目录，或根下尚不存在的单层名如 "/mnt2"）；
+ * fstype：可选；非空则按名选用，否则读盘魔数识别。
+ */
+int do_mount(const char *dev_name, const char *dir_name, const char *fstype);
+
+/* 卸载挂载点（如 "/mnt"） */
+int do_umount(const char *dir_name);
+
+/* /proc/mounts 文本（device dir type opts dump pass） */
+int mounts_proc_show(char *buf, uint size);
 
 /*
  * 启动时挂载入口：注册各 FS 驱动，扫描块设备，

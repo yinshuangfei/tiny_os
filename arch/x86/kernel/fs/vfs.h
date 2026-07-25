@@ -150,6 +150,8 @@ void fd_closeall(struct proc *p);
 
 /* 将 inode 链到 ramfs 目录（跨后端挂接，如 ext2 → /mnt） */
 int ramfs_link(struct inode *dir, const char *name, struct inode *ip);
+/* 强制摘除目录项（umount；不要求子目录为空） */
+int ramfs_detach(struct inode *dir, const char *name);
 
 /* 匿名管道（Linux pipe(2) / pipefs 教学子集） */
 int pipealloc(struct file **f0, struct file **f1);

@@ -718,11 +718,18 @@ struct inode *ext2_fill_super(struct gendisk *gd)
 	return root;
 }
 
+void ext2_put_super(void)
+{
+	ext2_disk = 0;
+	ext2_block_size = 0;
+}
+
 static struct file_system_type ext2_fs_type = {
 	.name		= "ext2",
 	.magic_off	= 1024 + 56,	/* s_magic 在超级块内偏移 */
 	.magic		= EXT2_SUPER_MAGIC,
 	.fill_super	= ext2_fill_super,
+	.kill_sb	= ext2_put_super,
 };
 
 /* 注册 ext2 文件系统 */
