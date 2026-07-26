@@ -16,7 +16,7 @@ struct file_system_type {
 	uint magic_off;			/* 魔数在设备上的字节偏移 */
 	ushort magic;			/* 小端魔数，如 ext2 的 0xEF53 */
 	struct inode *(*fill_super)(struct gendisk *gd);
-	void (*kill_sb)(void);		/* 卸载时清理（可选） */
+	void (*kill_sb)(void *sb);	/* 卸载时释放该实例超级块（可选） */
 	struct file_system_type *next;
 };
 

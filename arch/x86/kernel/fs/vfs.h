@@ -1,7 +1,8 @@
 /*
  * VFS（Virtual File System）抽象层头文件。
  * 对齐 Linux include/linux/fs.h 教学子集：inode / dentry / file 与通用 API。
- * 实现见 inode.c、namei.c、file.c；具体存储由 inode_operations 后端提供。
+ * 实现见 super.c、inode.c、dcache.c、namei.c、file.c；
+ * 具体存储由 inode_operations 后端提供。
  */
 #ifndef __VFS_H__
 #define __VFS_H__
@@ -9,9 +10,9 @@
 #include "../types.h"
 #include "../param.h"
 #include "../major.h"
-#include "../../user/include/dirent.h"
+#include "dcache.h"
+#include "namei.h"
 
-#define DIRSIZ		(NAME_MAX + 1)	/* 目录项名缓冲，与 NAME_MAX 对齐 */
 #define NINODE		64		/* 最大 inode 数（各后端可自用） */
 #define NFILE		64		/* 最大打开文件数 */
 
@@ -33,13 +34,6 @@ struct proc;
 struct inode;
 struct pipe;
 struct file;
-
-/* 内核目录树节点（对应 Linux VFS 的 dentry 角色，非用户 ABI） */
-struct dentry {
-	char name[DIRSIZ];		/* 目录项名称 */
-	struct inode *ip;		/* 指向的 inode */
-	struct dentry *next;		/* 下一个目录项 */
-};
 
 /*
  * 目录/文件后端操作（对齐 Linux inode_operations 教学子集）。
@@ -74,9 +68,10 @@ struct inode {
 	uint size;			/* 文件、目录大小（块设备可为容量字节数） */
 	char *data;			/* T_FILE 内容（后端私有用法） */
 	struct pipe *i_pipe;		/* T_FIFO：pipe_inode_info（类 Linux i_pipe） */
-	struct dentry *dents;		/* T_DIR 子项（后端私有用法） */
+	struct dentry *dents;		/* T_DIR 子项（dcache） */
 	struct inode *parent;		/* 父目录（root->parent == root） */
 	char name[DIRSIZ];		/* 在父目录中的名（类 Linux dentry.d_name） */
+	void *i_sb;			/* 所属超级块私有（多实例 FS，如 ext2_sb_info） */
 	const struct inode_operations *i_op; /* 后端操作表 */
 };
 
@@ -129,25 +124,13 @@ struct file {
 #define SEEK_CUR	1
 #define SEEK_END	2
 
-/* VFS 根目录（由具体 FS 在 init 时 vfs_set_root） */
+/* VFS 根目录（super.c） */
 void vfs_set_root(struct inode *root);
 struct inode *vfs_root(void);
 
-/* 路径 / inode（对外仍用 fs_* 名） */
-struct inode *fs_namei(const char *path);
-struct inode *fs_namei_nofollow(const char *path);
-struct inode *fs_create(const char *path, short type);
-struct inode *fs_mknod(const char *path, short type,
-		       unsigned int major, unsigned int minor);
-int fs_mkdir(const char *path);
-int fs_rmdir(const char *path);
-int fs_link(const char *oldpath, const char *newpath);
-int fs_symlink(const char *target, const char *linkpath);
-int fs_unlink(const char *path);
-int fs_rename(const char *oldpath, const char *newpath);
+/* inode 引用与通用读写（inode.c） */
 void fs_iput(struct inode *ip);
 struct inode *fs_idup(struct inode *ip);
-int fs_getcwd(char *buf, int max);
 int fs_readi(struct inode *ip, char *dst, uint off, uint n);
 int fs_writei(struct inode *ip, char *src, uint off, uint n);
 
@@ -169,11 +152,6 @@ void fd_install_stdio(struct proc *p);
 void fd_copy(struct proc *dst, struct proc *src);
 void fd_closeall(struct proc *p);
 void fd_close_on_exec(struct proc *p);
-
-/* 将 inode 链到 ramfs 目录（跨后端挂接，如 ext2 → /mnt） */
-int ramfs_link(struct inode *dir, const char *name, struct inode *ip);
-/* 强制摘除目录项（umount；不要求子目录为空） */
-int ramfs_detach(struct inode *dir, const char *name);
 
 /* 匿名管道（Linux pipe(2) / pipefs 教学子集） */
 int pipealloc(struct file **f0, struct file **f1);

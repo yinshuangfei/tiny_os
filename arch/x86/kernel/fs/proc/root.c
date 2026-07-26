@@ -8,6 +8,7 @@
 #include "../../proc.h"
 #include "../../lock/proc_lock.h"
 #include "../fs.h"
+#include "../dcache.h"
 #include "internal.h"
 
 static const struct {
@@ -25,19 +26,6 @@ static const struct {
 #define PROC_ROOT_NFILES \
 	(sizeof(proc_root_files) / sizeof(proc_root_files[0]))
 
-static struct dentry *proc_dirlookup(struct inode *dp, const char *name)
-{
-	struct dentry *d;
-
-	if (!dp || dp->type != T_DIR)
-		return 0;
-	for (d = dp->dents; d; d = d->next) {
-		if (strcmp(d->name, name) == 0)
-			return d;
-	}
-	return 0;
-}
-
 static struct inode *proc_root_lookup(struct inode *dir, const char *name)
 {
 	struct dentry *de;
@@ -45,7 +33,7 @@ static struct inode *proc_root_lookup(struct inode *dir, const char *name)
 
 	(void)dir;
 	/* 静态项含 meminfo / self 等 */
-	de = proc_dirlookup(proc_dir, name);
+	de = d_lookup(proc_dir, name);
 	if (de)
 		return fs_idup(de->ip);
 

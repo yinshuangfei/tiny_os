@@ -6,21 +6,6 @@
 #include "../defs.h"
 #include "vfs.h"
 
-/* 根 inode */
-static struct inode *vfs_root_inode;
-
-/* 设置根 inode */
-void vfs_set_root(struct inode *root)
-{
-	vfs_root_inode = root;
-}
-
-/* 获取根 inode */
-struct inode *vfs_root(void)
-{
-	return vfs_root_inode;
-}
-
 /* 增加 inode 引用计数 */
 struct inode *fs_idup(struct inode *ip)
 {
@@ -41,7 +26,7 @@ void fs_iput(struct inode *ip)
 	/*
 	 * 根永不回收。其余 ref==0 时调后端 evict（如 ramfs 清 data/dents）。
 	 */
-	if (ip->ref == 0 && ip != vfs_root_inode) {
+	if (ip->ref == 0 && ip != vfs_root()) {
 		if (ip->i_op && ip->i_op->evict)
 			ip->i_op->evict(ip);
 	}

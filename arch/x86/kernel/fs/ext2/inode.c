@@ -1,7 +1,8 @@
 /*
  * 只读 ext2 后端（教学子集）。
  * 经 inode_operations 接入 VFS；块 I/O 走 blkdev_read_sect。
-
+ * 每挂载一份 ext2_sb_info，支持同类型多实例。
+ *
  * 布局（block_size=1024，first_data_block=1）：
  *   0          引导区（未用）
  *   1          超级块
@@ -11,16 +12,16 @@
  *   5..        inode 表
  *   随后       数据块（根目录、文件、子目录）
  */
-#include "../types.h"
-#include "../defs.h"
-#include "../param.h"
-#include "../printk.h"
-#include "../block/blk.h"
-#include "vfs.h"
-#include "mount.h"
+#include "../../types.h"
+#include "../../defs.h"
+#include "../../param.h"
+#include "../../printk.h"
+#include "../../block/blk.h"
+#include "../vfs.h"
+#include "../mount.h"
 #include "ext2.h"
 
-#define EXT2_NINODE		32		/* inode 数 */
+#define EXT2_NINODE		32		/* 每挂载实例 inode 池大小 */
 #define EXT2_NDIR_BLOCKS	12		/* 直接块数 */
 #define EXT2_IND_BLOCK		12		/* 间接块数 */
 #define EXT2_N_BLOCKS		15		/* 总块数 */
@@ -114,26 +115,33 @@ struct ext2_dir_entry {
 	char	name[255];			/* 名称 */
 } __attribute__((packed));
 
-/* 挂载态（仅一块盘）
- * TODO: 支持多块盘
+/*
+ * 挂载实例私有数据（对齐 Linux ext2_sb_info 教学子集）。
+ * 每挂载一份，支持同类型多实例。
  */
-static struct gendisk *ext2_disk;
-
-static uint32 ext2_block_size;			/* 块大小 */
-static uint32 ext2_inodes_per_group;		/* 组中 inode 数 */
-static uint32 ext2_blocks_per_group;		/* 组中块数 */
-static uint32 ext2_inode_size;			/* inode 大小 */
-static uint32 ext2_first_data_block;		/* 第一个数据块 */
-static uint32 ext2_feature_incompat;		/* 不兼容特性 */
-static uint32 ext2_inode_table;			/* 组 0 的 inode table 块号 */
-
-/* 内存通用 inode 数组作为 inode 池 */
-static struct inode einodes[EXT2_NINODE];
-/* 内存 inode 的块号数组，作为缓存的 inode 的块号池 */
-static uint32 eiblocks[EXT2_NINODE][EXT2_N_BLOCKS];
+struct ext2_sb_info {
+	struct gendisk *disk;			/* 块设备 */
+	uint32 block_size;			/* 块大小 */
+	uint32 inodes_per_group;		/* 组中 inode 数 */
+	uint32 blocks_per_group;		/* 组中块数 */
+	uint32 inode_size;			/* inode 大小 */
+	uint32 first_data_block;		/* 第一个数据块 */
+	uint32 feature_incompat;		/* 不兼容特性 */
+	uint32 inode_table;			/* 组 0 的 inode table 块号 */
+	/* 内存通用 inode 数组作为本实例 inode 池 */
+	struct inode einodes[EXT2_NINODE];
+	/* 内存 inode 的块号数组，作为缓存的 inode 的块号池 */
+	uint32 eiblocks[EXT2_NINODE][EXT2_N_BLOCKS];
+};
 
 /* inode 操作 */
 static const struct inode_operations ext2_iops;
+
+/* 从 inode 取本挂载实例的 sb_info */
+static struct ext2_sb_info *EXT2_SB(struct inode *ip)
+{
+	return ip ? (struct ext2_sb_info *)ip->i_sb : 0;
+}
 
 /*
  * 比较目录项名 a[0..n)（无 '\0'，长度由 name_len 给出）与 C 字符串 b。
@@ -161,27 +169,26 @@ static void namecpy_dir(char *dst, const char *src)
 }
 
 /* 从块设备读取一个扇区到 buf */
-static int ext2_read_sect(sector_t sec, void *buf)
+static int ext2_read_sect(struct ext2_sb_info *sbi, sector_t sec, void *buf)
 {
-	if (!ext2_disk)
+	if (!sbi || !sbi->disk)
 		return -1;
-	return blkdev_read_sect(ext2_disk, sec, buf);
+	return blkdev_read_sect(sbi->disk, sec, buf);
 }
 
 /* 读一个文件系统块到 buf（须 ≥ block_size） */
-static int ext2_read_block(uint32 block, void *buf)
+static int ext2_read_block(struct ext2_sb_info *sbi, uint32 block, void *buf)
 {
 	sector_t sec;
 	uint nsec, i;
 	char *p = buf;
 
-	if (block == 0 && ext2_block_size > 1024) {
-		/* 块 0 含引导区；仍可读 */
-	}
-	sec = (sector_t)((uint64)block * ext2_block_size / BLOCK_SECTOR_SIZE);
-	nsec = ext2_block_size / BLOCK_SECTOR_SIZE;
+	if (!sbi || !sbi->block_size)
+		return -1;
+	sec = (sector_t)((uint64)block * sbi->block_size / BLOCK_SECTOR_SIZE);
+	nsec = sbi->block_size / BLOCK_SECTOR_SIZE;
 	for (i = 0; i < nsec; i++) {
-		if (ext2_read_sect(sec + i, p + i * BLOCK_SECTOR_SIZE) < 0)
+		if (ext2_read_sect(sbi, sec + i, p + i * BLOCK_SECTOR_SIZE) < 0)
 			return -1;
 	}
 	return 0;
@@ -216,18 +223,20 @@ static unsigned char ft_to_dtype(uint8 ft)
 	}
 }
 
-static int pool_index(struct inode *ip)
+static int pool_index(struct ext2_sb_info *sbi, struct inode *ip)
 {
 	int i;
 
-	i = (int)(ip - einodes);
+	if (!sbi || !ip)
+		return -1;
+	i = (int)(ip - sbi->einodes);
 	if (i < 0 || i >= EXT2_NINODE)
 		return -1;
 	return i;
 }
 
-/* 获取 inode */
-static struct inode *ext2_iget(uint32 inum)
+/* 获取 inode（键：本实例 sbi + inum） */
+static struct inode *ext2_iget(struct ext2_sb_info *sbi, uint32 inum)
 {
 	int i, free, idx;
 	struct inode *ip;
@@ -236,42 +245,42 @@ static struct inode *ext2_iget(uint32 inum)
 	char *blk;
 	uint8 *p;
 
-	if (inum == 0)
+	if (!sbi || inum == 0)
 		return 0;
 
 	free = -1;
 	/*
-	 * 遍历 inode 池，如果 inode 存在，则增加引用计数并返回,
+	 * 遍历本实例 inode 池，如果 inode 存在，则增加引用计数并返回,
 	 * 否则找到一个空闲 inode
 	 */
 	for (i = 0; i < EXT2_NINODE; i++) {
-		if (einodes[i].type != 0 && einodes[i].inum == inum) {
-			einodes[i].ref++;
-			return &einodes[i];
+		if (sbi->einodes[i].type != 0 && sbi->einodes[i].inum == inum) {
+			sbi->einodes[i].ref++;
+			return &sbi->einodes[i];
 		}
-		if (einodes[i].type == 0 && free < 0)
+		if (sbi->einodes[i].type == 0 && free < 0)
 			free = i;
 	}
 	if (free < 0)
 		return 0;
 
-	group = (inum - 1) / ext2_inodes_per_group; /* 计算 inode 所在的组 */
-	index = (inum - 1) % ext2_inodes_per_group; /* 计算 inode 在组中的索引 */
+	group = (inum - 1) / sbi->inodes_per_group; /* 计算 inode 所在的组 */
+	index = (inum - 1) % sbi->inodes_per_group; /* 计算 inode 在组中的索引 */
 	if (group != 0) {
 		/* 第一版仅组 0（小镜像通常够用） */
 		printk(KERN_WARNING "ext2: inode %u outside group 0\n", inum);
 		return 0;
 	}
 
-	b = ext2_inode_table + (index * ext2_inode_size) / ext2_block_size;
-	off = (index * ext2_inode_size) % ext2_block_size;
+	b = sbi->inode_table + (index * sbi->inode_size) / sbi->block_size;
+	off = (index * sbi->inode_size) % sbi->block_size;
 
-	blk = kmalloc(ext2_block_size);
+	blk = kmalloc(sbi->block_size);
 	if (!blk)
 		return 0;
 
 	/* 从磁盘读取 inode 表中的 inode 到内存 */
-	if (ext2_read_block(b, blk) < 0) {
+	if (ext2_read_block(sbi, b, blk) < 0) {
 		kfree(blk);
 		return 0;
 	}
@@ -280,59 +289,64 @@ static struct inode *ext2_iget(uint32 inum)
 	/* 磁盘 inode 可能大于经典 128；只取我们需要的头部 */
 	{
 		uint ncopy = sizeof(din);
-		if (ncopy > ext2_inode_size)
-			ncopy = ext2_inode_size;
+
+		if (ncopy > sbi->inode_size)
+			ncopy = sbi->inode_size;
 		memcpy(&din, p, ncopy);
 	}
 	kfree(blk);
 
-	ip = &einodes[free];
+	ip = &sbi->einodes[free];
 	idx = free;
 	memset(ip, 0, sizeof(*ip));
 	ip->inum = inum;
 	ip->type = mode_to_type(din.i_mode);
-	if (ip->type == 0) {
+	if (ip->type == 0)
 		/* 不支持的类型 */
 		return 0;
-	}
 	ip->size = din.i_size;
 	ip->ref = 1;
 	ip->i_op = &ext2_iops;
+	ip->i_sb = sbi;
 	ip->parent = 0;
 	for (i = 0; i < EXT2_N_BLOCKS; i++)
-		eiblocks[idx][i] = din.i_block[i];
+		sbi->eiblocks[idx][i] = din.i_block[i];
 	return ip;
 }
 
 /* 逻辑块号 → 物理块号；0 表示空洞 */
 static uint32 ext2_bmap(struct inode *ip, uint32 lbn)
 {
+	struct ext2_sb_info *sbi;
 	int idx;
 	uint32 *iblk;
 	uint32 ind, per;
 	char *buf;
 	uint32 phys;
 
-	idx = pool_index(ip);	/* 获取 inode 在内存 inode 数组中的索引 */
+	sbi = EXT2_SB(ip);
+	if (!sbi)
+		return 0;
+	idx = pool_index(sbi, ip);	/* 获取 inode 在内存 inode 数组中的索引 */
 	if (idx < 0)
 		return 0;
-	iblk = eiblocks[idx];	/* 获取 inode 的块号数组 */
+	iblk = sbi->eiblocks[idx];	/* 获取 inode 的块号数组 */
 
 	if (lbn < EXT2_NDIR_BLOCKS)
 		return iblk[lbn];
 
 	lbn -= EXT2_NDIR_BLOCKS;
-	per = ext2_block_size / 4;	/* 计算每个块的间接块数 */
+	per = sbi->block_size / 4;	/* 计算每个块的间接块数 */
 
 	/* 一级间接块 */
 	if (lbn < per) {
 		ind = iblk[EXT2_IND_BLOCK];
 		if (!ind)
 			return 0;
-		buf = kmalloc(ext2_block_size);
+		buf = kmalloc(sbi->block_size);
 		if (!buf)
 			return 0;
-		if (ext2_read_block(ind, buf) < 0) {
+		if (ext2_read_block(sbi, ind, buf) < 0) {
 			kfree(buf);
 			return 0;
 		}
@@ -346,30 +360,34 @@ static uint32 ext2_bmap(struct inode *ip, uint32 lbn)
 /* 读取数据 */
 static int ext2_read_data(struct inode *ip, char *dst, uint off, uint n)
 {
+	struct ext2_sb_info *sbi;
 	uint total, lbn, boff, chunk, phys;
 	char *blk;
 
+	sbi = EXT2_SB(ip);
+	if (!sbi)
+		return -1;
 	if (off >= ip->size)
 		return 0;
 	if (off + n > ip->size)
 		n = ip->size - off;
 
-	blk = kmalloc(ext2_block_size);
+	blk = kmalloc(sbi->block_size);
 	if (!blk)
 		return -1;
 
 	total = 0;
 	while (total < n) {
-		lbn = (off + total) / ext2_block_size;
-		boff = (off + total) % ext2_block_size;
-		chunk = ext2_block_size - boff;
+		lbn = (off + total) / sbi->block_size;
+		boff = (off + total) % sbi->block_size;
+		chunk = sbi->block_size - boff;
 		if (chunk > n - total)
 			chunk = n - total;
 		phys = ext2_bmap(ip, lbn);
 		if (!phys) {
 			memset(dst + total, 0, chunk);
 		} else {
-			if (ext2_read_block(phys, blk) < 0) {
+			if (ext2_read_block(sbi, phys, blk) < 0) {
 				kfree(blk);
 				return total ? (int)total : -1;
 			}
@@ -389,35 +407,37 @@ static int ext2_dir_iterate(struct inode *dir,
 			    int (*cb)(struct ext2_dir_entry *de, void *arg),
 			    void *arg)
 {
+	struct ext2_sb_info *sbi;
 	uint off;
 	char *blk;
 	uint32 lbn, phys, pos;
 	struct ext2_dir_entry *de;
 	int r;
 
-	if (!dir || dir->type != T_DIR)
+	sbi = EXT2_SB(dir);
+	if (!sbi || !dir || dir->type != T_DIR)
 		return -1;
 
-	blk = kmalloc(ext2_block_size);
+	blk = kmalloc(sbi->block_size);
 	if (!blk)
 		return -1;
 
 	for (off = 0; off < dir->size; ) {
-		lbn = off / ext2_block_size;	/* 计算逻辑块号 */
-		pos = off % ext2_block_size;	/* 计算偏移 */
+		lbn = off / sbi->block_size;	/* 计算逻辑块号 */
+		pos = off % sbi->block_size;	/* 计算偏移 */
 		if (pos == 0) {
 			phys = ext2_bmap(dir, lbn);	/* 获取物理块号 */
 			if (!phys) {
 				kfree(blk);
 				return -1;
 			}
-			if (ext2_read_block(phys, blk) < 0) {
+			if (ext2_read_block(sbi, phys, blk) < 0) {
 				kfree(blk);
 				return -1;
 			}
 		}
 		de = (struct ext2_dir_entry *)(blk + pos);
-		if (de->rec_len < 8 || pos + de->rec_len > ext2_block_size) {
+		if (de->rec_len < 8 || pos + de->rec_len > sbi->block_size) {
 			kfree(blk);
 			return -1;
 		}
@@ -455,16 +475,18 @@ static int lookup_cb(struct ext2_dir_entry *de, void *arg)
 
 static struct inode *ext2_lookup(struct inode *dir, const char *name)
 {
+	struct ext2_sb_info *sbi;
 	struct lookup_arg a;
 	struct inode *ip;
 
-	if (!dir || !name || dir->type != T_DIR)
+	sbi = EXT2_SB(dir);
+	if (!sbi || !dir || !name || dir->type != T_DIR)
 		return 0;
 	a.name = name;
 	a.inum = 0;
 	if (ext2_dir_iterate(dir, lookup_cb, &a) != 1 || !a.inum)
 		return 0;
-	ip = ext2_iget(a.inum);
+	ip = ext2_iget(sbi, a.inum);
 	if (ip) {
 		if (!ip->parent)
 			ip->parent = dir;
@@ -481,6 +503,7 @@ struct readdir_arg {
 	uint nleft;	/* 剩余缓冲区大小 */
 	uint total;	/* 已读取的项数 */
 	uint base_off;	/* 用户目录流逻辑偏移（定长 dirent）, 用于计算偏移 */
+	uint32 feature_incompat; /* 本挂载 incompat 特性 */
 };
 
 /* 读取目录项回调函数 */
@@ -505,7 +528,7 @@ static int readdir_cb(struct ext2_dir_entry *de, void *arg)
 	ude.d_ino = de->inode;
 	ude.d_reclen = (unsigned short)esz;
 	ude.d_off = a->base_off + a->total + esz;
-	if (ext2_feature_incompat & EXT2_FEATURE_INCOMPAT_FILETYPE)
+	if (a->feature_incompat & EXT2_FEATURE_INCOMPAT_FILETYPE)
 		dtype = ft_to_dtype(de->file_type);
 	else
 		dtype = DT_UNKNOWN;
@@ -527,10 +550,12 @@ static int readdir_cb(struct ext2_dir_entry *de, void *arg)
 /* 读取目录 */
 static int ext2_readdir(struct inode *ip, char *dst, uint off, uint n)
 {
+	struct ext2_sb_info *sbi;
 	struct readdir_arg a;
 	uint esz = sizeof(struct dirent);
 
-	if (off % esz)
+	sbi = EXT2_SB(ip);
+	if (!sbi || off % esz)
 		return -1;
 	a.skip = off / esz;
 	a.seen = 0;
@@ -538,6 +563,7 @@ static int ext2_readdir(struct inode *ip, char *dst, uint off, uint n)
 	a.nleft = n;
 	a.total = 0;
 	a.base_off = off;
+	a.feature_incompat = sbi->feature_incompat;
 	ext2_dir_iterate(ip, readdir_cb, &a);
 	return (int)a.total;
 }
@@ -598,11 +624,15 @@ static int ext2_mknod(struct inode *dir, const char *name, short type,
 
 static void ext2_evict(struct inode *ip)
 {
+	struct ext2_sb_info *sbi;
 	int idx;
 
-	idx = pool_index(ip);
-	if (idx >= 0)
-		memset(eiblocks[idx], 0, sizeof(eiblocks[idx]));
+	sbi = EXT2_SB(ip);
+	if (sbi) {
+		idx = pool_index(sbi, ip);
+		if (idx >= 0)
+			memset(sbi->eiblocks[idx], 0, sizeof(sbi->eiblocks[idx]));
+	}
 	ip->type = 0;
 	ip->inum = 0;
 	ip->size = 0;
@@ -610,6 +640,7 @@ static void ext2_evict(struct inode *ip)
 	ip->parent = 0;
 	ip->name[0] = '\0';
 	ip->i_op = 0;
+	ip->i_sb = 0;
 	ip->data = 0;
 	ip->dents = 0;
 	ip->rdev = 0;
@@ -644,84 +675,90 @@ static int ext2_read_sb_raw(struct gendisk *gd, struct ext2_super_block *sb)
 	return 0;
 }
 
-/* 读取超级块 */
-static int ext2_read_super(struct gendisk *gd)
+/* 读取超级块到本挂载实例 */
+static int ext2_read_super(struct ext2_sb_info *sbi)
 {
 	struct ext2_super_block sb;
 	struct ext2_group_desc gd0;
 	uint32 gdt_block;
 	char *blk;
 
-	if (ext2_read_sb_raw(gd, &sb) < 0)
+	if (ext2_read_sb_raw(sbi->disk, &sb) < 0)
 		return -1;
 	if (sb.s_magic != EXT2_SUPER_MAGIC)
 		return -1;
 
 	/* 计算块大小 */
-	ext2_block_size = 1024u << sb.s_log_block_size;
-	if (ext2_block_size < 1024 || ext2_block_size > 4096)
+	sbi->block_size = 1024u << sb.s_log_block_size;
+	if (sbi->block_size < 1024 || sbi->block_size > 4096)
 		return -1;
 
 	/* 计算组中 inode 数 */
-	ext2_inodes_per_group = sb.s_inodes_per_group;
-	ext2_blocks_per_group = sb.s_blocks_per_group;
-	ext2_first_data_block = sb.s_first_data_block;
-	ext2_feature_incompat = sb.s_feature_incompat;
-	ext2_inode_size = sb.s_rev_level >= 1 ? sb.s_inode_size : 128;
-	if (ext2_inode_size < 128)
-		ext2_inode_size = 128;
+	sbi->inodes_per_group = sb.s_inodes_per_group;
+	sbi->blocks_per_group = sb.s_blocks_per_group;
+	sbi->first_data_block = sb.s_first_data_block;
+	sbi->feature_incompat = sb.s_feature_incompat;
+	sbi->inode_size = sb.s_rev_level >= 1 ? sb.s_inode_size : 128;
+	if (sbi->inode_size < 128)
+		sbi->inode_size = 128;
 
-	gdt_block = ext2_first_data_block + 1;
-	blk = kmalloc(ext2_block_size);
+	gdt_block = sbi->first_data_block + 1;
+	blk = kmalloc(sbi->block_size);
 	if (!blk)
 		return -1;
 
 	/* 读取块组描述符 */
-	if (ext2_read_block(gdt_block, blk) < 0) {
+	if (ext2_read_block(sbi, gdt_block, blk) < 0) {
 		kfree(blk);
 		return -1;
 	}
 	memcpy(&gd0, blk, sizeof(gd0));
 	kfree(blk);
-	ext2_inode_table = gd0.bg_inode_table;
+	sbi->inode_table = gd0.bg_inode_table;
 	return 0;
 }
 
 /*
- * 填充 ext2 文件系统的超级块
+ * 填充 ext2 文件系统的超级块（一份新的挂载实例）。
  * 按需加载：mount 层已用魔数识别为本类型后调用。
- * 读完整超级块 / 组描述符并 iget 根；成功返回已持引用的根 inode。
+ * 分配 sb_info，读完整超级块 / 组描述符并 iget 根；
+ * 成功返回已持引用的根 inode（ip->i_sb 指向本实例）。
  */
 struct inode *ext2_fill_super(struct gendisk *gd)
 {
+	struct ext2_sb_info *sbi;
 	struct inode *root;
 
 	if (!gd)
 		return 0;
 
-	ext2_disk = gd;
-	memset(einodes, 0, sizeof(einodes));
-	memset(eiblocks, 0, sizeof(eiblocks));
+	sbi = kmalloc(sizeof(*sbi));
+	if (!sbi)
+		return 0;
+	memset(sbi, 0, sizeof(*sbi));
+	sbi->disk = gd;
 
-	if (ext2_read_super(gd) < 0) {
-		ext2_disk = 0;
-		ext2_block_size = 0;
+	if (ext2_read_super(sbi) < 0) {
+		kfree(sbi);
 		return 0;
 	}
 
-	root = ext2_iget(EXT2_ROOT_INO);
+	root = ext2_iget(sbi, EXT2_ROOT_INO);
 	if (!root) {
-		ext2_disk = 0;
-		ext2_block_size = 0;
+		kfree(sbi);
 		return 0;
 	}
 	return root;
 }
 
-void ext2_put_super(void)
+/* 释放该挂载实例的超级块（inode 池应已全部 evict） */
+void ext2_put_super(void *sb)
 {
-	ext2_disk = 0;
-	ext2_block_size = 0;
+	struct ext2_sb_info *sbi = sb;
+
+	if (!sbi)
+		return;
+	kfree(sbi);
 }
 
 static struct file_system_type ext2_fs_type = {

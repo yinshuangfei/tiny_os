@@ -7,18 +7,10 @@
 #include "../param.h"
 #include "../proc.h"
 #include "vfs.h"
+#include "dcache.h"
+#include "namei.h"
 
 #define MAXSYMLINKS	8
-
-/* 简单名字比较（与路径分量 DIRSIZ 对齐） */
-static int namecmp(const char *a, const char *b)
-{
-	int i;
-
-	for (i = 0; i < DIRSIZ && a[i] && a[i] == b[i]; i++)
-		;
-	return a[i] - b[i];
-}
 
 /* 从 path 取出第一个路径分量到 name，返回剩余路径；结束则返回 0 */
 static const char *skipelem(const char *path, char *name)
@@ -121,9 +113,9 @@ static struct inode *namex(const char *path, int nameiparent, char *name,
 		}
 		if (nameiparent && *s == 0)
 			return ip;
-		if (namecmp(name, ".") == 0)
+		if (d_namecmp(name, ".") == 0)
 			continue;
-		if (namecmp(name, "..") == 0) {
+		if (d_namecmp(name, "..") == 0) {
 			next = ip->parent ? ip->parent : ip;
 			next = fs_idup(next);
 			fs_iput(ip);
@@ -298,8 +290,8 @@ int fs_mkdir(const char *path)
 	if (!dp)
 		return -1;
 	if (name[0] == 0 ||
-	    namecmp(name, ".") == 0 ||
-	    namecmp(name, "..") == 0) {
+	    d_namecmp(name, ".") == 0 ||
+	    d_namecmp(name, "..") == 0) {
 		fs_iput(dp);
 		return -1;
 	}
@@ -327,8 +319,8 @@ int fs_rmdir(const char *path)
 	if (!dp)
 		return -1;
 	if (name[0] == 0 ||
-	    namecmp(name, ".") == 0 ||
-	    namecmp(name, "..") == 0) {
+	    d_namecmp(name, ".") == 0 ||
+	    d_namecmp(name, "..") == 0) {
 		fs_iput(dp);
 		return -1;
 	}
@@ -381,8 +373,8 @@ int fs_link(const char *oldpath, const char *newpath)
 		return -1;
 	}
 	if (name[0] == 0 ||
-	    namecmp(name, ".") == 0 ||
-	    namecmp(name, "..") == 0) {
+	    d_namecmp(name, ".") == 0 ||
+	    d_namecmp(name, "..") == 0) {
 		fs_iput(dp);
 		fs_iput(ip);
 		return -1;
@@ -416,8 +408,8 @@ int fs_symlink(const char *target, const char *linkpath)
 	if (!dp)
 		return -1;
 	if (name[0] == 0 ||
-	    namecmp(name, ".") == 0 ||
-	    namecmp(name, "..") == 0) {
+	    d_namecmp(name, ".") == 0 ||
+	    d_namecmp(name, "..") == 0) {
 		fs_iput(dp);
 		return -1;
 	}
@@ -446,8 +438,8 @@ int fs_unlink(const char *path)
 	if (!dp)
 		return -1;
 	if (name[0] == 0 ||
-	    namecmp(name, ".") == 0 ||
-	    namecmp(name, "..") == 0) {
+	    d_namecmp(name, ".") == 0 ||
+	    d_namecmp(name, "..") == 0) {
 		fs_iput(dp);
 		return -1;
 	}
@@ -489,8 +481,8 @@ int fs_rename(const char *oldpath, const char *newpath)
 	if (!old_dir)
 		return -1;
 	if (oldname[0] == 0 ||
-	    namecmp(oldname, ".") == 0 ||
-	    namecmp(oldname, "..") == 0) {
+	    d_namecmp(oldname, ".") == 0 ||
+	    d_namecmp(oldname, "..") == 0) {
 		fs_iput(old_dir);
 		return -1;
 	}
@@ -501,8 +493,8 @@ int fs_rename(const char *oldpath, const char *newpath)
 		return -1;
 	}
 	if (newname[0] == 0 ||
-	    namecmp(newname, ".") == 0 ||
-	    namecmp(newname, "..") == 0) {
+	    d_namecmp(newname, ".") == 0 ||
+	    d_namecmp(newname, "..") == 0) {
 		fs_iput(new_dir);
 		fs_iput(old_dir);
 		return -1;

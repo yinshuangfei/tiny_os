@@ -165,9 +165,11 @@ C_OBJS = \
 	$(KDIR)/sysproc.o \
 	$(KDIR)/execve.o \
 	$(KDIR)/ipc/signal.o \
+	$(KDIR)/fs/super.o \
 	$(KDIR)/fs/inode.o \
+	$(KDIR)/fs/dcache.o \
 	$(KDIR)/fs/namei.o \
-	$(KDIR)/fs/ramfs.o \
+	$(KDIR)/fs/ramfs/inode.o \
 	$(KDIR)/fs/proc/inode.o \
 	$(KDIR)/fs/proc/root.o \
 	$(KDIR)/fs/proc/base.o \
@@ -177,7 +179,7 @@ C_OBJS = \
 	$(KDIR)/fs/proc/uptime.o \
 	$(KDIR)/fs/proc/partitions.o \
 	$(KDIR)/fs/proc/mounts.o \
-	$(KDIR)/fs/ext2.o \
+	$(KDIR)/fs/ext2/inode.o \
 	$(KDIR)/fs/mount.o \
 	$(KDIR)/fs/file.o \
 	$(KDIR)/fs/pipe.o \

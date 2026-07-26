@@ -12,7 +12,8 @@
 #include "../block/blk.h"
 #include "vfs.h"
 #include "mount.h"
-#include "ext2.h"
+#include "ext2/ext2.h"
+#include "ramfs/ramfs.h"
 
 #define NMOUNT	256
 
@@ -20,6 +21,7 @@ struct vfsmount {
 	int used;			/* 是否被使用 */
 	struct inode *mnt_root;		/* 被挂载的 FS 根（持引用） */
 	struct inode *mnt_parent;	/* 覆盖层父目录（持引用，类 Linux mnt_parent） */
+	void *mnt_sb;			/* 该挂载实例的超级块私有（fill_super 设置） */
 	char mnt_name[DIRSIZ];		/* 在父目录中的名（类 Linux mnt_name） */
 	char mnt_dev[32];		/* 设备名，如 /dev/hda（供 /proc/mounts） */
 	char mnt_dir[NNAME];		/* 挂载点绝对路径 */
@@ -213,6 +215,7 @@ static int mnt_add(struct inode *parent, const char *name, struct inode *root,
 			   dev ? dev : "none");
 		mnt_strcpy(mounts[i].mnt_dir, sizeof(mounts[i].mnt_dir),
 			   dirpath ? dirpath : "/");
+		mounts[i].mnt_sb = root->i_sb;
 		mounts[i].type = type;
 		return 0;
 	}
@@ -221,14 +224,21 @@ static int mnt_add(struct inode *parent, const char *name, struct inode *root,
 
 static void mnt_del(struct vfsmount *m)
 {
+	struct file_system_type *type;
+	void *sb;
+
 	if (!m || !m->used)
 		return;
-	if (m->type && m->type->kill_sb)
-		m->type->kill_sb();
+	type = m->type;
+	sb = m->mnt_sb;
+	/* 先放下根引用（可 evict），再释放该实例超级块内存 */
 	fs_iput(m->mnt_root);
 	fs_iput(m->mnt_parent);
+	if (type && type->kill_sb)
+		type->kill_sb(sb);
 	m->mnt_root = 0;
 	m->mnt_parent = 0;
+	m->mnt_sb = 0;
 	m->type = 0;
 	m->mnt_name[0] = '\0';
 	m->mnt_dev[0] = '\0';
@@ -488,20 +498,25 @@ int do_umount(const char *dir_name)
 	return 0;
 }
 
-/* 扫描块设备，首个识别成功的挂到 /mnt */
+/* 扫描块设备：每个可识别的盘挂成独立实例（/mnt、/mnt1、…） */
 void mount_init(void)
 {
-	int i;
+	int i, n;
+	char dir[16];
 
-	/* 注册驱动（仅登记 probe 用魔数与 fill_super；真正加载在识别之后） */
 	ext2_init();
 
-	/* 扫描块设备，首个识别成功的挂到 /mnt */
+	n = 0;
 	for (i = 0; mount_disks[i]; i++) {
 		if (!blk_lookup_name(mount_disks[i]))
 			continue;
-		if (do_mount(mount_disks[i], "mnt", 0) == 0)
-			return;
+		if (n == 0)
+			snprintf(dir, sizeof(dir), "mnt");
+		else
+			snprintf(dir, sizeof(dir), "mnt%d", n);
+		if (do_mount(mount_disks[i], dir, 0) == 0)
+			n++;
 	}
-	printk(KERN_INFO "mount: no mountable filesystem found\n");
+	if (!n)
+		printk(KERN_INFO "mount: no mountable filesystem found\n");
 }

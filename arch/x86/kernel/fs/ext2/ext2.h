@@ -1,5 +1,5 @@
 /*
- * 只读 ext2 教学子集。
+ * 只读 ext2 教学子集（实现对齐 Linux fs/ext2）。
  * 向 mount 层注册类型；识别魔数后由 fill_super 按需加载。
  */
 #ifndef __EXT2_H__
@@ -15,6 +15,6 @@ struct inode;
 void ext2_init(void);
 
 struct inode *ext2_fill_super(struct gendisk *gd);
-void ext2_put_super(void);
+void ext2_put_super(void *sb);
 
 #endif
