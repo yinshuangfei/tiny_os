@@ -181,13 +181,22 @@ struct procfs_node *pn_of(struct inode *ip)
 void procfs_node_evict(struct inode *ip)
 {
 	struct procfs_node *n = pn_of(ip);
+	struct inode *parent;
 
 	if (!n)
 		return;
+	/*
+	 * 子节点持有 parent 引用（见 procfs_get）。须先摘下再 iput，
+	 * 否则 namei 放下中间目录后 parent 被回收，getcwd 会沿坏链拼路径。
+	 */
+	parent = ip->parent;
+	ip->parent = 0;
 	n->kind = PF_FREE;
 	n->pid = 0;
 	n->aux = 0;
 	memset(ip, 0, sizeof(*ip));
+	if (parent && parent != ip)
+		fs_iput(parent);
 }
 
 static const char *kind_name(int kind)
@@ -281,7 +290,16 @@ struct inode *procfs_get(int pid, int kind, int aux, struct inode *parent)
 	free_n->aux = aux;
 	ip->inum = PROC_INO_BASE | ((uint)(free_n - procfs_nodes) + 1);
 	ip->ref = 1;
-	ip->parent = parent ? parent : proc_dir;
+	/*
+	 * 虚拟目录无 dentry 钉住中间分量；子节点必须 idup(parent)，
+	 * 否则 namei 末尾 iput 中间目录会使 parent 被 evict，getcwd 失效。
+	 */
+	if (parent)
+		ip->parent = fs_idup(parent);
+	else if (proc_dir)
+		ip->parent = fs_idup(proc_dir);
+	else
+		ip->parent = 0;
 
 	if (kind == PF_PID_DIR) {
 		ip->type = T_DIR;

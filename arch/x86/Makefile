@@ -331,4 +331,5 @@ clean:
 	$(USERDIR)/*.o $(USERDIR)/*.elf $(USERDIR)/*.bin \
 	$(USERDIR)/lib/*.o \
 	e2e_test/last_dual_mount.log \
+	e2e_test/last_proc_getcwd.log \
 	$(OBJS)

@@ -14,6 +14,12 @@ static int lib_pr_result(const char *name, int ok)
 	return ok;
 }
 
+static int common_pr_result(const char *name, int ok)
+{
+	printf("* common %s(): %s\n", name, ok ? C_GREEN("OK") : C_RED("FAIL"));
+	return ok;
+}
+
 void getpid_test(void)
 {
 	int pid = getpid();
@@ -854,6 +860,53 @@ void flock_test(void)
 }
 
 /*
+ * getcwd：cd /proc/<pid>/fd 后路径须完整保留。
+ * 回归：procfs 中间目录无 dentry，namei iput 后若未钉住 parent 会丢分量。
+ */
+void getcwd_proc_fd_test(void)
+{
+	char path[64], cwd[128], saved[128];
+	int pid, ok;
+
+	ok = 1;
+	saved[0] = '\0';
+	(void)getcwd(saved, sizeof(saved));
+
+	pid = getpid();
+	if (pid <= 0) {
+		ok = 0;
+		goto out;
+	}
+	snprintf(path, sizeof(path), "/proc/%d/fd", pid);
+	if (chdir(path) < 0) {
+		printf("chdir %s failed\n", path);
+		ok = 0;
+		goto out;
+	}
+	if (getcwd(cwd, sizeof(cwd)) < 0) {
+		printf("getcwd failed after chdir %s\n", path);
+		ok = 0;
+	} else if (strcmp(cwd, path) != 0) {
+		printf("FAIL: getcwd='%s' expect '%s'\n", cwd, path);
+		ok = 0;
+	}
+	if (chdir("/proc") < 0) {
+		printf("chdir /proc failed\n");
+		ok = 0;
+	} else if (getcwd(cwd, sizeof(cwd)) < 0 ||
+		   strcmp(cwd, "/proc") != 0) {
+		printf("FAIL: getcwd after /proc = '%s'\n", cwd);
+		ok = 0;
+	}
+out:
+	if (saved[0])
+		(void)chdir(saved);
+	else
+		(void)chdir("/");
+	common_pr_result("getcwd(proc/fd)", ok);
+}
+
+/*
  * SMP：多子进程忙等后报告 sched_getcpu；若 get_nprocs()>1 则期望 >=2 个不同 CPU。
  */
 void smp_test(void)
@@ -950,6 +1003,7 @@ int main(int argc, char *argv[], char *envp[])
 	mmap_test();
 	fpu_test();
 	demand_paging_test();
+	getcwd_proc_fd_test();
 	smp_test();
 	exit(0);
 }
