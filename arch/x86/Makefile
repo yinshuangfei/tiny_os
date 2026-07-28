@@ -172,6 +172,7 @@ C_OBJS = \
 	$(KDIR)/sysproc.o \
 	$(KDIR)/execve.o \
 	$(KDIR)/ipc/signal.o \
+	$(KDIR)/ipc/shm.o \
 	$(KDIR)/fs/super.o \
 	$(KDIR)/fs/inode.o \
 	$(KDIR)/fs/dcache.o \

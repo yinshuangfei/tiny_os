@@ -18,8 +18,32 @@ struct vma {
 	uint start;			/* [start, end) 页对齐 */
 	uint end;			/* [start, end) 页对齐 */
 	int prot;			/* 保护标志 PROT_READ, PROT_WRITE, PROT_EXEC */
-	int flags;			/* 标志位 MAP_SHARED, MAP_PRIVATE, MAP_FIXED, MAP_ANONYMOUS */
+	/*
+	 * 低 16 位：MAP_*；高 16 位：SysV shmid+1（0 表示非 shm）。
+	 * 编码进 flags，避免扩大本结构体（防止未重编 .o 布局错位）。
+	 */
+	int flags;
 };
+
+/* 取 VMA 上的 SysV shmid；非 shm 返回 -1 */
+static inline int vma_shmid(const struct vma *v)
+{
+	unsigned id;
+
+	if (!v || !v->used)
+		return -1;
+	id = ((unsigned)v->flags >> 16) & 0xffffu;
+	return id ? (int)(id - 1) : -1;
+}
+
+/* 在 flags 低 16 位 MAP_* 上编码 shmid（shmid<0 表示清除） */
+static inline int vma_flags_with_shmid(int flags, int shmid)
+{
+	flags &= 0xffff;
+	if (shmid >= 0)
+		flags |= ((shmid + 1) & 0xffff) << 16;
+	return flags;
+}
 
 /* 用 X-Macro 维护一份 PROCSTATE_LIST */
 #define PROCSTATE_LIST \

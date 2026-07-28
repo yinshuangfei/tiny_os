@@ -27,6 +27,7 @@
 #include "gdt.h"
 #include "fs/fs.h"
 #include "ipc/signal.h"
+#include "ipc/shm.h"
 
 extern char init[];
 extern char init_end[];
@@ -323,6 +324,9 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 
 	if (exec_stack_argv(newpg, name, argv, envp, &esp) < 0)
 		goto bad;
+
+	/* 旧地址空间上的 shm 须先分离，再换页表 / 清 VMA */
+	shm_detach_all(p);
 
 	oldpg = p->pagetable;
 	p->pagetable = newpg;

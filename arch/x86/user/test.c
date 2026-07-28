@@ -578,6 +578,98 @@ void mmap_test(void)
 }
 
 /*
+ * SysV 共享内存：父子共享写入；IPC_RMID 后仍可读写直至分离。
+ */
+void shm_test(void)
+{
+	int shmid, pid, status, ok = 1;
+	volatile char *p;
+	char *q;
+
+	shmid = shmget(IPC_PRIVATE, 4096, IPC_CREAT);
+	if (shmid < 0) {
+		printf("shm: shmget failed\n");
+		syscall_pr_result("shmget", 0);
+		syscall_pr_result("shmat", 0);
+		syscall_pr_result("shmdt", 0);
+		syscall_pr_result("shmctl", 0);
+		return;
+	}
+
+	p = (volatile char *)shmat(shmid, 0, 0);
+	if (p == (volatile char *)-1 || p == 0) {
+		printf("shm: shmat failed\n");
+		syscall_pr_result("shmget", 0);
+		syscall_pr_result("shmat", 0);
+		shmctl(shmid, IPC_RMID, 0);
+		return;
+	}
+
+	p[0] = 'A';
+	p[1] = 'B';
+	p[2] = '\0';
+
+	pid = fork();
+	if (pid < 0) {
+		printf("shm: fork failed\n");
+		ok = 0;
+	} else if (pid == 0) {
+		if (p[0] != 'A' || p[1] != 'B')
+			exit(1);
+		p[0] = 'X';
+		p[1] = 'Y';
+		exit(0);
+	} else {
+		if (waitpid(pid, &status, 0) != pid ||
+		    !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+			printf("shm: child failed status=0x%x\n", status);
+			ok = 0;
+		}
+		if (p[0] != 'X' || p[1] != 'Y') {
+			printf("shm: parent did not see child write\n");
+			ok = 0;
+		}
+	}
+
+	/* 同进程二次附着应看到同一内容 */
+	q = (char *)shmat(shmid, 0, 0);
+	if (q == (char *)-1 || q == 0) {
+		printf("shm: second shmat failed\n");
+		ok = 0;
+	} else {
+		if (q[0] != 'X' || q[1] != 'Y') {
+			printf("shm: second attach mismatch\n");
+			ok = 0;
+		}
+		if (shmdt(q) < 0) {
+			printf("shm: shmdt second failed\n");
+			ok = 0;
+		}
+	}
+
+	if (shmctl(shmid, IPC_RMID, 0) < 0) {
+		printf("shm: shmctl IPC_RMID failed\n");
+		ok = 0;
+	}
+
+	/* RMID 后原附着仍可用，直至 shmdt */
+	if (p[0] != 'X') {
+		printf("shm: after RMID attach broken\n");
+		ok = 0;
+	}
+
+	if (shmdt((void *)p) < 0) {
+		printf("shm: shmdt failed\n");
+		ok = 0;
+	}
+
+	syscall_pr_result("shmget", ok);
+	syscall_pr_result("shmat", ok);
+	syscall_pr_result("shmdt", ok);
+	syscall_pr_result("shmctl", ok);
+}
+
+/*
  * FPU/SSE：x87 算术、%f 打印，以及 fork 后 XMM 寄存器隔离（lazy FXSAVE）。
  */
 void fpu_test(void)
@@ -1005,5 +1097,6 @@ int main(int argc, char *argv[], char *envp[])
 	demand_paging_test();
 	getcwd_proc_fd_test();
 	smp_test();
+	shm_test();
 	exit(0);
 }

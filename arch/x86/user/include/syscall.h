@@ -42,6 +42,12 @@
 #define SYS_mmap2	192	/* Linux i386 __NR_mmap2（offset 为页偏移） */
 #define SYS_getcpu	318	/* Linux i386 __NR_getcpu */
 
+/* SysV IPC */
+#define SYS_shmget	395	/* Linux i386 __NR_shmget */
+#define SYS_shmctl	396	/* Linux i386 __NR_shmctl */
+#define SYS_shmat	397	/* Linux i386 __NR_shmat */
+#define SYS_shmdt	398	/* Linux i386 __NR_shmdt */
+
 #ifndef __ASSEMBLER__
 struct timespec {
 	unsigned int tv_sec;
@@ -115,6 +121,14 @@ struct stat {
 #define MAP_ANONYMOUS	0x20	/* 匿名映射 */
 
 #define MAP_FAILED	((void *)-1)	/* 映射失败 */
+
+/* SysV IPC（对齐 Linux <sys/ipc.h> / <sys/shm.h> 教学子集） */
+#define IPC_PRIVATE	0
+#define IPC_CREAT	01000
+#define IPC_EXCL	02000
+#define IPC_RMID	0	/* destroy 标记 */
+
+#define SHM_RDONLY	010000	/* shmat：只读附着 */
 #endif
 
 #endif

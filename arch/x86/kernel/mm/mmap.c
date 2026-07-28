@@ -1,11 +1,13 @@
 /*
  * 匿名 mmap / munmap（对齐 Linux mmap2 教学子集）。
  * MAP_ANONYMOUS|MAP_PRIVATE；按需分页（只建 VMA，物理页在 #PF 时填零）。
+ * SysV shmat 复用找址 / VMA 槽；整段 munmap 等价 shmdt。
  */
 #include "../types.h"
 #include "../defs.h"
 #include "../param.h"
 #include "../proc.h"
+#include "../ipc/shm.h"
 #include "memlayout.h"
 #include "mmu.h"
 #include "vm.h"
@@ -129,6 +131,36 @@ void vma_copy(struct proc *dst, struct proc *src)
 		dst->vmas[i] = src->vmas[i];
 }
 
+uint mmap_find_addr(struct proc *p, uint len)
+{
+	return find_mmap_addr(p, len);
+}
+
+int mmap_region_ok(struct proc *p, uint start, uint end)
+{
+	return region_available(p, start, end);
+}
+
+struct vma *vma_create(struct proc *p, uint start, uint end,
+		       int prot, int flags, int shmid)
+{
+	struct vma *v;
+
+	if (!p || start >= end)
+		return 0;
+	if (!region_available(p, start, end))
+		return 0;
+	v = vma_alloc_slot(p);
+	if (!v)
+		return 0;
+	v->used = 1;
+	v->start = start;
+	v->end = end;
+	v->prot = prot;
+	v->flags = vma_flags_with_shmid(flags, shmid);
+	return v;
+}
+
 int vma_overlaps_brk(struct proc *p, uint old_brk, uint new_brk)
 {
 	if (!p || new_brk <= old_brk)
@@ -162,6 +194,7 @@ uint do_mmap(struct proc *p, uint addr, uint len, int prot, int flags,
 	if (len == 0 || len > USERHEAP_TOP - USERBASE)
 		return (uint)-1;
 
+	flags &= 0xffff;
 	if (!(flags & MAP_ANONYMOUS) || !(flags & MAP_PRIVATE))
 		return (uint)-1;
 	if (flags & MAP_SHARED)
@@ -192,7 +225,7 @@ uint do_mmap(struct proc *p, uint addr, uint len, int prot, int flags,
 	v->start = start;
 	v->end = start + len;
 	v->prot = prot;
-	v->flags = flags;
+	v->flags = flags;	/* 无 shm 编码 */
 	return start;
 }
 
@@ -215,6 +248,9 @@ int do_munmap(struct proc *p, uint addr, uint len)
 	v = vma_find(p, addr, end);
 	if (!v)
 		return -1;
+
+	if (vma_shmid(v) >= 0)
+		return shm_munmap_vma(p, v);
 
 	mmap_unmap_pages(p, v->start, v->end);
 	v->used = 0;

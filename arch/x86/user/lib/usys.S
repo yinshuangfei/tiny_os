@@ -209,6 +209,48 @@ munmap:
 	popl %ebx
 	ret
 
+.globl shmget
+shmget:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl 16(%esp), %edx
+	movl $SYS_shmget, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl shmat
+shmat:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl 16(%esp), %edx
+	movl $SYS_shmat, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl shmdt
+shmdt:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl $SYS_shmdt, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl shmctl
+shmctl:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl 16(%esp), %edx
+	movl $SYS_shmctl, %eax
+	int $0x80
+	popl %ebx
+	ret
+
 .globl lseek
 lseek:
 	pushl %ebx

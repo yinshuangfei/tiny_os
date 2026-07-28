@@ -18,6 +18,7 @@
 #include "gdt.h"
 #include "fs/fs.h"
 #include "ipc/signal.h"
+#include "ipc/shm.h"
 #include "mp.h"
 
 /* 进程表 */
@@ -170,6 +171,8 @@ static void exit_with_xstate(int xstate)
 		fs_iput(p->cwd);
 		p->cwd = 0;
 	}
+
+	shm_detach_all(p);
 
 	if (p->pagetable) {
 		if (get_user_pgdir() == p->pagetable)
@@ -900,6 +903,7 @@ int fork_copy(struct trapframe *tf)
 	np->brk = p->brk;
 	np->brk_start = p->brk_start;
 	vma_copy(np, p);
+	shm_fork_fix(np, p);
 	np->parent = p;
 	proc_name_set(np->name, p->name);
 

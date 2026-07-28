@@ -38,6 +38,10 @@ void *sbrk(int incr);
 void *mmap(void *addr, unsigned int length, int prot, int flags,
 	   int fd, int offset);
 int munmap(void *addr, unsigned int length);
+int shmget(int key, unsigned int size, int shmflg);
+void *shmat(int shmid, const void *shmaddr, int shmflg);
+int shmdt(const void *shmaddr);
+int shmctl(int shmid, int cmd, void *buf);
 int read(int fd, void *buf, int n);
 int write(int, const void *, int);
 int open(const char *path, int flags);

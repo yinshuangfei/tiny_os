@@ -14,6 +14,7 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "../x86.h"
+#include "../ipc/shm.h"
 
 /* 内核页目录, 所有内核线程共享。和 Linux 一样：内核页表是全局共用的 */
 pagetable_t kernel_pgdir;
@@ -376,6 +377,8 @@ int uvm_demand_fault(struct proc *p, uint va, int write)
 	if (page < p->brk && page + PGSIZE > p->brk_start) {
 		perm = PTE_P | PTE_W;
 	} else if ((v = vma_lookup(p, page)) != 0) {
+		if (vma_shmid(v) >= 0)
+			return shm_demand_fault(p, v, page, write);
 		if (!(v->prot & (PROT_READ | PROT_WRITE | PROT_EXEC)))
 			return -1;
 		if (write && !(v->prot & PROT_WRITE))

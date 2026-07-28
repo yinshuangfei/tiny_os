@@ -46,6 +46,10 @@ void vma_clear(struct proc *p);
 void vma_copy(struct proc *dst, struct proc *src);
 struct vma *vma_lookup(struct proc *p, uint va);
 int vma_overlaps_brk(struct proc *p, uint old_brk, uint new_brk);
+uint mmap_find_addr(struct proc *p, uint len);
+int mmap_region_ok(struct proc *p, uint start, uint end);
+struct vma *vma_create(struct proc *p, uint start, uint end,
+		       int prot, int flags, int shmid);
 uint do_mmap(struct proc *p, uint addr, uint len, int prot, int flags,
 	     int fd, uint pgoff);
 int do_munmap(struct proc *p, uint addr, uint len);
