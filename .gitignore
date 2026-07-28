@@ -15,3 +15,4 @@ lib/usys.S
 .clangd
 __pycache__
 mkfs_ext2
+last_dual_mount.log

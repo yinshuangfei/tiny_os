@@ -21,7 +21,7 @@
 #include "../mount.h"
 #include "ext2.h"
 
-#define EXT2_NINODE		32		/* 每挂载实例 inode 池大小 */
+#define EXT2_NICACHE		64		/* 全局 inode 缓存槽数（按 sbi+inum 区分） */
 #define EXT2_NDIR_BLOCKS	12		/* 直接块数 */
 #define EXT2_IND_BLOCK		12		/* 间接块数 */
 #define EXT2_N_BLOCKS		15		/* 总块数 */
@@ -117,7 +117,7 @@ struct ext2_dir_entry {
 
 /*
  * 挂载实例私有数据（对齐 Linux ext2_sb_info 教学子集）。
- * 每挂载一份，支持同类型多实例。
+ * 每挂载一份；inode 缓存在全局表中，查找键为 (sbi, inum)。
  */
 struct ext2_sb_info {
 	struct gendisk *disk;			/* 块设备 */
@@ -128,11 +128,19 @@ struct ext2_sb_info {
 	uint32 first_data_block;		/* 第一个数据块 */
 	uint32 feature_incompat;		/* 不兼容特性 */
 	uint32 inode_table;			/* 组 0 的 inode table 块号 */
-	/* 内存通用 inode 数组作为本实例 inode 池 */
-	struct inode einodes[EXT2_NINODE];
-	/* 内存 inode 的块号数组，作为缓存的 inode 的块号池 */
-	uint32 eiblocks[EXT2_NINODE][EXT2_N_BLOCKS];
 };
+
+/*
+ * 内存 inode 缓存项。inode 必须为首字段，便于 inode* → mnode*。
+ * 空闲：inode.type == 0；占用：sbi 指向所属挂载实例。
+ */
+struct ext2_mnode {
+	struct inode inode;			/* VFS inode（首字段） */
+	struct ext2_sb_info *sbi;		/* 所属挂载；与 inum 组成缓存键 */
+	uint32 i_block[EXT2_N_BLOCKS];		/* 磁盘 i_block[] 缓存 */
+};
+
+static struct ext2_mnode eicache[EXT2_NICACHE];
 
 /* inode 操作 */
 static const struct inode_operations ext2_iops;
@@ -141,6 +149,20 @@ static const struct inode_operations ext2_iops;
 static struct ext2_sb_info *EXT2_SB(struct inode *ip)
 {
 	return ip ? (struct ext2_sb_info *)ip->i_sb : 0;
+}
+
+static struct ext2_mnode *mnode_of(struct inode *ip)
+{
+	struct ext2_mnode *m;
+	int i;
+
+	if (!ip)
+		return 0;
+	m = (struct ext2_mnode *)ip;
+	i = (int)(m - eicache);
+	if (i < 0 || i >= EXT2_NICACHE || &eicache[i].inode != ip)
+		return 0;
+	return &eicache[i];
 }
 
 /*
@@ -223,22 +245,11 @@ static unsigned char ft_to_dtype(uint8 ft)
 	}
 }
 
-static int pool_index(struct ext2_sb_info *sbi, struct inode *ip)
-{
-	int i;
-
-	if (!sbi || !ip)
-		return -1;
-	i = (int)(ip - sbi->einodes);
-	if (i < 0 || i >= EXT2_NINODE)
-		return -1;
-	return i;
-}
-
-/* 获取 inode（键：本实例 sbi + inum） */
+/* 获取 inode（键：sbi + inum；不同挂载即使 inum 相同也不共享） */
 static struct inode *ext2_iget(struct ext2_sb_info *sbi, uint32 inum)
 {
-	int i, free, idx;
+	int i, free;
+	struct ext2_mnode *mn;
 	struct inode *ip;
 	struct ext2_disk_inode din;
 	uint32 group, index, b, off;
@@ -249,16 +260,14 @@ static struct inode *ext2_iget(struct ext2_sb_info *sbi, uint32 inum)
 		return 0;
 
 	free = -1;
-	/*
-	 * 遍历本实例 inode 池，如果 inode 存在，则增加引用计数并返回,
-	 * 否则找到一个空闲 inode
-	 */
-	for (i = 0; i < EXT2_NINODE; i++) {
-		if (sbi->einodes[i].type != 0 && sbi->einodes[i].inum == inum) {
-			sbi->einodes[i].ref++;
-			return &sbi->einodes[i];
+	for (i = 0; i < EXT2_NICACHE; i++) {
+		mn = &eicache[i];
+		if (mn->inode.type != 0 && mn->sbi == sbi &&
+		    mn->inode.inum == inum) {
+			mn->inode.ref++;
+			return &mn->inode;
 		}
-		if (sbi->einodes[i].type == 0 && free < 0)
+		if (mn->inode.type == 0 && free < 0)
 			free = i;
 	}
 	if (free < 0)
@@ -296,21 +305,23 @@ static struct inode *ext2_iget(struct ext2_sb_info *sbi, uint32 inum)
 	}
 	kfree(blk);
 
-	ip = &sbi->einodes[free];
-	idx = free;
-	memset(ip, 0, sizeof(*ip));
+	mn = &eicache[free];
+	ip = &mn->inode;
+	memset(mn, 0, sizeof(*mn));
+	mn->sbi = sbi;
 	ip->inum = inum;
 	ip->type = mode_to_type(din.i_mode);
-	if (ip->type == 0)
-		/* 不支持的类型 */
+	if (ip->type == 0) {
+		/* 不支持的类型：槽位保持 type==0 空闲 */
 		return 0;
+	}
 	ip->size = din.i_size;
 	ip->ref = 1;
 	ip->i_op = &ext2_iops;
 	ip->i_sb = sbi;
 	ip->parent = 0;
 	for (i = 0; i < EXT2_N_BLOCKS; i++)
-		sbi->eiblocks[idx][i] = din.i_block[i];
+		mn->i_block[i] = din.i_block[i];
 	return ip;
 }
 
@@ -318,19 +329,17 @@ static struct inode *ext2_iget(struct ext2_sb_info *sbi, uint32 inum)
 static uint32 ext2_bmap(struct inode *ip, uint32 lbn)
 {
 	struct ext2_sb_info *sbi;
-	int idx;
+	struct ext2_mnode *mn;
 	uint32 *iblk;
 	uint32 ind, per;
 	char *buf;
 	uint32 phys;
 
 	sbi = EXT2_SB(ip);
-	if (!sbi)
+	mn = mnode_of(ip);
+	if (!sbi || !mn || mn->sbi != sbi)
 		return 0;
-	idx = pool_index(sbi, ip);	/* 获取 inode 在内存 inode 数组中的索引 */
-	if (idx < 0)
-		return 0;
-	iblk = sbi->eiblocks[idx];	/* 获取 inode 的块号数组 */
+	iblk = mn->i_block;
 
 	if (lbn < EXT2_NDIR_BLOCKS)
 		return iblk[lbn];
@@ -624,14 +633,12 @@ static int ext2_mknod(struct inode *dir, const char *name, short type,
 
 static void ext2_evict(struct inode *ip)
 {
-	struct ext2_sb_info *sbi;
-	int idx;
+	struct ext2_mnode *mn;
 
-	sbi = EXT2_SB(ip);
-	if (sbi) {
-		idx = pool_index(sbi, ip);
-		if (idx >= 0)
-			memset(sbi->eiblocks[idx], 0, sizeof(sbi->eiblocks[idx]));
+	mn = mnode_of(ip);
+	if (mn) {
+		mn->sbi = 0;
+		memset(mn->i_block, 0, sizeof(mn->i_block));
 	}
 	ip->type = 0;
 	ip->inum = 0;
@@ -748,16 +755,29 @@ struct inode *ext2_fill_super(struct gendisk *gd)
 		kfree(sbi);
 		return 0;
 	}
+	printk(KERN_INFO "ext2: fill_super %s sbi=%p root=%p\n",
+	       gd->disk_name, sbi, root);
 	return root;
 }
 
-/* 释放该挂载实例的超级块（inode 池应已全部 evict） */
+/* 释放该挂载实例的超级块（该 sbi 上 inode 应已全部 evict） */
 void ext2_put_super(void *sb)
 {
 	struct ext2_sb_info *sbi = sb;
+	int i;
 
 	if (!sbi)
 		return;
+	/* 防御：清掉仍挂着本 sbi 的缓存项，避免悬空 */
+	for (i = 0; i < EXT2_NICACHE; i++) {
+		if (eicache[i].sbi == sbi) {
+			eicache[i].sbi = 0;
+			eicache[i].inode.type = 0;
+			eicache[i].inode.i_sb = 0;
+			eicache[i].inode.i_op = 0;
+			eicache[i].inode.ref = 0;
+		}
+	}
 	kfree(sbi);
 }
 

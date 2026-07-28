@@ -97,11 +97,18 @@ else
 QEMUOPTS += -drive file=boot.img,format=raw,if=floppy,index=0 -boot a
 endif
 
-.PHONY: qemu clean print-cc print-cflags compile_commands.json
+.PHONY: qemu clean print-cc print-cflags compile_commands.json \
+	e2e e2e-dual-mount
 
 qemu: $(HD_IMG) $(HD1_IMG) $(HD2_IMG) $(HD3_IMG) $(HD4_IMG) $(HD5_IMG) \
 	$(if $(filter 1,$(K)),kernel.elf,boot.img)
 	@$(QEMU) $(QEMUOPTS)
+
+# 端到端测试（见 e2e_test/）
+e2e: e2e-dual-mount
+
+e2e-dual-mount: kernel.elf
+	@python3 e2e_test/test_dual_mount.py
 
 # hd.img：ext2 + 样例 + HD_FILES（任意 host 文件，见 mkhd-ext2.sh）
 $(HD_IMG): scripts/mkhd-ext2.sh $(TEST_ELF) $(FREE_ELF)
@@ -323,4 +330,5 @@ clean:
 	$(BOOTDIR)/*.o $(BOOTDIR)/*.bin $(BOOTDIR)/*.elf \
 	$(USERDIR)/*.o $(USERDIR)/*.elf $(USERDIR)/*.bin \
 	$(USERDIR)/lib/*.o \
+	e2e_test/last_dual_mount.log \
 	$(OBJS)

@@ -11,6 +11,7 @@
 #include "../printk.h"
 #include "../block/blk.h"
 #include "vfs.h"
+#include "dcache.h"
 #include "mount.h"
 #include "ext2/ext2.h"
 #include "ramfs/ramfs.h"
@@ -198,6 +199,19 @@ static struct vfsmount *mnt_find_root(struct inode *root)
 	return 0;
 }
 
+static struct vfsmount *mnt_find_dir(const char *dirpath)
+{
+	int i;
+
+	if (!dirpath || !dirpath[0])
+		return 0;
+	for (i = 0; i < NMOUNT; i++) {
+		if (mounts[i].used && fs_name_eq(mounts[i].mnt_dir, dirpath))
+			return &mounts[i];
+	}
+	return 0;
+}
+
 static int mnt_add(struct inode *parent, const char *name, struct inode *root,
 		   struct file_system_type *type, const char *dev,
 		   const char *dirpath)
@@ -304,13 +318,14 @@ static int mount_link_dir(struct inode *parent, const char *leaf,
 
 /*
  * 挂接挂载点：
- * - 路径已存在：须为空目录，先 rmdir 再挂上 FS 根；
+ * - 路径已存在：须为未挂载的空目录；原地替换 dentry->ip（不动其它目录项）；
  * - 路径不存在：仅允许根下单层名（与启动时 /mnt 一致）。
  */
 static int mount_attach(const char *dir_name, struct inode *child,
 			struct file_system_type *type, const char *dev)
 {
-	struct inode *mp, *parent;
+	struct inode *mp, *parent, *old;
+	struct dentry *de;
 	char leaf[DIRSIZ];
 	char dirpath[NNAME];
 	const char *leafp;
@@ -318,9 +333,20 @@ static int mount_attach(const char *dir_name, struct inode *child,
 
 	mnt_norm_dir(dir_name, dirpath, sizeof(dirpath));
 
+	if (mnt_find_dir(dirpath)) {
+		printk(KERN_WARNING "mount: %s already mounted\n", dirpath);
+		return -1;
+	}
+
 	mp = fs_namei(dir_name);
 	if (mp) {
-		if (mp->type != T_DIR || mp->dents) {
+		/*
+		 * 空 ramfs 目录：dents==NULL 且无 i_sb。
+		 * ext2 挂载根也是 dents==NULL，必须用 mnt_find_root / i_sb 排除，
+		 * 否则会误把已有挂载点顶掉。
+		 */
+		if (mp->type != T_DIR || mp->dents || mp->i_sb ||
+		    mnt_find_root(mp)) {
 			fs_iput(mp);
 			return -1;
 		}
@@ -336,16 +362,25 @@ static int mount_attach(const char *dir_name, struct inode *child,
 			fs_iput(mp);
 			return -1;
 		}
+		de = d_lookup(parent, leaf);
+		if (!de || de->ip != mp) {
+			fs_iput(mp);
+			return -1;
+		}
 		parent = fs_idup(parent);
-		fs_iput(mp);
-		if (fs_rmdir(dir_name) < 0) {
+		if (mnt_add(parent, leaf, child, type, dev, dirpath) < 0) {
+			fs_iput(mp);
 			fs_iput(parent);
 			return -1;
 		}
-		if (mount_link_dir(parent, leaf, child, type, dev, dirpath) < 0) {
-			fs_iput(parent);
-			return -1;
-		}
+		/* 原地替换本 dentry->ip，不改动 /mnt 等其它目录项 */
+		old = de->ip;
+		de->ip = fs_idup(child);
+		child->parent = parent;
+		d_namecpy(child->name, leaf);
+		fs_iput(old);	/* 原空目录的目录项引用 */
+		fs_iput(mp);	/* namei 引用 */
+		fs_iput(child);	/* fill_super 引用；目录项 + 挂载表仍持有 */
 		fs_iput(parent);
 		return 0;
 	}
@@ -403,8 +438,12 @@ int do_mount(const char *dev_name, const char *dir_name, const char *fstype)
 
 	snprintf(devpath, sizeof(devpath), "/dev/%s", disk);
 	if (mount_attach(dir_name, mnt, type, devpath) < 0) {
+		void *sb = mnt->i_sb;
+
 		printk(KERN_WARNING "mount: attach %s failed\n", dir_name);
 		fs_iput(mnt);
+		if (type->kill_sb && sb)
+			type->kill_sb(sb);
 		return -1;
 	}
 
