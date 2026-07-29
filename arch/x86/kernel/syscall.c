@@ -11,6 +11,7 @@
 #include "proc.h"
 #include "syscall.h"
 #include "ipc/shm.h"
+#include "ipc/futex.h"
 
 #define NELEM(x)	((int)(sizeof(x) / sizeof((x)[0])))
 
@@ -97,6 +98,7 @@ static int (*syscalls[])(struct trapframe *tf) = {
 	[SYS_shmat] = sys_shmat,
 	[SYS_shmdt] = sys_shmdt,
 	[SYS_shmctl] = sys_shmctl,
+	[SYS_futex] = sys_futex,
 	[SYS_ioctl] = sys_ioctl,
 	[SYS_fcntl] = sys_fcntl,
 	[SYS_flock] = sys_flock,

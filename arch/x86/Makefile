@@ -72,6 +72,7 @@ USER_LIB_OBJS = \
 	$(USERDIR)/lib/wait.o \
 	$(USERDIR)/lib/sbrk.o \
 	$(USERDIR)/lib/mmap.o \
+	$(USERDIR)/lib/sem.o \
 	$(USERDIR)/lib/string.o \
 	$(USERDIR)/lib/ansi.o \
 	$(USERDIR)/lib/termios.o \
@@ -173,6 +174,7 @@ C_OBJS = \
 	$(KDIR)/execve.o \
 	$(KDIR)/ipc/signal.o \
 	$(KDIR)/ipc/shm.o \
+	$(KDIR)/ipc/futex.o \
 	$(KDIR)/fs/super.o \
 	$(KDIR)/fs/inode.o \
 	$(KDIR)/fs/dcache.o \
@@ -249,6 +251,9 @@ $(USERDIR)/lib/sbrk.o: $(USERDIR)/lib/sbrk.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/lib/mmap.o: $(USERDIR)/lib/mmap.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(USERDIR)/lib/sem.o: $(USERDIR)/lib/sem.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/lib/string.o: $(USERDIR)/lib/string.c

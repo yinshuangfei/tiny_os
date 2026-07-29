@@ -46,6 +46,7 @@ int sys_shmget(struct trapframe *tf);
 int sys_shmat(struct trapframe *tf);
 int sys_shmdt(struct trapframe *tf);
 int sys_shmctl(struct trapframe *tf);
+int sys_futex(struct trapframe *tf);
 int sys_lseek(struct trapframe *tf);
 int sys_kill(struct trapframe *tf);
 int sys_signal(struct trapframe *tf);

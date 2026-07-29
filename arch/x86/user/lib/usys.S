@@ -251,6 +251,30 @@ shmctl:
 	popl %ebx
 	ret
 
+/*
+ * futex(uaddr, op, val, timeout, uaddr2, val3) — Linux i386 六参数。
+ * 教学库目前只用前三个；其余可传 0。
+ */
+.globl futex
+futex:
+	pushl %ebx
+	pushl %esi
+	pushl %edi
+	pushl %ebp
+	movl 20(%esp), %ebx
+	movl 24(%esp), %ecx
+	movl 28(%esp), %edx
+	movl 32(%esp), %esi
+	movl 36(%esp), %edi
+	movl 40(%esp), %ebp
+	movl $SYS_futex, %eax
+	int $0x80
+	popl %ebp
+	popl %edi
+	popl %esi
+	popl %ebx
+	ret
+
 .globl lseek
 lseek:
 	pushl %ebx

@@ -670,6 +670,108 @@ void shm_test(void)
 }
 
 /*
+ * POSIX 信号量（Linux 风格：原子 + futex；命名走 shm）：
+ * 匿名 pshared=0 仅同进程；跨进程用 pshared=1 放进 shm，或 sem_open。
+ */
+void posix_sem_test(void)
+{
+	sem_t sem, *psem, *nsem;
+	int pid, status, ok = 1, val, shmid;
+	struct timespec ts;
+
+	/* 同进程：init / trywait / post / getvalue / destroy */
+	if (sem_init(&sem, 0, 0) < 0) {
+		printf("posix_sem: sem_init failed\n");
+		lib_pr_result("sem_init", 0);
+		lib_pr_result("sem_wait", 0);
+		lib_pr_result("sem_post", 0);
+		lib_pr_result("sem_trywait", 0);
+		lib_pr_result("sem_open", 0);
+		return;
+	}
+	if (sem_trywait(&sem) == 0) {
+		printf("posix_sem: trywait on 0 should fail\n");
+		ok = 0;
+	}
+	if (sem_post(&sem) < 0 || sem_trywait(&sem) < 0)
+		ok = 0;
+	if (sem_getvalue(&sem, &val) < 0 || val != 0)
+		ok = 0;
+	if (sem_destroy(&sem) < 0)
+		ok = 0;
+
+	/* 跨进程匿名：sem 必须在共享内存且 pshared!=0 */
+	shmid = shmget(IPC_PRIVATE, sizeof(*psem), IPC_CREAT);
+	if (shmid < 0) {
+		printf("posix_sem: shmget for pshared failed\n");
+		ok = 0;
+		psem = 0;
+	} else {
+		psem = (sem_t *)shmat(shmid, 0, 0);
+		if (psem == (sem_t *)-1 || psem == 0) {
+			ok = 0;
+			psem = 0;
+		} else if (sem_init(psem, 1, 0) < 0) {
+			ok = 0;
+		} else {
+			pid = fork();
+			if (pid < 0) {
+				ok = 0;
+			} else if (pid == 0) {
+				ts.tv_sec = 0;
+				ts.tv_nsec = 50000000;
+				nanosleep(&ts, 0);
+				exit(sem_post(psem) == 0 ? 0 : 1);
+			} else {
+				if (sem_wait(psem) < 0) {
+					printf("posix_sem: pshared wait failed\n");
+					ok = 0;
+				}
+				if (waitpid(pid, &status, 0) != pid ||
+				    !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+					ok = 0;
+			}
+			(void)shmdt(psem);
+		}
+		(void)shmctl(shmid, IPC_RMID, 0);
+	}
+
+	/* 命名：创建后父子同步 */
+	(void)sem_unlink("/tiny_posix_sem");
+	nsem = sem_open("/tiny_posix_sem", O_CREAT | O_EXCL, 0666, 0);
+	if (nsem == SEM_FAILED) {
+		printf("posix_sem: sem_open failed\n");
+		ok = 0;
+	} else {
+		pid = fork();
+		if (pid < 0) {
+			ok = 0;
+		} else if (pid == 0) {
+			ts.tv_sec = 0;
+			ts.tv_nsec = 30000000;
+			nanosleep(&ts, 0);
+			exit(sem_post(nsem) == 0 ? 0 : 1);
+		} else {
+			if (sem_wait(nsem) < 0)
+				ok = 0;
+			if (waitpid(pid, &status, 0) != pid ||
+			    !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+				ok = 0;
+		}
+		if (sem_close(nsem) < 0)
+			ok = 0;
+		if (sem_unlink("/tiny_posix_sem") < 0)
+			ok = 0;
+	}
+
+	lib_pr_result("sem_init", ok);
+	lib_pr_result("sem_wait", ok);
+	lib_pr_result("sem_post", ok);
+	lib_pr_result("sem_trywait", ok);
+	lib_pr_result("sem_open", ok);
+}
+
+/*
  * FPU/SSE：x87 算术、%f 打印，以及 fork 后 XMM 寄存器隔离（lazy FXSAVE）。
  */
 void fpu_test(void)
@@ -1098,5 +1200,6 @@ int main(int argc, char *argv[], char *envp[])
 	getcwd_proc_fd_test();
 	smp_test();
 	shm_test();
+	posix_sem_test();
 	exit(0);
 }

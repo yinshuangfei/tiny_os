@@ -9,6 +9,7 @@
 #include "dirent.h"
 #include "sys/wait.h"
 #include "termios.h"
+#include "semaphore.h"
 
 struct timespec;
 
@@ -42,6 +43,7 @@ int shmget(int key, unsigned int size, int shmflg);
 void *shmat(int shmid, const void *shmaddr, int shmflg);
 int shmdt(const void *shmaddr);
 int shmctl(int shmid, int cmd, void *buf);
+/* POSIX 信号量见 semaphore.h */
 int read(int fd, void *buf, int n);
 int write(int, const void *, int);
 int open(const char *path, int flags);

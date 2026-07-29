@@ -41,12 +41,18 @@
 #define SYS_getcwd	183	/* Linux i386 __NR_getcwd */
 #define SYS_mmap2	192	/* Linux i386 __NR_mmap2（offset 为页偏移） */
 #define SYS_getcpu	318	/* Linux i386 __NR_getcpu */
+#define SYS_futex	430	/* Linux i386 __NR_futex */
 
-/* SysV IPC */
+/* SysV 共享内存（现代 i386 分拆号） */
 #define SYS_shmget	395	/* Linux i386 __NR_shmget */
 #define SYS_shmctl	396	/* Linux i386 __NR_shmctl */
 #define SYS_shmat	397	/* Linux i386 __NR_shmat */
 #define SYS_shmdt	398	/* Linux i386 __NR_shmdt */
+
+/* futex op（对齐 Linux <linux/futex.h> 教学子集） */
+#define FUTEX_WAIT		0
+#define FUTEX_WAKE		1
+#define FUTEX_PRIVATE_FLAG	128
 
 #ifndef __ASSEMBLER__
 struct timespec {
@@ -85,10 +91,10 @@ struct stat {
 #define O_RDWR		0x002
 #define O_ACCMODE	0x003
 #define O_CREATE	0x200
+#define O_CREAT		O_CREATE	/* POSIX / Linux 别名 */
 #define O_APPEND	0x400	/* Linux O_APPEND */
+#define O_EXCL		0x1000	/* 与 O_CREAT 合用（sem_open 等） */
 #define O_NONBLOCK	0x800	/* Linux O_NONBLOCK */
-
-/* fcntl(2) cmd（对齐 Linux） */
 #define F_DUPFD		0
 #define F_GETFD		1
 #define F_SETFD		2
