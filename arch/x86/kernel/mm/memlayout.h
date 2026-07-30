@@ -4,7 +4,7 @@
  * 0x00000000 - 0x000fffff : 低端内存（BIOS、MMIO）
  * 0x00080000              : 保留低端区域（历史 boot 栈地址，已迁至 BSS）
  * 0x00100000              : 内核加载地址（KERNBASE）
- * physmem_top             : 运行时探测的 RAM 上界（<= MAX_PHYSMEM）
+ * physmem_top             : 运行时探测的 RAM 上界（页对齐，受 PHYSMEM_TOP_MAX 约束）
  */
 
 #define PGSIZE     4096
@@ -20,24 +20,21 @@
 // 向下取整，将地址向下对齐到 PGSIZE 的倍数
 #define PGROUNDDOWN(a)  ((a) & ~(PGSIZE - 1))
 
-/* 内核页表项数上限 TODO: 改为懒加载 */
+/* 内核页目录项数（4KB 页、非 PAE：覆盖完整 4GiB VA） */
 #define MAX_KERNEL_PT  1024
 
 #define KERNBASE   0x00100000
 
 /*
  * 用户虚拟地址空间（独立页表，避免与内核恒等映射共用二级页表）：
+ * 须位于恒等映射 RAM 之上，否则大内存时 mem_map/buddy 物理地址会落入
+ * 用户 VA 窗口，用户页表故意跳过该 PDE 后内核路径会缺页。
  * USERBASE      用户代码起始
  * USERSTACK     用户栈顶（栈向下增长，映射 [USERSTACK-PGSIZE, USERSTACK)）
  */
-#define USERBASE     0x00400000
-
-/*
- * 用户栈顶，栈向下增长，映射 [USERSTACK-PGSIZE, USERSTACK)。
- * 用户程序有两个栈：用户栈和内核栈。用户栈是用户程序的栈，内核栈切换到内核使用的栈。
- */
-#define USERSTACK    0x00800000
-#define USEREND      0x00800000	/* [USERBASE, USEREND) 为用户独占 VA */
+#define USERBASE     0xC0000000
+#define USERSTACK    0xC0400000
+#define USEREND      0xC0400000	/* [USERBASE, USEREND) 为用户独占 VA */
 /* 堆向上增长，不得进入栈页 [USERSTACK-PGSIZE, USERSTACK) */
 #define USERHEAP_TOP (USERSTACK - PGSIZE)
 
@@ -77,10 +74,11 @@ void trapstack_init(void);
 #define INTERRUPT_STACK_TOP (interrupt_stacks[0] + KSTACKSIZE)
 
 /*
- * page_storage 等元数据数组上限；实际 RAM 由 mem_probe() 探测，
- * 结果存入 physmem_top，且 physmem_top <= MAX_PHYSMEM。
+ * 非 PAE 内核恒等映射下，物理 RAM 可管理上界（页对齐）。
+ * 映射区间为 [0, physmem_top)，须 ≤ USERBASE，以免与用户 VA 重叠。
+ * 实际大小由 mem_probe() 按机器/QEMU -m 探测。
  */
-#define MAX_PHYSMEM  0x08000000	/* 128 MiB */
+#define PHYSMEM_TOP_MAX  USERBASE
 
 /** setup.S（E820）与内核共享的引导信息块 */
 #define BOOT_INFO        0x5000

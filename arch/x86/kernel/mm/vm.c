@@ -75,10 +75,14 @@ static int mappages(pagetable_t pgdir, uint va, uint size, uint pa, int perm,
 	last = va + size - PGSIZE;
 	for (;;) {
 		pte = walk(pgdir, a, 1, user);
-		if (pte == 0)
+		if (pte == 0) {
+			printf("walk failed: va=%p, a=%p\n", va, a);
 			return -1;
-		if (*pte & PTE_P)
+		}
+		if (*pte & PTE_P) {
+			printf("pte already mapped: va=%p, a=%p, pte=%p\n", va, a, pte);
 			return -1;
+		}
 		*pte = PA2PTE(pa) | perm | PTE_P;
 		if (a == last)
 			break;

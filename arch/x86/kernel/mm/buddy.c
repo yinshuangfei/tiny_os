@@ -52,14 +52,11 @@ struct free_area {
 
 static struct free_area free_area[MAX_ORDER];
 static struct spinlock pmm_lock;
-static struct page *mem_map;	/* 指向 page_storage，按页号索引 */
+static struct page *mem_map;	/* 紧贴内核 end[]，按可分配区页号索引 */
 static uint mem_start;		/* 可分配区起始物理地址（页对齐） */
 static uint mem_end;		/* 可分配区结束物理地址（= physmem_top） */
 static unsigned int nr_pages;	/* 可分配页总数 */
 static unsigned int nr_free;	/* 当前空闲页总数（所有 order 之和） */
-
-/* 按 MAX_PHYSMEM 预留 mem_map 上限，实际只用 [mem_start, physmem_top) */
-static struct page page_storage[MAX_PHYSMEM / PGSIZE];
 
 void *memset(void *dst, int c, uint n)
 {
@@ -186,23 +183,44 @@ static struct page *__alloc_pages(unsigned int order)
 
 /*
  * pmm: physical memory manager
- * 初始化：把 [end, physmem_top) 全部以 order=0 逐页释放，
- * buddy 合并会自动拼出更大的连续空闲块。
+ *
+ * mem_map 放在内核 end[] 之后（随 RAM 大小动态伸缩），其后为 buddy 池：
+ *   [end, mem_start)     — struct page[] 元数据（不入池）
+ *   [mem_start, physmem_top) — 可分配物理页
+ *
+ * 释放时按最大对齐块入池，减少启动阶段反复合并。
  * 须在 kvm_init 之前调用（此时尚未开分页，物理地址 == 线性地址）。
  */
 void pmm_init(void)
 {
-	unsigned int i;
-	uint addr;
+	unsigned int i, order;
+	uint base, map_bytes, addr, left, idx;
 	char total_size[HUMAN_SIZE_MAX] = {0};
 
-	mem_start = PGROUNDUP((uint)end);
+	base = PGROUNDUP((uint)end);
+	if (base >= physmem_top)
+		panic("pmm: no memory after kernel");
+
+	/*
+	 * 按「[base, physmem_top) 每页一条 page」高估 mem_map。
+	 * 元数据本身占用其中一部分页，故实际 nr_pages 略小；多留的几页条目可忽略。
+	 * （精确收敛会在 map 缩小/放大之间振荡，故不迭代。）
+	 */
+	map_bytes = PGROUNDUP(((physmem_top - base) / PGSIZE) *
+			      (uint)sizeof(struct page));
+	if (base + map_bytes >= physmem_top)
+		panic("pmm: mem_map does not fit");
+
+	mem_map = (struct page *)base;
+	mem_start = base + map_bytes;
 	mem_end = physmem_top;
 	nr_pages = (mem_end - mem_start) / PGSIZE;
-	mem_map = page_storage;
+	if (nr_pages == 0)
+		panic("pmm: zero pages");
 	nr_free = 0;
 	initlock(&pmm_lock, "pmm");
 
+	memset(mem_map, 0, map_bytes);
 	for (i = 0; i < MAX_ORDER; i++) {
 		INIT_LIST_HEAD(&free_area[i].free_list);
 		free_area[i].nr_free = 0;
@@ -214,14 +232,24 @@ void pmm_init(void)
 		mem_map[i]._refcount = 0;
 	}
 
-	for (addr = mem_start; addr < mem_end; addr += PGSIZE)
-		__free_one_page(addr_to_page((void *)addr), 0);
-
+	/* 按最大 2^order 对齐块释放，避免逐页合并 */
+	addr = mem_start;
+	while (addr < mem_end) {
+		idx = (addr - mem_start) / PGSIZE;
+		left = (mem_end - addr) / PGSIZE;
+		order = 0;
+		while (order + 1 < MAX_ORDER &&
+		       (idx & ((1U << (order + 1)) - 1)) == 0 &&
+		       (1U << (order + 1)) <= left)
+			order++;
+		__free_one_page(addr_to_page((void *)addr), order);
+		addr += PGSIZE << order;
+	}
 
 	bytes_to_human(physmem_top, total_size, sizeof(total_size));
-
-	printf("pmm: buddy init, pages=%d free=%d (0x%x-0x%x), total: %s\n",
-	       nr_pages, nr_free, mem_start, mem_end, total_size);
+	printf("pmm: buddy init, pages=%d free=%d (0x%x-0x%x), mem_map@0x%x (%d KiB), total: %s\n",
+	       nr_pages, nr_free, mem_start, mem_end,
+	       (uint)mem_map, map_bytes / 1024, total_size);
 }
 
 /* 分配 2^order 个连续物理页，返回首页物理地址；失败返回 0 */

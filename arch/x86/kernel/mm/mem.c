@@ -2,6 +2,8 @@
  * 物理内存大小探测：
  *   1. QEMU fw_cfg（-kernel 路径，读 -m 参数）
  *   2. boot_info（MBR 路径，setup 通过 BIOS E820 写入）
+ *
+ * 结果写入 physmem_top（页对齐）。仅受 32 位恒等映射上界 PHYSMEM_TOP_MAX 约束。
  */
 #include "../types.h"
 #include "../defs.h"
@@ -44,8 +46,11 @@ static int fw_cfg_ram_size(uint *top)
 	for (i = 0; i < 8; i++)
 		ram |= (uint64)fw_cfg_read8() << (8 * i);
 
-	if (ram == 0 || ram > 0xffffffffULL)
+	if (ram == 0)
 		return -1;
+	/* 非 PAE：只取低 32 位可恒等映射的部分 */
+	if (ram > (uint64)PHYSMEM_TOP_MAX)
+		ram = PHYSMEM_TOP_MAX;
 
 	*top = (uint)ram;
 	return 0;
@@ -67,20 +72,20 @@ void mem_probe(void)
 {
 	uint top = 0;
 	char human[HUMAN_SIZE_MAX];
-	char cap[HUMAN_SIZE_MAX];
 
 	if (fw_cfg_ram_size(&top) < 0)
 		if (boot_info_ram_size(&top) < 0)
 			panic("mem: cannot detect RAM size");
 
 	top = PGROUNDDOWN(top);
-	if (top > MAX_PHYSMEM)
-		top = MAX_PHYSMEM;
-	if (top <= KERNBASE)
-		panic("mem: RAM too small");
+	if (top > PHYSMEM_TOP_MAX)
+		top = PHYSMEM_TOP_MAX;
+	if (top <= KERNBASE) {
+		printf("mem: RAM size: 0x%x, KERNBASE: 0x%x\n", top, KERNBASE);
+		panic("mem: RAM too small, below the KERNBASE");
+	}
 
 	physmem_top = top;
 	bytes_to_human(top, human, sizeof(human));
-	bytes_to_human(MAX_PHYSMEM, cap, sizeof(cap));
-	printf("mem: detected RAM 0x0 - 0x%x (%s, cap %s)\n", top, human, cap);
+	printf("mem: detected RAM 0x0 - 0x%x (%s)\n", top, human);
 }
