@@ -9,6 +9,7 @@
 #include "../param.h"
 #include "../proc.h"
 #include "../printk.h"
+#include "../lock/proc_lock.h"
 #include "../block/blk.h"
 #include "vfs.h"
 #include "dcache.h"
@@ -32,11 +33,21 @@ struct vfsmount {
 /* 全局已注册的文件系统类型链表 */
 static struct file_system_type *file_systems;
 static struct vfsmount mounts[NMOUNT];
+static struct spinlock mount_lock;
+static int mount_lock_inited;
 
 /* 可挂载的块设备名（与 ide 注册名一致） */
 static const char *mount_disks[] = {
 	"hda", "hdb", "hdc", "hdd", "hde", "hdf", 0
 };
+
+static void mount_lock_init(void)
+{
+	if (mount_lock_inited)
+		return;
+	initlock(&mount_lock, "mount");
+	mount_lock_inited = 1;
+}
 
 static int fs_name_eq(const char *a, const char *b)
 {
@@ -96,15 +107,19 @@ int register_filesystem(struct file_system_type *fs)
 
 	if (!fs || !fs->name || !fs->fill_super)
 		return -1;
+	mount_lock_init();
+	acquire(&mount_lock);
 	for (p = file_systems; p; p = p->next) {
 		if (fs_name_eq(p->name, fs->name)) {
 			printk(KERN_WARNING "mount: fs '%s' already registered\n",
 			       fs->name);
+			release(&mount_lock);
 			return -1;
 		}
 	}
 	fs->next = file_systems;
 	file_systems = fs;
+	release(&mount_lock);
 	return 0;
 }
 
@@ -130,10 +145,26 @@ static int bread_u16(struct gendisk *gd, uint off, ushort *out)
 /* 读超级块位置魔数，匹配已注册类型（尚未 fill_super） */
 static struct file_system_type *identify_fs(struct gendisk *gd)
 {
+	struct file_system_type *types[16];
 	struct file_system_type *p;
 	ushort magic;
+	int count = 0;
+	int i;
 
-	for (p = file_systems; p; p = p->next) {
+	memset(types, 0, sizeof(types));
+
+	mount_lock_init();
+	acquire(&mount_lock);
+	for (p = file_systems; p &&
+	     count < (int)(sizeof(types) / sizeof(types[0]));
+	     p = p->next)
+		types[count++] = p;
+	release(&mount_lock);
+
+	for (i = 0; i < count; i++) {
+		p = types[i];
+		if (!p)
+			break;
 		if (bread_u16(gd, p->magic_off, &magic) < 0)
 			continue;
 		if (magic == p->magic)
@@ -148,9 +179,25 @@ static struct file_system_type *find_fs_type(const char *name)
 
 	if (!name || !name[0])
 		return 0;
+	mount_lock_init();
+	acquire(&mount_lock);
 	for (p = file_systems; p; p = p->next) {
 		if (fs_name_eq(p->name, name))
-			return p;
+			break;
+	}
+	release(&mount_lock);
+	return p;
+}
+
+static struct vfsmount *mnt_find_root_locked(struct inode *root)
+{
+	int i;
+
+	if (!root)
+		return 0;
+	for (i = 0; i < NMOUNT; i++) {
+		if (mounts[i].used && mounts[i].mnt_root == root)
+			return &mounts[i];
 	}
 	return 0;
 }
@@ -186,20 +233,7 @@ static const char *mount_leaf_name(const char *name)
 	return leaf;
 }
 
-static struct vfsmount *mnt_find_root(struct inode *root)
-{
-	int i;
-
-	if (!root)
-		return 0;
-	for (i = 0; i < NMOUNT; i++) {
-		if (mounts[i].used && mounts[i].mnt_root == root)
-			return &mounts[i];
-	}
-	return 0;
-}
-
-static struct vfsmount *mnt_find_dir(const char *dirpath)
+static struct vfsmount *mnt_find_dir_locked(const char *dirpath)
 {
 	int i;
 
@@ -212,9 +246,9 @@ static struct vfsmount *mnt_find_dir(const char *dirpath)
 	return 0;
 }
 
-static int mnt_add(struct inode *parent, const char *name, struct inode *root,
-		   struct file_system_type *type, const char *dev,
-		   const char *dirpath)
+static int mnt_add_locked(struct inode *parent, const char *name,
+			  struct inode *root, struct file_system_type *type,
+			  const char *dev, const char *dirpath)
 {
 	int i;
 
@@ -236,7 +270,7 @@ static int mnt_add(struct inode *parent, const char *name, struct inode *root,
 	return -1;
 }
 
-static void mnt_del(struct vfsmount *m)
+static void mnt_del_locked(struct vfsmount *m)
 {
 	struct file_system_type *type;
 	void *sb;
@@ -283,32 +317,39 @@ static int mount_busy(struct inode *mnt_root)
 
 	if (!mnt_root || !proc_table)
 		return 0;
+	acquire(&proc_lock);
 	for (i = 0; i < NPROC; i++) {
 		p = &proc_table[i];
 		if (p->state == UNUSED)
 			continue;
 		if (p->cwd && inode_on_mount(p->cwd, mnt_root))
-			return 1;
+			goto busy;
 		for (fd = 0; fd < NOFILE; fd++) {
 			f = p->ofile[fd];
 			if (f && f->ip && inode_on_mount(f->ip, mnt_root))
-				return 1;
+				goto busy;
 		}
 	}
+	release(&proc_lock);
 	return 0;
+
+busy:
+	release(&proc_lock);
+	return 1;
 }
 
 /* 将 FS 根挂到 parent 下名为 leaf 的目录项 */
-static int mount_link_dir(struct inode *parent, const char *leaf,
-			  struct inode *child, struct file_system_type *type,
-			  const char *dev, const char *dirpath)
+static int mount_link_dir_locked(struct inode *parent, const char *leaf,
+				 struct inode *child,
+				 struct file_system_type *type,
+				 const char *dev, const char *dirpath)
 {
 	if (!parent || !child || !leaf || !leaf[0])
 		return -1;
 	if (ramfs_link(parent, leaf, child) < 0)
 		return -1;
 	child->parent = parent;
-	if (mnt_add(parent, leaf, child, type, dev, dirpath) < 0) {
+	if (mnt_add_locked(parent, leaf, child, type, dev, dirpath) < 0) {
 		ramfs_detach(parent, leaf);
 		return -1;
 	}
@@ -332,9 +373,12 @@ static int mount_attach(const char *dir_name, struct inode *child,
 	int i;
 
 	mnt_norm_dir(dir_name, dirpath, sizeof(dirpath));
+	mount_lock_init();
+	acquire(&mount_lock);
 
-	if (mnt_find_dir(dirpath)) {
+	if (mnt_find_dir_locked(dirpath)) {
 		printk(KERN_WARNING "mount: %s already mounted\n", dirpath);
+		release(&mount_lock);
 		return -1;
 	}
 
@@ -346,13 +390,15 @@ static int mount_attach(const char *dir_name, struct inode *child,
 		 * 否则会误把已有挂载点顶掉。
 		 */
 		if (mp->type != T_DIR || mp->dents || mp->i_sb ||
-		    mnt_find_root(mp)) {
+		    mnt_find_root_locked(mp)) {
 			fs_iput(mp);
+			release(&mount_lock);
 			return -1;
 		}
 		parent = mp->parent;
 		if (!parent) {
 			fs_iput(mp);
+			release(&mount_lock);
 			return -1;
 		}
 		for (i = 0; i < DIRSIZ - 1 && mp->name[i]; i++)
@@ -360,17 +406,20 @@ static int mount_attach(const char *dir_name, struct inode *child,
 		leaf[i] = '\0';
 		if (!leaf[0]) {
 			fs_iput(mp);
+			release(&mount_lock);
 			return -1;
 		}
 		de = d_lookup(parent, leaf);
 		if (!de || de->ip != mp) {
 			fs_iput(mp);
+			release(&mount_lock);
 			return -1;
 		}
 		parent = fs_idup(parent);
-		if (mnt_add(parent, leaf, child, type, dev, dirpath) < 0) {
+		if (mnt_add_locked(parent, leaf, child, type, dev, dirpath) < 0) {
 			fs_iput(mp);
 			fs_iput(parent);
+			release(&mount_lock);
 			return -1;
 		}
 		/* 原地替换本 dentry->ip，不改动 /mnt 等其它目录项 */
@@ -382,13 +431,18 @@ static int mount_attach(const char *dir_name, struct inode *child,
 		fs_iput(mp);	/* namei 引用 */
 		fs_iput(child);	/* fill_super 引用；目录项 + 挂载表仍持有 */
 		fs_iput(parent);
+		release(&mount_lock);
 		return 0;
 	}
 
 	leafp = mount_leaf_name(dir_name);
-	if (!leafp)
+	if (!leafp) {
+		release(&mount_lock);
 		return -1;
-	return mount_link_dir(vfs_root(), leafp, child, type, dev, dirpath);
+	}
+	i = mount_link_dir_locked(vfs_root(), leafp, child, type, dev, dirpath);
+	release(&mount_lock);
+	return i;
 }
 
 int do_mount(const char *dev_name, const char *dir_name, const char *fstype)
@@ -464,10 +518,12 @@ int mounts_proc_show(char *buf, uint size)
 	if (!buf || !size)
 		return -1;
 
+	mount_lock_init();
+	acquire(&mount_lock);
 	len += (uint)snprintf(buf + len, size - len,
 			      "none / ramfs rw 0 0\n");
 	if (len >= size - 1)
-		return (int)len;
+		goto out;
 	len += (uint)snprintf(buf + len, size - len,
 			      "none /proc proc rw 0 0\n");
 
@@ -488,6 +544,9 @@ int mounts_proc_show(char *buf, uint size)
 							   : "/",
 				      typen);
 	}
+
+out:
+	release(&mount_lock);
 	return (int)len;
 }
 
@@ -500,19 +559,25 @@ int do_umount(const char *dir_name)
 	if (!dir_name || !dir_name[0])
 		return -1;
 
+	mount_lock_init();
+	acquire(&mount_lock);
 	mp = fs_namei(dir_name);
-	if (!mp)
+	if (!mp) {
+		release(&mount_lock);
 		return -1;
+	}
 
-	m = mnt_find_root(mp);
+	m = mnt_find_root_locked(mp);
 	if (!m) {
 		fs_iput(mp);
+		release(&mount_lock);
 		return -1;
 	}
 
 	if (mount_busy(mp)) {
 		printk(KERN_WARNING "umount: %s busy\n", dir_name);
 		fs_iput(mp);
+		release(&mount_lock);
 		return -1;
 	}
 
@@ -522,16 +587,18 @@ int do_umount(const char *dir_name)
 	if (ramfs_detach(parent, leaf) < 0) {
 		fs_iput(parent);
 		fs_iput(mp);
+		release(&mount_lock);
 		return -1;
 	}
 	fs_iput(mp);	/* namei 引用；目录项引用已在 detach 中放下 */
 
-	mnt_del(m);	/* kill_sb + 放下挂载表引用 */
+	mnt_del_locked(m);	/* kill_sb + 放下挂载表引用 */
 
 	/* 恢复空的挂载点目录（对齐“卸下后露出原目录”） */
 	if (parent->i_op && parent->i_op->mkdir)
 		(void)parent->i_op->mkdir(parent, leaf);
 	fs_iput(parent);
+	release(&mount_lock);
 
 	printk(KERN_INFO "umount: %s\n", dir_name);
 	return 0;
@@ -543,6 +610,7 @@ void mount_init(void)
 	int i, n;
 	char dir[16];
 
+	mount_lock_init();
 	ext2_init();
 
 	n = 0;

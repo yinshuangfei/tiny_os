@@ -16,10 +16,11 @@
 
 /*
  * SETUP_MAX_CPUS ≈ Linux setup_max_cpus（boot 参数 maxcpus=）。
- * Makefile：-DSETUP_MAX_CPUS=$(CPUS)，与 QEMU -smp 一致。
+ * Makefile：-DSETUP_MAX_CPUS=$(CPUS)，这里只表示“最多拉起多少个 CPU”。
+ * 实际 present CPU 数由运行时探测（如 QEMU fw_cfg）决定。
  */
 #ifndef SETUP_MAX_CPUS
-#define SETUP_MAX_CPUS	1
+#define SETUP_MAX_CPUS	NR_CPUS
 #endif
 
 #if SETUP_MAX_CPUS < 1
@@ -38,7 +39,7 @@ static inline int num_online_cpus(void)
 }
 
 int cpu_id(void);			/* 逻辑 CPU 下标 0 .. ncpu-1 */
-void mp_init(void);			/* BSP：按 SETUP_MAX_CPUS 启动 AP */
+void mp_init(void);			/* BSP：按运行时 CPU 数且不超过 SETUP_MAX_CPUS 启动 AP */
 void start_secondary(void) __attribute__((noreturn));	/* AP 入口 */
 
 #endif

@@ -76,7 +76,8 @@ void main(void)
 	rest_init();
 	/*
 	 * 启动 AP（须在 apic、proc、printf 之后）。
-	 * SETUP_MAX_CPUS 由 make CPUS= 传入（对齐 Linux maxcpus / -smp）。
+	 * SETUP_MAX_CPUS 由 make CPUS= 传入，只表示 bring-up 上限；
+	 * 实际 present CPU 数在 mp_init() 里运行时探测。
 	 * AP 进入 scheduler 与 BSP 并行抢就绪队列。
 	 */
 	mp_init();

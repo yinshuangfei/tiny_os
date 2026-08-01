@@ -16,3 +16,4 @@ lib/usys.S
 __pycache__
 mkfs_ext2
 *.log
+.codex

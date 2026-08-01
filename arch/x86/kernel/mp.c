@@ -17,6 +17,10 @@
 #include "mm/memlayout.h"
 
 #define TRAMPOLINE	0x8000u
+#define FW_CFG_PORT_SEL	0x510
+#define FW_CFG_PORT_DATA 0x511
+#define FW_CFG_SIGNATURE 0x0000
+#define FW_CFG_NB_CPUS	0x0005
 
 int ncpu = 1;				/* num_online_cpus，bring-up 后更新 */
 volatile int ap_started[NR_CPUS];
@@ -24,6 +28,66 @@ volatile int ap_started[NR_CPUS];
 extern char trampoline[], etrampoline[];
 extern char kernel_stacks[NR_CPUS][KSTACKSIZE];
 extern pagetable_t cpu_user_pgdir[NR_CPUS];
+
+static inline uint8 fw_cfg_read8(void)
+{
+	return inb(FW_CFG_PORT_DATA);
+}
+
+static inline void fw_cfg_select(uint16 key)
+{
+	outw(key, FW_CFG_PORT_SEL);
+}
+
+static int fw_cfg_cpu_count(uint *count)
+{
+	uint32 sig;
+	uint n;
+
+	if (!count)
+		return -1;
+
+	fw_cfg_select(FW_CFG_SIGNATURE);
+	sig = fw_cfg_read8();
+	sig |= (uint32)fw_cfg_read8() << 8;
+	sig |= (uint32)fw_cfg_read8() << 16;
+	sig |= (uint32)fw_cfg_read8() << 24;
+	if (sig != 0x554d4551)
+		return -1;
+
+	fw_cfg_select(FW_CFG_NB_CPUS);
+	n = (uint)fw_cfg_read8();
+	n |= (uint)fw_cfg_read8() << 8;
+	if (n == 0)
+		return -1;
+
+	*count = n;
+	return 0;
+}
+
+static uint cpuid_cpu_count(void)
+{
+	uint32 eax, ebx, ecx, edx;
+	uint n;
+
+	if (!cpu_has_cpuid())
+		return 1;
+	cpuid(0, &eax, &ebx, &ecx, &edx);
+	if (eax < 1)
+		return 1;
+	cpuid(1, &eax, &ebx, &ecx, &edx);
+	n = (ebx >> 16) & 0xff;
+	return n ? n : 1;
+}
+
+static int mp_present_cpus(void)
+{
+	uint count;
+
+	if (fw_cfg_cpu_count(&count) == 0)
+		return (int)count;
+	return (int)cpuid_cpu_count();
+}
 
 int cpu_id(void)
 {
@@ -74,6 +138,8 @@ static void do_boot_cpu(int cpu, uint32 apicid)
 void mp_init(void)
 {
 	int i;
+	int present;
+	int target;
 	uint len;
 
 	cpus[0].id = 0;
@@ -81,8 +147,18 @@ void mp_init(void)
 	ncpu = 1;
 	ap_started[0] = 1;
 
-	if (SETUP_MAX_CPUS == 1) {
-		printk(KERN_INFO "mp: uniprocessor (SETUP_MAX_CPUS=1)\n");
+	present = mp_present_cpus();
+	if (present < 1)
+		present = 1;
+	target = present;
+	if (target > SETUP_MAX_CPUS)
+		target = SETUP_MAX_CPUS;
+	if (target > NR_CPUS)
+		target = NR_CPUS;
+	if (target <= 1) {
+		printk(KERN_INFO
+		       "mp: runtime reports %d CPU(s), booting uniprocessor (maxcpus=%d, nr_cpus=%d)\n",
+		       present, SETUP_MAX_CPUS, NR_CPUS);
 		return;
 	}
 
@@ -92,10 +168,11 @@ void mp_init(void)
 		panic("mp: bad trampoline");
 	memcpy((void *)TRAMPOLINE, trampoline, len);
 
-	printk(KERN_INFO "mp: bringing up %d APs (maxcpus=%d, nr_cpus=%d)\n",
-	       SETUP_MAX_CPUS - 1, SETUP_MAX_CPUS, NR_CPUS);
+	printk(KERN_INFO
+	       "mp: runtime reports %d CPU(s), booting %d (maxcpus=%d, nr_cpus=%d)\n",
+	       present, target, SETUP_MAX_CPUS, NR_CPUS);
 
-	for (i = 1; i < SETUP_MAX_CPUS; i++) {
+	for (i = 1; i < target; i++) {
 		/*
 		 * QEMU：顺序 APIC ID = 0,1,2,...
 		 * 先增大 ncpu，便于 AP 的 cpu_id() 解析。

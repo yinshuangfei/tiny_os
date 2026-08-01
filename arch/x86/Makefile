@@ -60,7 +60,7 @@ QEMUOPTS += -device ide-hd,drive=hd5,bus=ide1b.0,unit=0
 
 CFLAGS := -m32 -ffreestanding -fno-pic -fno-stack-protector -nostdlib -Wall
 CFLAGS += -fno-asynchronous-unwind-tables -fno-unwind-tables
-CFLAGS += -DNR_CPUS=$(NR_CPUS) -DSETUP_MAX_CPUS=$(CPUS)
+CFLAGS += -DNR_CPUS=$(NR_CPUS)
 USER_CFLAGS := $(CFLAGS) -I$(USERDIR)/include -ffreestanding -fno-builtin
 
 # 用户程序产物（须在 hd.img 规则之前定义，否则依赖展开为空）
