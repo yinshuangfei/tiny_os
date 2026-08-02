@@ -80,6 +80,11 @@ static int shm_map_range(struct proc *p, struct vma *v, struct shm_seg *s)
 {
 	uint i, va;
 	int perm;
+	pagetable_t pgdir;
+
+	pgdir = proc_pagetable(p);
+	if (!pgdir)
+		return -1;
 
 	perm = PTE_P;
 	if (v->prot & PROT_WRITE)
@@ -87,10 +92,10 @@ static int shm_map_range(struct proc *p, struct vma *v, struct shm_seg *s)
 
 	for (i = 0; i < s->npages; i++) {
 		va = v->start + i * PGSIZE;
-		if (walkaddr(p->pagetable, va) != 0)
-			(void)uvmunmap(p->pagetable, va, 1, 1);
+		if (walkaddr(pgdir, va) != 0)
+			(void)uvmunmap(pgdir, va, 1, 1);
 		get_page(s->pages[i]);
-		if (uvmmap(p->pagetable, va, (uint)s->pages[i], PGSIZE, perm) < 0) {
+		if (uvmmap(pgdir, va, (uint)s->pages[i], PGSIZE, perm) < 0) {
 			put_page(s->pages[i]);
 			return -1;
 		}
@@ -101,9 +106,14 @@ static int shm_map_range(struct proc *p, struct vma *v, struct shm_seg *s)
 static void shm_unmap_range(struct proc *p, struct vma *v)
 {
 	uint va;
+	pagetable_t pgdir;
+
+	pgdir = proc_pagetable(p);
+	if (!pgdir)
+		return;
 
 	for (va = v->start; va < v->end; va += PGSIZE)
-		(void)uvmunmap(p->pagetable, va, 1, 1);
+		(void)uvmunmap(pgdir, va, 1, 1);
 }
 
 /* 创建或查找共享内存段 */
@@ -197,7 +207,7 @@ uint do_shmat(int shmid, uint shmaddr, int shmflg)
 	uint start, len;
 	int prot;
 
-	if (!p || !p->pagetable)
+	if (!p || !proc_pagetable(p))
 		return (uint)-1;
 
 	shm_init();
@@ -280,15 +290,19 @@ int do_shmdt(uint shmaddr)
 {
 	struct proc *p = myproc();
 	struct vma *v;
+	struct vma *vmas;
 	int i;
 
-	if (!p || !p->pagetable)
+	if (!p || !proc_pagetable(p))
 		return -1;
 	if (shmaddr & (PGSIZE - 1))
 		return -1;
 
+	vmas = proc_vmas(p);
+	if (!vmas)
+		return -1;
 	for (i = 0; i < NVMA; i++) {
-		v = &p->vmas[i];
+		v = &vmas[i];
 		if (!v->used || vma_shmid(v) < 0)
 			continue;
 		if (v->start == shmaddr)
@@ -324,14 +338,19 @@ void shm_fork_fix(struct proc *child, struct proc *parent)
 {
 	struct vma *v;
 	struct shm_seg *s;
+	struct vma *child_vmas, *parent_vmas;
 	int i, shmid;
 
 	if (!child || !parent)
 		return;
+	child_vmas = proc_vmas(child);
+	parent_vmas = proc_vmas(parent);
+	if (!child_vmas || !parent_vmas)
+		return;
 
 	shm_init();
 	for (i = 0; i < NVMA; i++) {
-		v = &child->vmas[i];
+		v = &child_vmas[i];
 		if (!v->used)
 			continue;
 		shmid = vma_shmid(v);
@@ -349,7 +368,7 @@ void shm_fork_fix(struct proc *child, struct proc *parent)
 			continue;
 		}
 		/* 父子均从 COW 恢复为共享可写（或只读） */
-		if (shm_map_range(parent, &parent->vmas[i], s) < 0 ||
+		if (shm_map_range(parent, &parent_vmas[i], s) < 0 ||
 		    shm_map_range(child, v, s) < 0) {
 			release(&shm_lock);
 			continue;
@@ -363,12 +382,16 @@ void shm_fork_fix(struct proc *child, struct proc *parent)
 void shm_detach_all(struct proc *p)
 {
 	struct vma *v;
+	struct vma *vmas;
 	int i;
 
 	if (!p)
 		return;
+	vmas = proc_vmas(p);
+	if (!vmas)
+		return;
 	for (i = 0; i < NVMA; i++) {
-		v = &p->vmas[i];
+		v = &vmas[i];
 		if (!v->used || vma_shmid(v) < 0)
 			continue;
 		(void)shm_munmap_vma(p, v);
@@ -405,7 +428,7 @@ int shm_demand_fault(struct proc *p, struct vma *v, uint page, int write)
 	if (v->prot & PROT_WRITE)
 		perm |= PTE_W;
 	get_page(s->pages[idx]);
-	if (uvmmap(p->pagetable, page, (uint)s->pages[idx], PGSIZE, perm) < 0) {
+	if (uvmmap(proc_pagetable(p), page, (uint)s->pages[idx], PGSIZE, perm) < 0) {
 		put_page(s->pages[idx]);
 		release(&shm_lock);
 		return -1;

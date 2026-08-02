@@ -4,7 +4,9 @@
 #include "types.h"
 #include "param.h"
 #include "list.h"
+#include "lock/spinlock.h"
 #include "mm/vm.h"
+#include "mm/memlayout.h"
 #include "trap.h"
 #include "ipc/signal.h"
 #include "fpu.h"
@@ -23,6 +25,18 @@ struct vma {
 	 * 编码进 flags，避免扩大本结构体（防止未重编 .o 布局错位）。
 	 */
 	int flags;
+};
+
+struct mm_struct {
+	struct spinlock lock;		/* 地址空间元数据锁（phase-1 先统一收口） */
+	pagetable_t pgdir;		/* 用户页表 */
+	uint user_base;			/* 用户空间起始 VA */
+	uint task_size;			/* 用户 VA 扫描上界（fork/COW，现为 USERSTACK） */
+	uint mmap_base;			/* top-down mmap 搜索起点 */
+	uint stack_top;			/* 用户栈顶 */
+	uint brk;			/* 程序间断点（heap end，类 Linux mm->brk） */
+	uint brk_start;			/* exec 后初始 brk（不可再缩小到其下） */
+	struct vma vmas[NVMA];		/* 匿名 mmap / shm VMA 表 */
 };
 
 /* 取 VMA 上的 SysV shmid；非 shm 返回 -1 */
@@ -95,16 +109,12 @@ struct proc {
 	int killed;
 	int xstate;			/* 退出状态 */
 
-	pagetable_t pagetable;		/* 用户页表 */
+	struct mm_struct *mm;		/* 用户地址空间（页表/brk/VMA） */
 	struct trapframe *kframe;	/* 指向内核栈的栈顶的 trapframe */
 	struct context context;		/* 进程上下文 */
 	void *kstack;			/* 内核栈（用户线程及内核线程） */
 	void (*entry)(void *);
 	void *entry_arg;
-	uint sz;			/* 用户 VA 扫描上界（fork/COW，现为 USERSTACK） */
-	uint brk;			/* 程序间断点（heap end，类 Linux mm->brk） */
-	uint brk_start;			/* exec 后初始 brk（不可再缩小到其下） */
-	struct vma vmas[NVMA];		/* 匿名 mmap 区域表 */
 
 	/* FPU/SSE（FXSAVE 区须 16 字节对齐） */
 	int fpu_used;			/* 1：fpu_state 有效（曾用过或继承） */
@@ -123,6 +133,36 @@ struct proc {
 	struct trapframe *sigold;	/* 旧的 trapframe */
 	int sighandling;		/* 是否正在处理信号 */
 };
+
+static inline pagetable_t proc_pagetable(const struct proc *p)
+{
+	return (p && p->mm) ? p->mm->pgdir : 0;
+}
+
+static inline uint proc_task_size(const struct proc *p)
+{
+	return (p && p->mm) ? p->mm->task_size : 0;
+}
+
+static inline uint proc_brk(const struct proc *p)
+{
+	return (p && p->mm) ? p->mm->brk : USERBASE;
+}
+
+static inline uint proc_brk_start(const struct proc *p)
+{
+	return (p && p->mm) ? p->mm->brk_start : USERBASE;
+}
+
+static inline struct vma *proc_vmas(struct proc *p)
+{
+	return (p && p->mm) ? p->mm->vmas : 0;
+}
+
+static inline const struct vma *proc_vmas_const(const struct proc *p)
+{
+	return (p && p->mm) ? p->mm->vmas : 0;
+}
 
 extern struct cpu cpus[NR_CPUS];
 struct cpu *mycpu(void);

@@ -34,7 +34,7 @@ static void *futex_key(struct proc *p, uint uaddr)
 {
 	uint pa;
 
-	if (!p || !p->pagetable)
+	if (!p || !proc_pagetable(p))
 		return 0;
 	if (uaddr & 3)
 		return 0;
@@ -42,10 +42,10 @@ static void *futex_key(struct proc *p, uint uaddr)
 	{
 		int dummy;
 
-		if (copyin(p->pagetable, &dummy, uaddr, sizeof(dummy)) < 0)
+		if (copyin(proc_pagetable(p), &dummy, uaddr, sizeof(dummy)) < 0)
 			return 0;
 	}
-	pa = walkaddr(p->pagetable, uaddr);
+	pa = walkaddr(proc_pagetable(p), uaddr);
 	if (pa == 0)
 		return 0;
 	return (void *)pa;
@@ -83,7 +83,7 @@ static int do_futex_wait(uint uaddr, int val)
 		release(&futex_lock);
 		return -1;
 	}
-	if (copyin(p->pagetable, &cur, uaddr, sizeof(cur)) < 0) {
+	if (copyin(proc_pagetable(p), &cur, uaddr, sizeof(cur)) < 0) {
 		release(&futex_lock);
 		return -1;
 	}

@@ -335,7 +335,7 @@ int console_ioctl(unsigned int req, uint uarg)
 	struct proc *p = myproc();
 	struct termios tio;
 
-	if (!p || !p->pagetable)
+	if (!p || !proc_pagetable(p))
 		return -1;
 
 	switch (req) {
@@ -343,11 +343,11 @@ int console_ioctl(unsigned int req, uint uarg)
 		acquire(&cons_lock);
 		tio.c_lflag = cons_lflag;
 		release(&cons_lock);
-		if (copyout(p->pagetable, uarg, &tio, sizeof(tio)) < 0)
+		if (copyout(proc_pagetable(p), uarg, &tio, sizeof(tio)) < 0)
 			return -1;
 		return 0;
 	case TCSETS:
-		if (copyin(p->pagetable, &tio, uarg, sizeof(tio)) < 0)
+		if (copyin(proc_pagetable(p), &tio, uarg, sizeof(tio)) < 0)
 			return -1;
 		acquire(&cons_lock);
 		cons_lflag = tio.c_lflag & (ISIG | ICANON | ECHO);

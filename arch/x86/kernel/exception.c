@@ -89,7 +89,7 @@ void page_fault_handler(struct trapframe *tf)
 	/*
 	 * 用户 not-present（典型 err=0x4/0x6）：堆或匿名 mmap 按需填零。
 	 */
-	if (user && p && p->pagetable && (tf->err & PF_U) &&
+	if (user && p && proc_pagetable(p) && (tf->err & PF_U) &&
 	    !(tf->err & PF_P)) {
 		if (uvm_demand_fault(p, fault_va, write) == 0)
 			return;
@@ -98,10 +98,10 @@ void page_fault_handler(struct trapframe *tf)
 	/*
 	 * 用户写已存在页（典型 err=0x7）：若为 COW，复制后返回重试指令。
 	 */
-	if (user && p && p->pagetable && (tf->err & PF_U) && write &&
+	if (user && p && proc_pagetable(p) && (tf->err & PF_U) && write &&
 	    (tf->err & PF_P)) {
-		if (fault_va >= USERBASE && fault_va < p->sz &&
-		    uvm_cow_fault(p->pagetable, fault_va) == 0)
+		if (fault_va >= USERBASE && fault_va < proc_task_size(p) &&
+		    uvm_cow_fault(proc_pagetable(p), fault_va) == 0)
 			return;
 	}
 
@@ -109,7 +109,7 @@ void page_fault_handler(struct trapframe *tf)
 	       (void *)fault_va, tf ? tf->err : 0,
 	       tf ? tf->eip : 0, p ? p->pid : -1);
 
-	if (user && p && p->pagetable) {
+	if (user && p && proc_pagetable(p)) {
 		/* 用户非法访问：以 SIGSEGV 退出（WIFSIGNALED） */
 		exit_signal(SIGSEGV);
 	}
@@ -125,7 +125,7 @@ void simd_fp_handler(struct trapframe *tf)
 	user = tf && ((tf->cs & 3) == DPL_USER);
 	printk(KERN_ERR "simd fp exception (#XM) at eip=0x%x pid=%d\n",
 	       tf ? tf->eip : 0, p ? p->pid : -1);
-	if (user && p && p->pagetable) {
+	if (user && p && proc_pagetable(p)) {
 		exit_signal(SIGFPE);
 	}
 	panic("simd fp exception");

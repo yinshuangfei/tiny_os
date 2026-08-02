@@ -54,7 +54,7 @@ int argstr(struct trapframe *tf, int n, char *buf, int max)
 
 	if (argaddr(tf, n, &addr) < 0)
 		return -1;
-	if (copyinstr(myproc()->pagetable, buf, addr, max) < 0)
+	if (copyinstr(proc_pagetable(myproc()), buf, addr, max) < 0)
 		return -1;
 	return 0;
 }

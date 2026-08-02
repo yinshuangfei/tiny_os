@@ -16,11 +16,16 @@
 static int vma_overlap_range(struct proc *p, uint start, uint end)
 {
 	int i;
+	struct vma *vmas;
+
+	vmas = proc_vmas(p);
+	if (!vmas)
+		return 0;
 
 	for (i = 0; i < NVMA; i++) {
-		if (!p->vmas[i].used)
+		if (!vmas[i].used)
 			continue;
-		if (start < p->vmas[i].end && end > p->vmas[i].start)
+		if (start < vmas[i].end && end > vmas[i].start)
 			return 1;
 	}
 	return 0;
@@ -30,15 +35,17 @@ static int vma_overlap_range(struct proc *p, uint start, uint end)
 static int region_available(struct proc *p, uint start, uint end)
 {
 	uint va;
+	pagetable_t pgdir;
 
 	if (start < USERBASE || end > USERHEAP_TOP || start >= end)
 		return 0;
-	if (start < PGROUNDUP(p->brk))
+	if (start < PGROUNDUP(proc_brk(p)))
 		return 0;
 	if (vma_overlap_range(p, start, end))
 		return 0;
+	pgdir = proc_pagetable(p);
 	for (va = start; va < end; va += PGSIZE) {
-		if (walkaddr(p->pagetable, va) != 0)
+		if (walkaddr(pgdir, va) != 0)
 			return 0;
 	}
 	return 1;
@@ -49,7 +56,7 @@ static uint find_mmap_addr(struct proc *p, uint len)
 {
 	uint low, high, start;
 
-	low = PGROUNDUP(p->brk);
+	low = PGROUNDUP(proc_brk(p));
 	high = USERHEAP_TOP;
 	if (len == 0 || low >= high || len > high - low)
 		return 0;
@@ -74,10 +81,15 @@ static int prot_ok(int prot)
 static struct vma *vma_alloc_slot(struct proc *p)
 {
 	int i;
+	struct vma *vmas;
+
+	vmas = proc_vmas(p);
+	if (!vmas)
+		return 0;
 
 	for (i = 0; i < NVMA; i++) {
-		if (!p->vmas[i].used)
-			return &p->vmas[i];
+		if (!vmas[i].used)
+			return &vmas[i];
 	}
 	return 0;
 }
@@ -85,12 +97,17 @@ static struct vma *vma_alloc_slot(struct proc *p)
 static struct vma *vma_find(struct proc *p, uint start, uint end)
 {
 	int i;
+	struct vma *vmas;
+
+	vmas = proc_vmas(p);
+	if (!vmas)
+		return 0;
 
 	for (i = 0; i < NVMA; i++) {
-		if (!p->vmas[i].used)
+		if (!vmas[i].used)
 			continue;
-		if (p->vmas[i].start == start && p->vmas[i].end == end)
-			return &p->vmas[i];
+		if (vmas[i].start == start && vmas[i].end == end)
+			return &vmas[i];
 	}
 	return 0;
 }
@@ -99,14 +116,18 @@ static struct vma *vma_find(struct proc *p, uint start, uint end)
 struct vma *vma_lookup(struct proc *p, uint va)
 {
 	int i;
+	struct vma *vmas;
 
 	if (!p)
 		return 0;
+	vmas = proc_vmas(p);
+	if (!vmas)
+		return 0;
 	for (i = 0; i < NVMA; i++) {
-		if (!p->vmas[i].used)
+		if (!vmas[i].used)
 			continue;
-		if (va >= p->vmas[i].start && va < p->vmas[i].end)
-			return &p->vmas[i];
+		if (va >= vmas[i].start && va < vmas[i].end)
+			return &vmas[i];
 	}
 	return 0;
 }
@@ -114,21 +135,30 @@ struct vma *vma_lookup(struct proc *p, uint va)
 void vma_clear(struct proc *p)
 {
 	int i;
+	struct vma *vmas;
 
 	if (!p)
 		return;
+	vmas = proc_vmas(p);
+	if (!vmas)
+		return;
 	for (i = 0; i < NVMA; i++)
-		p->vmas[i].used = 0;
+		vmas[i].used = 0;
 }
 
 void vma_copy(struct proc *dst, struct proc *src)
 {
 	int i;
+	struct vma *dvmas, *svmas;
 
 	if (!dst || !src)
 		return;
+	dvmas = proc_vmas(dst);
+	svmas = proc_vmas(src);
+	if (!dvmas || !svmas)
+		return;
 	for (i = 0; i < NVMA; i++)
-		dst->vmas[i] = src->vmas[i];
+		dvmas[i] = svmas[i];
 }
 
 uint mmap_find_addr(struct proc *p, uint len)
@@ -171,9 +201,14 @@ int vma_overlaps_brk(struct proc *p, uint old_brk, uint new_brk)
 static void mmap_unmap_pages(struct proc *p, uint start, uint end)
 {
 	uint va;
+	pagetable_t pgdir;
+
+	pgdir = proc_pagetable(p);
+	if (!pgdir)
+		return;
 
 	for (va = start; va < end; va += PGSIZE)
-		(void)uvmunmap(p->pagetable, va, 1, 1);
+		(void)uvmunmap(pgdir, va, 1, 1);
 }
 
 /*
@@ -187,7 +222,7 @@ uint do_mmap(struct proc *p, uint addr, uint len, int prot, int flags,
 	uint start;
 
 	(void)pgoff;
-	if (!p || !p->pagetable || len == 0)
+	if (!p || !proc_pagetable(p) || len == 0)
 		return (uint)-1;
 
 	len = PGROUNDUP(len);
@@ -234,7 +269,7 @@ int do_munmap(struct proc *p, uint addr, uint len)
 	struct vma *v;
 	uint end;
 
-	if (!p || !p->pagetable || len == 0)
+	if (!p || !proc_pagetable(p) || len == 0)
 		return -1;
 	if (addr & (PGSIZE - 1))
 		return -1;

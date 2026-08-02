@@ -99,17 +99,21 @@ int parse_pid_name(const char *name)
 static uint calc_vmsize_kb(struct proc *p)
 {
 	uint bytes = 0;
+	const struct vma *vmas;
 	int i;
 
 	/* 内核线程无用户地址空间 */
-	if (!p->pagetable && p->brk <= USERBASE)
+	if (!proc_pagetable(p) && proc_brk(p) <= USERBASE)
 		return 0;
-	if (p->brk > USERBASE)
-		bytes += p->brk - USERBASE;
+	if (proc_brk(p) > USERBASE)
+		bytes += proc_brk(p) - USERBASE;
 	bytes += PGSIZE;
+	vmas = proc_vmas_const(p);
+	if (!vmas)
+		return bytes / 1024;
 	for (i = 0; i < NVMA; i++) {
-		if (p->vmas[i].used)
-			bytes += p->vmas[i].end - p->vmas[i].start;
+		if (vmas[i].used)
+			bytes += vmas[i].end - vmas[i].start;
 	}
 	return bytes / 1024;
 }
@@ -142,13 +146,16 @@ int snap_proc(int pid, struct proc_snap *s)
 		s->pid = p->pid;
 		s->ppid = p->parent ? p->parent->pid : 0;
 		s->state = p->state;
-		s->sz = p->sz;
-		s->brk = p->brk;
-		s->brk_start = p->brk_start;
+		s->sz = proc_task_size(p);
+		s->brk = proc_brk(p);
+		s->brk_start = proc_brk_start(p);
 		s->vmsize_kb = calc_vmsize_kb(p);
-		s->vmrss_kb = calc_vmrss_kb(p->pagetable);
-		s->has_user_mm = p->pagetable != 0 || p->brk > USERBASE;
-		memcpy(s->vmas, p->vmas, sizeof(s->vmas));
+		s->vmrss_kb = calc_vmrss_kb(proc_pagetable(p));
+		s->has_user_mm = proc_pagetable(p) != 0 || proc_brk(p) > USERBASE;
+		if (proc_vmas_const(p))
+			memcpy(s->vmas, proc_vmas_const(p), sizeof(s->vmas));
+		else
+			memset(s->vmas, 0, sizeof(s->vmas));
 		strncpy(s->name, p->name, NNAME - 1);
 		s->name[NNAME - 1] = '\0';
 		release(&proc_lock);

@@ -283,31 +283,31 @@ static int exec_stack_argv(pagetable_t pgdir, const char *name,
 }
 
 /*
- * 在新页表加载 blob + 用户栈；成功时切换 p->pagetable 并更新 trapframe。
- * 失败时释放 newpg，旧映像保持不变。
+ * 在新 mm 加载 blob + 用户栈；成功时切换 p->mm 并更新 trapframe。
+ * 失败时释放 newmm，旧映像保持不变。
  */
 int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 	      const char *name, char *const *argv, char *const *envp)
 {
-	pagetable_t oldpg, newpg;
+	struct mm_struct *oldmm, *newmm;
 	void *ustack;
 	uint entry, esp, heap_end;
 
 	if (!p || !tf || !blob || size == 0 || size > EXEC_MAX_FILE || !name)
 		return -1;
 
-	newpg = uvmcreate();
-	if (newpg == 0)
+	newmm = mm_create();
+	if (newmm == 0)
 		return -1;
 
 	heap_end = USERBASE;
 	if (is_elf(blob, size)) {
-		if (exec_load_elf(newpg, blob, size, &entry, &heap_end) < 0)
+		if (exec_load_elf(newmm->pgdir, blob, size, &entry, &heap_end) < 0)
 			goto bad;
 	} else {
 		if (size > USEREND - USERBASE)
 			goto bad;
-		if (loaduvm(newpg, USERBASE, blob, size) < 0)
+		if (loaduvm(newmm->pgdir, USERBASE, blob, size) < 0)
 			goto bad;
 		entry = USERBASE;
 		heap_end = USERBASE + size;
@@ -316,28 +316,28 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 	ustack = alloc_page();
 	if (ustack == 0)
 		goto bad;
-	if (uvmmap(newpg, USERSTACK - PGSIZE, (uint)ustack, PGSIZE,
+	if (uvmmap(newmm->pgdir, USERSTACK - PGSIZE, (uint)ustack, PGSIZE,
 		   PTE_W | PTE_P) < 0) {
 		free_page(ustack);
 		goto bad;
 	}
 
-	if (exec_stack_argv(newpg, name, argv, envp, &esp) < 0)
+	if (exec_stack_argv(newmm->pgdir, name, argv, envp, &esp) < 0)
 		goto bad;
 
 	/* 旧地址空间上的 shm 须先分离，再换页表 / 清 VMA */
 	shm_detach_all(p);
 
-	oldpg = p->pagetable;
-	p->pagetable = newpg;
-	p->sz = USERSTACK;
+	oldmm = p->mm;
+	p->mm = newmm;
+	newmm->task_size = USERSTACK;
 	/* 程序断点：数据段末；堆向 USERHEAP_TOP 增长 */
 	if (heap_end < USERBASE)
 		heap_end = USERBASE;
 	if (heap_end > USERHEAP_TOP)
 		heap_end = USERHEAP_TOP;
-	p->brk = heap_end;
-	p->brk_start = heap_end;
+	newmm->brk = heap_end;
+	newmm->brk_start = heap_end;
 	vma_clear(p);
 	fpu_clear(p);
 	proc_name_from_path(p, name);
@@ -350,8 +350,8 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 	tf->ds = SEG_UDATA | DPL_USER;
 	tf->eflags = 0x202;
 
-	set_user_pgdir(newpg);
-	uvmfree(oldpg);
+	set_user_pgdir(newmm->pgdir);
+	mm_destroy(oldmm);
 
 	printk(KERN_DEBUG "execve: pid=%d name=%s eip=0x%x esp=0x%x\n",
 	       p->pid, p->name, tf->eip, tf->esp);
@@ -359,7 +359,7 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 	return 0;
 
 bad:
-	uvmfree(newpg);
+	mm_destroy(newmm);
 	return -1;
 }
 

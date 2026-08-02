@@ -98,14 +98,14 @@ int sys_fstat(struct trapframe *tf)
 
 	if (argint(tf, 0, &fd) < 0 || argaddr(tf, 1, &uaddr) < 0)
 		return -1;
-	if (!p || !p->pagetable)
+	if (!p || !proc_pagetable(p))
 		return -1;
 	f = fdget(fd);
 	if (!f || !f->ip)
 		return -1;
 
 	inode_to_stat(f->ip, &st);
-	if (copyout(p->pagetable, uaddr, &st, sizeof(st)) < 0)
+	if (copyout(proc_pagetable(p), uaddr, &st, sizeof(st)) < 0)
 		return -1;
 	return 0;
 }
@@ -121,7 +121,7 @@ int sys_stat(struct trapframe *tf)
 
 	if (argstr(tf, 0, path, NNAME) < 0 || argaddr(tf, 1, &uaddr) < 0)
 		return -1;
-	if (!p || !p->pagetable)
+	if (!p || !proc_pagetable(p))
 		return -1;
 
 	ip = fs_namei(path);
@@ -130,7 +130,7 @@ int sys_stat(struct trapframe *tf)
 
 	inode_to_stat(ip, &st);
 	fs_iput(ip);
-	if (copyout(p->pagetable, uaddr, &st, sizeof(st)) < 0)
+	if (copyout(proc_pagetable(p), uaddr, &st, sizeof(st)) < 0)
 		return -1;
 	return 0;
 }
@@ -151,7 +151,7 @@ int sys_readlink(struct trapframe *tf)
 	if (argstr(tf, 0, path, NNAME) < 0 || argaddr(tf, 1, &uaddr) < 0 ||
 	    argint(tf, 2, &bufsiz) < 0)
 		return -1;
-	if (!p || !p->pagetable || bufsiz <= 0)
+	if (!p || !proc_pagetable(p) || bufsiz <= 0)
 		return -1;
 
 	ip = fs_namei_nofollow(path);
@@ -168,7 +168,7 @@ int sys_readlink(struct trapframe *tf)
 		return -1;
 	if (n > bufsiz)
 		n = bufsiz;
-	if (copyout(p->pagetable, uaddr, kbuf, n) < 0)
+	if (copyout(proc_pagetable(p), uaddr, kbuf, n) < 0)
 		return -1;
 	return n;
 }
@@ -322,7 +322,7 @@ int sys_pipe(struct trapframe *tf)
 
 	if (argaddr(tf, 0, &uaddr) < 0)
 		return -1;
-	if (!p || !p->pagetable)
+	if (!p || !proc_pagetable(p))
 		return -1;
 	if (pipealloc(&rf, &wf) < 0)
 		return -1;
@@ -334,8 +334,8 @@ int sys_pipe(struct trapframe *tf)
 		fileclose(wf);
 		return -1;
 	}
-	if (copyout(p->pagetable, uaddr, &fd0, sizeof(fd0)) < 0 ||
-	    copyout(p->pagetable, uaddr + sizeof(fd0), &fd1, sizeof(fd1)) < 0) {
+	if (copyout(proc_pagetable(p), uaddr, &fd0, sizeof(fd0)) < 0 ||
+	    copyout(proc_pagetable(p), uaddr + sizeof(fd0), &fd1, sizeof(fd1)) < 0) {
 		p->ofile[fd0] = 0;
 		p->ofile[fd1] = 0;
 		fileclose(rf);
@@ -357,7 +357,7 @@ int sys_read(struct trapframe *tf)
 	if (argint(tf, 0, &fd) < 0 || argaddr(tf, 1, &uaddr) < 0 ||
 	    argint(tf, 2, &n) < 0)
 		return -1;
-	if (!p || !p->pagetable || n < 0)
+	if (!p || !proc_pagetable(p) || n < 0)
 		return -1;
 	f = fdget(fd);
 	if (!f)
@@ -374,7 +374,7 @@ int sys_read(struct trapframe *tf)
 			return -1;
 		if (r == 0)
 			break;
-		if (copyout(p->pagetable, uaddr + total, buf, r) < 0)
+		if (copyout(proc_pagetable(p), uaddr + total, buf, r) < 0)
 			return -1;
 		total += r;
 		/* 管道：一旦读到数据即返回（与 Linux 短读语义一致） */
@@ -521,7 +521,7 @@ int sys_getcwd(struct trapframe *tf)
 	char buf[NNAME];
 	int n;
 
-	if (!p || !p->pagetable)
+	if (!p || !proc_pagetable(p))
 		return -1;
 	if (argaddr(tf, 0, &uaddr) < 0 || argint(tf, 1, &size) < 0)
 		return -1;
@@ -531,7 +531,7 @@ int sys_getcwd(struct trapframe *tf)
 	n = fs_getcwd(buf, size < NNAME ? size : NNAME);
 	if (n < 0)
 		return -1;
-	if (copyout(p->pagetable, uaddr, buf, n) < 0)
+	if (copyout(proc_pagetable(p), uaddr, buf, n) < 0)
 		return -1;
 	return n;
 }
@@ -548,7 +548,7 @@ int sys_write(struct trapframe *tf)
 	if (argint(tf, 0, &fd) < 0 || argaddr(tf, 1, &uaddr) < 0 ||
 	    argint(tf, 2, &n) < 0)
 		return -1;
-	if (!p || !p->pagetable || n < 0)
+	if (!p || !proc_pagetable(p) || n < 0)
 		return -1;
 	f = fdget(fd);
 	if (!f)
@@ -559,7 +559,7 @@ int sys_write(struct trapframe *tf)
 		chunk = n - total;
 		if (chunk > (int)sizeof(buf))
 			chunk = sizeof(buf);
-		if (copyin(p->pagetable, buf, uaddr + total, chunk) < 0)
+		if (copyin(proc_pagetable(p), buf, uaddr + total, chunk) < 0)
 			return -1;
 		r = filewrite(f, buf, chunk);
 		if (r < 0)

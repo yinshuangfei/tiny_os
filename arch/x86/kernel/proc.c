@@ -109,6 +109,22 @@ static void kthread_reap(struct proc *p)
 	}
 }
 
+/* 释放进程的内存空间 */
+static void proc_drop_mm(struct proc *p)
+{
+	struct mm_struct *mm;
+
+	if (!p || !p->mm)
+		return;
+
+	shm_detach_all(p);
+	mm = p->mm;
+	if (get_user_pgdir() == mm->pgdir)
+		set_user_pgdir(0);
+	p->mm = 0;
+	mm_destroy(mm);
+}
+
 /* 用户进程 ZOMBIE：exit 已释放页表；调用方须持有 proc_lock */
 static void zombie_reap_locked(struct proc *p)
 {
@@ -127,8 +143,7 @@ static void zombie_reap_locked(struct proc *p)
 	p->parent = 0;
 	p->xstate = 0;
 	p->kframe = 0;
-	p->pagetable = 0;
-	p->sz = 0;
+	p->mm = 0;
 	p->name[0] = '\0';
 }
 
@@ -172,15 +187,7 @@ static void exit_with_xstate(int xstate)
 		p->cwd = 0;
 	}
 
-	shm_detach_all(p);
-
-	if (p->pagetable) {
-		if (get_user_pgdir() == p->pagetable)
-			set_user_pgdir(0);
-		uvmfree(p->pagetable);
-		p->pagetable = 0;
-		p->sz = 0;
-	}
+	proc_drop_mm(p);
 
 	fpu_drop(p);
 
@@ -363,16 +370,18 @@ static void kthread_ctx_init(struct proc *p)
  */
 void user_enter_ring3(struct proc *p)
 {
-	if (!p->pagetable || !p->kframe)
+	pagetable_t pgdir = proc_pagetable(p);
+
+	if (!pgdir || !p->kframe)
 		panic("user_enter_ring3: no user image");
 
-	set_user_pgdir(p->pagetable);
+	set_user_pgdir(pgdir);
 	tss_set_esp0((uint)p->kstack + KSTACKSIZE);
 
 	printk(KERN_DEBUG "user_start: pid=%d eip=0x%x esp=0x%x pgdir=%p\n",
-	       p->pid, p->kframe->eip, p->kframe->esp, p->pagetable);
+	       p->pid, p->kframe->eip, p->kframe->esp, pgdir);
 
-	user_enter(p->kframe, p->pagetable);
+	user_enter(p->kframe, pgdir);
 }
 
 static void user_start_trampoline(void)
@@ -456,7 +465,7 @@ static void prepare_context(struct proc *p)
 	if (context_sane(p))
 		return;
 
-	if (p->pagetable) {
+	if (proc_pagetable(p)) {
 		if (p->kframe && (p->kframe->cs & DPL_USER))
 			user_ctx_init(p);
 		else
@@ -603,13 +612,9 @@ void proc_free(struct proc *p)
 		return;
 
 	fpu_drop(p);
+	proc_drop_mm(p);
 
 	acquire(&proc_lock);
-	if (p->pagetable) {
-		uvmfree(p->pagetable);
-		p->pagetable = 0;
-		p->sz = 0;
-	}
 	if (p->kstack) {
 		free_page(p->kstack);
 		p->kstack = 0;
@@ -838,8 +843,8 @@ void scheduler(void)
 			if (p->kstack)
 				tss_set_esp0((uint)p->kstack + KSTACKSIZE);
 			/* fork 子进程首次调度时尚未经过 ring3 trap，须在此更新 */
-			if (p->pagetable)
-				set_user_pgdir(p->pagetable);
+			if (proc_pagetable(p))
+				set_user_pgdir(proc_pagetable(p));
 
 			prepare_context(p);
 			release(&proc_lock);
@@ -885,23 +890,23 @@ int fork_copy(struct trapframe *tf)
 	struct proc *np;	/* new process */
 	struct trapframe *ntf;
 
-	if (!p || !p->pagetable || !tf)
+	if (!p || !proc_pagetable(p) || !tf)
 		return -1;
 
 	np = proc_alloc();
 	if (!np)
 		return -1;
 
-	np->pagetable = uvmcreate();
-	if (!np->pagetable)
+	np->mm = mm_create();
+	if (!np->mm)
 		goto bad;
 
-	if (uvmcopy(p->pagetable, np->pagetable, p->sz) < 0)
+	if (uvmcopy(proc_pagetable(p), np->mm->pgdir, proc_task_size(p)) < 0)
 		goto bad;
 
-	np->sz = p->sz;
-	np->brk = p->brk;
-	np->brk_start = p->brk_start;
+	np->mm->task_size = proc_task_size(p);
+	np->mm->brk = proc_brk(p);
+	np->mm->brk_start = proc_brk_start(p);
 	vma_copy(np, p);
 	shm_fork_fix(np, p);
 	np->parent = p;

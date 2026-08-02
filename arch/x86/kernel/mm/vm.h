@@ -5,6 +5,7 @@
 
 struct proc;
 struct vma;
+struct mm_struct;
 
 extern pagetable_t kernel_pgdir;
 
@@ -22,6 +23,8 @@ void *kvmalloc(uint va, int perm);
  * 后续进程 / execve / fork 使用。
  */
 pagetable_t uvmcreate(void);
+struct mm_struct *mm_create(void);
+void mm_destroy(struct mm_struct *mm);
 int uvmmap(pagetable_t pgdir, uint va, uint pa, uint size, int perm);
 int uvmunmap(pagetable_t pgdir, uint va, uint npages, int do_free);
 int uvminit(pagetable_t pgdir, uint va, const void *src, uint sz);

@@ -48,8 +48,10 @@ int sys_getcpu(struct trapframe *tf)
 	uint ucpu, unode;
 	unsigned int v;
 	struct proc *p = myproc();
+	pagetable_t pgdir;
 
-	if (!p || !p->pagetable)
+	pgdir = proc_pagetable(p);
+	if (!p || !pgdir)
 		return -1;
 	if (argaddr(tf, 0, &ucpu) < 0 || argaddr(tf, 1, &unode) < 0)
 		return -1;
@@ -57,12 +59,12 @@ int sys_getcpu(struct trapframe *tf)
 
 	v = (unsigned int)cpu_id();
 	if (ucpu != 0 &&
-	    copyout(p->pagetable, ucpu, &v, sizeof(v)) < 0)
+	    copyout(pgdir, ucpu, &v, sizeof(v)) < 0)
 		return -1;
 
 	v = 0;	/* 单节点 / 无 NUMA */
 	if (unode != 0 &&
-	    copyout(p->pagetable, unode, &v, sizeof(v)) < 0)
+	    copyout(pgdir, unode, &v, sizeof(v)) < 0)
 		return -1;
 
 	return 0;
@@ -81,29 +83,31 @@ int sys_brk(struct trapframe *tf)
 {
 	uint addr, old;
 	struct proc *p = myproc();
+	pagetable_t pgdir;
 
-	if (!p || !p->pagetable)
+	pgdir = proc_pagetable(p);
+	if (!p || !p->mm || !pgdir)
 		return -1;
 	if (argaddr(tf, 0, &addr) < 0)
 		return -1;
 
-	old = p->brk;
+	old = p->mm->brk;
 	/* 非法：过小、落入栈页、或越过堆顶 → 保持原断点 */
-	if (addr < p->brk_start || addr > USERHEAP_TOP)
+	if (addr < p->mm->brk_start || addr > USERHEAP_TOP)
 		return (int)old;
 
 	if (addr > old) {
 		/* 不可侵入已有 mmap 区域 */
 		if (vma_overlaps_brk(p, old, addr))
 			return (int)old;
-		if (uvmalloc(p->pagetable, old, addr) == 0)
+		if (uvmalloc(pgdir, old, addr) == 0)
 			return (int)old;
 	} else if (addr < old) {
-		if (uvmdealloc(p->pagetable, old, addr) == 0)
+		if (uvmdealloc(pgdir, old, addr) == 0)
 			return (int)old;
 	}
-	p->brk = addr;
-	return (int)p->brk;
+	p->mm->brk = addr;
+	return (int)p->mm->brk;
 }
 
 /*
@@ -116,7 +120,7 @@ int sys_mmap2(struct trapframe *tf)
 	int prot, flags, fd;
 	struct proc *p = myproc();
 
-	if (!p || !p->pagetable)
+	if (!p || !proc_pagetable(p))
 		return -1;
 	if (argaddr(tf, 0, &addr) < 0)
 		return -1;
@@ -139,7 +143,7 @@ int sys_munmap(struct trapframe *tf)
 	uint addr, len;
 	struct proc *p = myproc();
 
-	if (!p || !p->pagetable)
+	if (!p || !proc_pagetable(p))
 		return -1;
 	if (argaddr(tf, 0, &addr) < 0)
 		return -1;
@@ -155,7 +159,7 @@ int sys_waitpid(struct trapframe *tf)
 	uint ustatus;
 	struct proc *p = myproc();
 
-	if (!p || !p->pagetable)
+	if (!p || !proc_pagetable(p))
 		return -1;
 	if (argint(tf, 0, &pid) < 0)
 		return -1;
@@ -168,7 +172,7 @@ int sys_waitpid(struct trapframe *tf)
 		return -1;
 
 	if (argaddr(tf, 1, &ustatus) == 0 && ustatus != 0) {
-		if (copyout(p->pagetable, ustatus, &st, sizeof(st)) < 0)
+		if (copyout(proc_pagetable(p), ustatus, &st, sizeof(st)) < 0)
 			return -1;
 	}
 	return reaped;
@@ -190,11 +194,11 @@ int sys_nanosleep(struct trapframe *tf)
 	uint ureq, urem;
 	unsigned int nticks;
 
-	if (!p || !p->pagetable)
+	if (!p || !proc_pagetable(p))
 		return -1;
 	if (argaddr(tf, 0, &ureq) < 0 || ureq == 0)
 		return -1;
-	if (copyin(p->pagetable, &req, ureq, sizeof(req)) < 0)
+	if (copyin(proc_pagetable(p), &req, ureq, sizeof(req)) < 0)
 		return -1;
 	if (req.tv_nsec >= NSEC_PER_SEC)
 		return -1;
@@ -209,7 +213,7 @@ int sys_nanosleep(struct trapframe *tf)
 	if (argaddr(tf, 1, &urem) == 0 && urem != 0) {
 		rem.tv_sec = 0;
 		rem.tv_nsec = 0;
-		if (copyout(p->pagetable, urem, &rem, sizeof(rem)) < 0)
+		if (copyout(proc_pagetable(p), urem, &rem, sizeof(rem)) < 0)
 			return -1;
 	}
 	return 0;
@@ -258,11 +262,11 @@ int sys_execve(struct trapframe *tf)
 	struct proc *p = myproc();
 	int argc, envc, r;
 
-	if (!p || !p->pagetable)
+	if (!p || !proc_pagetable(p))
 		return -1;
 	if (argaddr(tf, 0, &upath) < 0)
 		return -1;
-	if (copyinstr(p->pagetable, path, upath, NNAME) < 0)
+	if (copyinstr(proc_pagetable(p), path, upath, NNAME) < 0)
 		return -1;
 
 	/* 临时申请的存储空间 */
@@ -280,7 +284,7 @@ int sys_execve(struct trapframe *tf)
 		argstore = kmalloc(MAXARG * NNAME);
 		if (!argstore)
 			return -1;
-		argc = copy_user_strvec(p->pagetable, uargv, argstore, MAXARG,
+		argc = copy_user_strvec(proc_pagetable(p), uargv, argstore, MAXARG,
 					kargv);
 		if (argc < 0) {
 			kfree(argstore);
@@ -294,7 +298,7 @@ int sys_execve(struct trapframe *tf)
 				kfree(argstore);
 			return -1;
 		}
-		envc = copy_user_strvec(p->pagetable, uenvp, envstore, MAXENV,
+		envc = copy_user_strvec(proc_pagetable(p), uenvp, envstore, MAXENV,
 					kenvp);
 		if (envc < 0) {
 			if (argstore)

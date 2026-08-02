@@ -197,6 +197,37 @@ void kvm_init(void)
 /* 用户地址空间                                                                */
 /* -------------------------------------------------------------------------- */
 
+struct mm_struct *mm_create(void)
+{
+	struct mm_struct *mm;
+
+	mm = kcalloc(1, sizeof(*mm));
+	if (!mm)
+		return 0;
+	initlock(&mm->lock, "mm");
+	mm->user_base = USERBASE;
+	mm->task_size = USERSTACK;
+	mm->mmap_base = USERHEAP_TOP;
+	mm->stack_top = USERSTACK;
+	mm->brk = USERBASE;
+	mm->brk_start = USERBASE;
+	mm->pgdir = uvmcreate();
+	if (!mm->pgdir) {
+		kfree(mm);
+		return 0;
+	}
+	return mm;
+}
+
+void mm_destroy(struct mm_struct *mm)
+{
+	if (!mm)
+		return;
+	if (mm->pgdir)
+		uvmfree(mm->pgdir);
+	kfree(mm);
+}
+
 pagetable_t uvmcreate(void)
 {
 	pagetable_t pgdir;
@@ -365,8 +396,10 @@ int uvm_demand_fault(struct proc *p, uint va, int write)
 	char *mem;
 	int perm;
 	uint page;
+	pagetable_t pgdir;
 
-	if (!p || !p->pagetable)
+	pgdir = proc_pagetable(p);
+	if (!p || !pgdir)
 		return -1;
 
 	page = PGROUNDDOWN(va);
@@ -374,11 +407,11 @@ int uvm_demand_fault(struct proc *p, uint va, int write)
 		return -1;
 
 	/* 已映射则无需再填（竞态下幂等） */
-	if (walkaddr(p->pagetable, page) != 0)
+	if (walkaddr(pgdir, page) != 0)
 		return 0;
 
 	/* 堆：页与 [brk_start, brk) 相交 */
-	if (page < p->brk && page + PGSIZE > p->brk_start) {
+	if (page < proc_brk(p) && page + PGSIZE > proc_brk_start(p)) {
 		perm = PTE_P | PTE_W;
 	} else if ((v = vma_lookup(p, page)) != 0) {
 		if (vma_shmid(v) >= 0)
@@ -398,7 +431,7 @@ int uvm_demand_fault(struct proc *p, uint va, int write)
 	if (mem == 0)
 		return -1;
 	memset(mem, 0, PGSIZE);
-	if (uvmmap(p->pagetable, page, (uint)mem, PGSIZE, perm) < 0) {
+	if (uvmmap(pgdir, page, (uint)mem, PGSIZE, perm) < 0) {
 		free_page(mem);
 		return -1;
 	}
@@ -422,7 +455,7 @@ static int ensure_user_page(pagetable_t pgdir, uint va, int write)
 	}
 
 	p = myproc();
-	if (!p || p->pagetable != pgdir)
+	if (!p || proc_pagetable(p) != pgdir)
 		return -1;
 	return uvm_demand_fault(p, va, write);
 }

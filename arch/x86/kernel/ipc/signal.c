@@ -72,7 +72,7 @@ int signal_send(int pid, int sig)
 			break;
 		}
 	}
-	if (!p || !p->pagetable) {
+	if (!p || !proc_pagetable(p)) {
 		release(&proc_lock);
 		return -1;
 	}
@@ -119,7 +119,7 @@ void signal_parent_child_exit(struct proc *child)
 	parent = child->parent;
 	if (!parent || parent == child)
 		return;
-	if (!parent->pagetable)
+	if (!proc_pagetable(parent))
 		return;
 
 	/* 仅置 pending；唤醒由 exit() 随后的 wakeup(parent) 完成 */
@@ -181,7 +181,7 @@ static int signal_setup_frame(struct proc *p, struct trapframe *tf, int sig,
 	uchar tramp[8];
 	struct trapframe *old;
 
-	if (!p->pagetable || !(tf->cs & DPL_USER))
+	if (!proc_pagetable(p) || !(tf->cs & DPL_USER))
 		return -1;
 
 	sp = tf->esp;
@@ -207,19 +207,19 @@ static int signal_setup_frame(struct proc *p, struct trapframe *tf, int sig,
 	/* 将跳板代码复制到用户栈 */
 	sp -= sizeof(tramp);
 	sp &= ~0x3;	/* 对齐 */
-	if (copyout(p->pagetable, sp, tramp, sizeof(tramp)) < 0)
+	if (copyout(proc_pagetable(p), sp, tramp, sizeof(tramp)) < 0)
 		goto bad;
 	retaddr = sp;
 
 	/* 将信号编号复制到用户栈 */
 	signum = (uint)sig;
 	sp -= sizeof(uint);
-	if (copyout(p->pagetable, sp, &signum, sizeof(uint)) < 0)
+	if (copyout(proc_pagetable(p), sp, &signum, sizeof(uint)) < 0)
 		goto bad;
 
 	/* 将返回地址复制到用户栈 */
 	sp -= sizeof(uint);
-	if (copyout(p->pagetable, sp, &retaddr, sizeof(uint)) < 0)
+	if (copyout(proc_pagetable(p), sp, &retaddr, sizeof(uint)) < 0)
 		goto bad;
 
 	*old = *tf;
@@ -263,7 +263,7 @@ void signal_notify(struct trapframe *tf)
 	int sig;
 	uint handler;
 
-	if (!p || !tf || !p->pagetable)
+	if (!p || !tf || !proc_pagetable(p))
 		return;
 	if ((tf->cs & 3) != DPL_USER)
 		return;
