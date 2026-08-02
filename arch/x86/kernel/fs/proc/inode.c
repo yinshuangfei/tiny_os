@@ -95,7 +95,7 @@ int parse_pid_name(const char *name)
 	return pid;
 }
 
-/* 虚拟地址空间约数：[USERBASE,brk) + 栈页 + 匿名 VMA */
+/* 虚拟地址空间约数：[USERBASE,brk) + 栈区 + 匿名 VMA */
 static uint calc_vmsize_kb(struct proc *p)
 {
 	uint bytes = 0;
@@ -107,7 +107,7 @@ static uint calc_vmsize_kb(struct proc *p)
 		return 0;
 	if (proc_brk(p) > USERBASE)
 		bytes += proc_brk(p) - USERBASE;
-	bytes += PGSIZE;
+	bytes += USER_STACK_SIZE;
 	vmas = proc_vmas_const(p);
 	if (!vmas)
 		return bytes / 1024;

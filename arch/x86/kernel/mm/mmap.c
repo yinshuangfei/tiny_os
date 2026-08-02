@@ -57,7 +57,7 @@ static uint find_mmap_addr(struct proc *p, uint len)
 	uint low, high, start;
 
 	low = PGROUNDUP(proc_brk(p));
-	high = USERHEAP_TOP;
+	high = p && p->mm ? p->mm->mmap_base : USERHEAP_TOP;
 	if (len == 0 || low >= high || len > high - low)
 		return 0;
 

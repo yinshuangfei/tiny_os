@@ -34,8 +34,8 @@ extern char init_end[];
 extern char sh[];
 extern char sh_end[];
 
-/* 可执行文件读入上限（与用户 VA 窗口同量级） */
-#define EXEC_MAX_FILE (USEREND - USERBASE)
+/* 可执行文件读入上限（限制在 text/data/heap 区，不侵入高端栈区域） */
+#define EXEC_MAX_FILE (USERHEAP_TOP - USERBASE)
 
 struct userbin {
 	const char *name;
@@ -156,7 +156,7 @@ static int exec_load_elf(pagetable_t pgdir, const char *blob, uint size,
 		if (ph->vaddr < USERBASE)
 			return -1;
 		seg_end = ph->vaddr + ph->memsz;
-		if (seg_end < ph->vaddr || seg_end > USEREND)
+		if (seg_end < ph->vaddr || seg_end > USERHEAP_TOP)
 			return -1;
 
 		perm = PTE_P;
@@ -171,7 +171,7 @@ static int exec_load_elf(pagetable_t pgdir, const char *blob, uint size,
 			brk = seg_end;
 	}
 
-	if (eh->entry < USERBASE || eh->entry >= USEREND)
+	if (eh->entry < USERBASE || eh->entry >= USERHEAP_TOP)
 		return -1;
 	*entry = eh->entry;
 	if (out_brk)
@@ -179,8 +179,26 @@ static int exec_load_elf(pagetable_t pgdir, const char *blob, uint size,
 	return 0;
 }
 
+static int exec_map_stack(pagetable_t pgdir)
+{
+	char *mem;
+	uint va;
+
+	for (va = USERSTACK_BOTTOM; va < USERSTACK; va += PGSIZE) {
+		mem = alloc_page();
+		if (mem == 0)
+			return -1;
+		memset(mem, 0, PGSIZE);
+		if (uvmmap(pgdir, va, (uint)mem, PGSIZE, PTE_W | PTE_P) < 0) {
+			free_page(mem);
+			return -1;
+		}
+	}
+	return 0;
+}
+
 /*
- * 在已映射的用户栈页上构造 Linux 风格初始栈。
+ * 在已映射的用户栈区上构造 Linux 风格初始栈。
  * argv/envp 为内核侧以 NULL 结尾的字符串表；argv 空则用 name 作 argv[0]。
  * 成功时 *out_esp 指向 argc，且 16 字节对齐。
  */
@@ -225,7 +243,7 @@ static int exec_stack_argv(pagetable_t pgdir, const char *name,
 	sp = USERSTACK;
 	for (i = 0; i < argc; i++) {
 		len = strlen_u(kargv[i]) + 1;
-		if (len > NNAME || sp < USERSTACK - PGSIZE + len)
+		if (len > NNAME || sp < USERSTACK_BOTTOM + len)
 			return -1;
 		sp -= len;
 		if (copyout(pgdir, sp, kargv[i], len) < 0)
@@ -236,7 +254,7 @@ static int exec_stack_argv(pagetable_t pgdir, const char *name,
 
 	for (i = 0; i < envc; i++) {
 		len = strlen_u(kenvp[i]) + 1;
-		if (len > NNAME || sp < USERSTACK - PGSIZE + len)
+		if (len > NNAME || sp < USERSTACK_BOTTOM + len)
 			return -1;
 		sp -= len;
 		if (copyout(pgdir, sp, kenvp[i], len) < 0)
@@ -253,10 +271,10 @@ static int exec_stack_argv(pagetable_t pgdir, const char *name,
 	 * TODO: 待消化
 	 */
 	tab = (1 + (uint)(argc + 1) + (uint)(envc + 1) + 2) * sizeof(uint);
-	if (sp < USERSTACK - PGSIZE + tab)
+	if (sp < USERSTACK_BOTTOM + tab)
 		return -1;
 	sp = (sp - tab) & ~0xf;
-	if (sp < USERSTACK - PGSIZE)
+	if (sp < USERSTACK_BOTTOM)
 		return -1;
 
 	argc_u = (uint)argc;
@@ -290,7 +308,6 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 	      const char *name, char *const *argv, char *const *envp)
 {
 	struct mm_struct *oldmm, *newmm;
-	void *ustack;
 	uint entry, esp, heap_end;
 
 	if (!p || !tf || !blob || size == 0 || size > EXEC_MAX_FILE || !name)
@@ -305,7 +322,7 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 		if (exec_load_elf(newmm->pgdir, blob, size, &entry, &heap_end) < 0)
 			goto bad;
 	} else {
-		if (size > USEREND - USERBASE)
+		if (size > USERHEAP_TOP - USERBASE)
 			goto bad;
 		if (loaduvm(newmm->pgdir, USERBASE, blob, size) < 0)
 			goto bad;
@@ -313,14 +330,8 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 		heap_end = USERBASE + size;
 	}
 
-	ustack = alloc_page();
-	if (ustack == 0)
+	if (exec_map_stack(newmm->pgdir) < 0)
 		goto bad;
-	if (uvmmap(newmm->pgdir, USERSTACK - PGSIZE, (uint)ustack, PGSIZE,
-		   PTE_W | PTE_P) < 0) {
-		free_page(ustack);
-		goto bad;
-	}
 
 	if (exec_stack_argv(newmm->pgdir, name, argv, envp, &esp) < 0)
 		goto bad;

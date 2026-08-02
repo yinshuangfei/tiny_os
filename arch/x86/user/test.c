@@ -483,6 +483,68 @@ void cow_fork_test(void)
 	syscall_pr_result("fork-cow", ok);
 }
 
+static int stack_bytes_ok(volatile char *buf, int base)
+{
+	int i;
+
+	for (i = 0; i < 3; i++) {
+		if (buf[i * 4096] != (char)(base + i))
+			return 0;
+		if (buf[i * 4096 + 127] != (char)(base + 0x20 + i))
+			return 0;
+	}
+	return 1;
+}
+
+/*
+ * 用户栈布局：至少要容纳多页本地变量，并在 fork 后保持父子隔离。
+ * 旧的单页栈会在这里很快暴露；新布局应允许跨 3 页读写。
+ */
+void stack_layout_test(void)
+{
+	volatile char buf[3 * 4096];
+	int pid, status, ok = 1;
+	int i;
+
+	for (i = 0; i < 3; i++) {
+		buf[i * 4096] = (char)(0x10 + i);
+		buf[i * 4096 + 127] = (char)(0x30 + i);
+	}
+	if (!stack_bytes_ok(buf, 0x10)) {
+		printf("stack-layout: parent stack touch failed\n");
+		common_pr_result("stack-layout", 0);
+		return;
+	}
+
+	pid = fork();
+	if (pid < 0) {
+		printf("stack-layout: fork failed\n");
+		common_pr_result("stack-layout", 0);
+		return;
+	}
+	if (pid == 0) {
+		if (!stack_bytes_ok(buf, 0x10))
+			exit(1);
+		for (i = 0; i < 3; i++) {
+			buf[i * 4096] = (char)(0x50 + i);
+			buf[i * 4096 + 127] = (char)(0x70 + i);
+		}
+		exit(stack_bytes_ok(buf, 0x50) ? 0 : 2);
+	}
+
+	if (waitpid(pid, &status, 0) != pid ||
+	    !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+		printf("stack-layout: child status bad=0x%x\n", status);
+		ok = 0;
+	}
+	if (!stack_bytes_ok(buf, 0x10)) {
+		printf("stack-layout: parent stack changed after fork\n");
+		ok = 0;
+	}
+
+	common_pr_result("stack-layout", ok);
+}
+
 /*
  * brk / sbrk：扩展堆、写入、再收缩；非法 brk 应保持原断点。
  */
@@ -1193,6 +1255,7 @@ int main(int argc, char *argv[], char *envp[])
 	rename_test();
 	wait_test();
 	cow_fork_test();
+	stack_layout_test();
 	brk_test();
 	mmap_test();
 	fpu_test();

@@ -904,7 +904,10 @@ int fork_copy(struct trapframe *tf)
 	if (uvmcopy(proc_pagetable(p), np->mm->pgdir, proc_task_size(p)) < 0)
 		goto bad;
 
+	np->mm->user_base = p->mm->user_base;
 	np->mm->task_size = proc_task_size(p);
+	np->mm->mmap_base = p->mm->mmap_base;
+	np->mm->stack_top = p->mm->stack_top;
 	np->mm->brk = proc_brk(p);
 	np->mm->brk_start = proc_brk_start(p);
 	vma_copy(np, p);

@@ -29,14 +29,21 @@
  * 用户虚拟地址空间（独立页表，避免与内核恒等映射共用二级页表）：
  * 须位于恒等映射 RAM 之上，否则大内存时 mem_map/buddy 物理地址会落入
  * 用户 VA 窗口，用户页表故意跳过该 PDE 后内核路径会缺页。
- * USERBASE      用户代码起始
- * USERSTACK     用户栈顶（栈向下增长，映射 [USERSTACK-PGSIZE, USERSTACK)）
+ * USERBASE          用户代码起始
+ * USEREND           用户空间上界（开区间）
+ * USERSTACK         用户栈顶（栈向下增长）
+ * USERSTACK_BOTTOM  预映射用户栈底
+ * USERHEAP_TOP      heap/mmap 可用上界（为栈和 guard 留空）
  */
-#define USERBASE     0xC0000000
-#define USERSTACK    0xC0400000
-#define USEREND      0xC0400000	/* [USERBASE, USEREND) 为用户独占 VA */
-/* 堆向上增长，不得进入栈页 [USERSTACK-PGSIZE, USERSTACK) */
-#define USERHEAP_TOP (USERSTACK - PGSIZE)
+#define USERBASE            0xC0000000u
+#define USEREND             0xD0000000u	/* 256 MiB 用户窗口 */
+#define USERSTACK           USEREND
+#define USER_STACK_PAGES    16u		/* 64 KiB 用户栈 */
+#define USER_STACK_SIZE     (USER_STACK_PAGES * PGSIZE)
+#define USER_STACK_GUARD    (16u * PGSIZE)
+#define USERSTACK_BOTTOM    (USERSTACK - USER_STACK_SIZE)
+/* 堆向上增长，mmap 自高向低，均不得进入 guard/stack 区 */
+#define USERHEAP_TOP        (USERSTACK_BOTTOM - USER_STACK_GUARD)
 
 #define KSTACKSIZE   PGSIZE	/* 内核主栈 / 中断栈大小 */
 /*

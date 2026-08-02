@@ -136,8 +136,8 @@ static int proc_pid_maps(struct proc_snap *s, char *buf, uint size)
 			return (int)len;
 	}
 
-	/* 用户栈：单页 [USERSTACK-PGSIZE, USERSTACK) */
-	if (maps_line(buf, size, &len, USERSTACK - PGSIZE, USERSTACK,
+	/* 用户栈：[USERSTACK_BOTTOM, USERSTACK) */
+	if (maps_line(buf, size, &len, USERSTACK_BOTTOM, USERSTACK,
 		      PROT_READ | PROT_WRITE, "[stack]") < 0)
 		return (int)len;
 

@@ -185,7 +185,7 @@ static int signal_setup_frame(struct proc *p, struct trapframe *tf, int sig,
 		return -1;
 
 	sp = tf->esp;
-	if (sp < USERBASE + 64 || sp >= USERSTACK)
+	if (sp < USERSTACK_BOTTOM + 64 || sp >= USERSTACK)
 		return -1;
 	if (handler < USERBASE || handler >= USEREND)
 		return -1;

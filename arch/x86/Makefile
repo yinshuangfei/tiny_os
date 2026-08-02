@@ -61,6 +61,9 @@ QEMUOPTS += -device ide-hd,drive=hd5,bus=ide1b.0,unit=0
 CFLAGS := -m32 -ffreestanding -fno-pic -fno-stack-protector -nostdlib -Wall
 CFLAGS += -fno-asynchronous-unwind-tables -fno-unwind-tables
 CFLAGS += -DNR_CPUS=$(NR_CPUS)
+# -MMD：生成 .o 的同时，自动分析 #include 语句，并生成一个同名的依赖文件 .d
+# -MP：为每个依赖文件预先生成一个占位符目标，避免重复扫描
+CFLAGS += -MMD -MP
 USER_CFLAGS := $(CFLAGS) -I$(USERDIR)/include -ffreestanding -fno-builtin
 
 # 用户程序产物（须在 hd.img 规则之前定义，否则依赖展开为空）
@@ -210,6 +213,10 @@ AS_OBJS = \
 	$(KDIR)/trampoline.o \
 
 OBJS = $(C_OBJS) $(AS_OBJS)
+USER_BUILD_OBJS = $(sort $(INITCODE_OBJS) $(SH_OBJS) $(TEST_OBJS) $(FREE_OBJS))
+DEPFILES = $(C_OBJS:.o=.d) $(filter-out $(USERDIR)/lib/start.d,$(USER_BUILD_OBJS:.o=.d))
+
+-include $(DEPFILES)
 
 # 用户程序：user.ld 连续布局（含 .bss）；objcopy 将 .bss 标成可装载并填 0
 $(INITCODE_BIN): $(INITCODE_OBJS) $(USERDIR)/user.ld
@@ -338,4 +345,4 @@ clean:
 	$(USERDIR)/lib/*.o \
 	e2e_test/last_dual_mount.log \
 	e2e_test/last_proc_getcwd.log \
-	$(OBJS)
+	$(OBJS) $(DEPFILES)
