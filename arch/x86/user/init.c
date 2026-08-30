@@ -4,7 +4,7 @@
  *   - fork 子进程干活
  *   - waitpid 收僵尸
  * 孤儿进程由内核 reparent 到本进程。
- * 链接地址须与 memlayout.h 中 USERBASE 一致。
+ * 链接地址须与 memlayout.h 中 USERLOAD 一致。
  */
 #include "user.h"
 

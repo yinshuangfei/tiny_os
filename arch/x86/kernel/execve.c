@@ -1,6 +1,6 @@
 /*
  * execve：将当前进程映像替换为用户程序。
- * 支持 ELF32（i386 ET_EXEC）与 flat binary（入口 USERBASE）。
+ * 支持 ELF32（i386 ET_EXEC）与 flat binary（入口 USERLOAD）。
  *
  * 用户栈布局对齐 Linux i386 / SysV ABI（create_elf_tables）：
  *   高址 │ 字符串（argv / envp）
@@ -35,7 +35,7 @@ extern char sh[];
 extern char sh_end[];
 
 /* 可执行文件读入上限（限制在 text/data/heap 区，不侵入高端栈区域） */
-#define EXEC_MAX_FILE (USERHEAP_TOP - USERBASE)
+#define EXEC_MAX_FILE (USERHEAP_TOP - USERLOAD)
 
 struct userbin {
 	const char *name;
@@ -140,7 +140,7 @@ static int exec_load_elf(pagetable_t pgdir, const char *blob, uint size,
 	if (eh->phoff >= size || ph_end > size || ph_end < eh->phoff)
 		return -1;
 
-	brk = USERBASE;
+	brk = USERLOAD;
 	ph = (const struct proghdr *)(blob + eh->phoff);
 	for (i = 0; i < eh->phnum; i++, ph++) {
 		uint seg_end;
@@ -153,7 +153,7 @@ static int exec_load_elf(pagetable_t pgdir, const char *blob, uint size,
 			return -1;
 		if (ph->off > size || ph->filesz > size - ph->off)
 			return -1;
-		if (ph->vaddr < USERBASE)
+		if (ph->vaddr < USERLOAD)
 			return -1;
 		seg_end = ph->vaddr + ph->memsz;
 		if (seg_end < ph->vaddr || seg_end > USERHEAP_TOP)
@@ -171,7 +171,7 @@ static int exec_load_elf(pagetable_t pgdir, const char *blob, uint size,
 			brk = seg_end;
 	}
 
-	if (eh->entry < USERBASE || eh->entry >= USERHEAP_TOP)
+	if (eh->entry < USERLOAD || eh->entry >= USERHEAP_TOP)
 		return -1;
 	*entry = eh->entry;
 	if (out_brk)
@@ -189,7 +189,7 @@ static int exec_map_stack(pagetable_t pgdir)
 		if (mem == 0)
 			return -1;
 		memset(mem, 0, PGSIZE);
-		if (uvmmap(pgdir, va, (uint)mem, PGSIZE, PTE_W | PTE_P) < 0) {
+		if (uvmmap(pgdir, va, V2P((uint)mem), PGSIZE, PTE_W | PTE_P) < 0) {
 			free_page(mem);
 			return -1;
 		}
@@ -317,17 +317,17 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 	if (newmm == 0)
 		return -1;
 
-	heap_end = USERBASE;
+	heap_end = USERLOAD;
 	if (is_elf(blob, size)) {
 		if (exec_load_elf(newmm->pgdir, blob, size, &entry, &heap_end) < 0)
 			goto bad;
 	} else {
-		if (size > USERHEAP_TOP - USERBASE)
+		if (size > USERHEAP_TOP - USERLOAD)
 			goto bad;
-		if (loaduvm(newmm->pgdir, USERBASE, blob, size) < 0)
+		if (loaduvm(newmm->pgdir, USERLOAD, blob, size) < 0)
 			goto bad;
-		entry = USERBASE;
-		heap_end = USERBASE + size;
+		entry = USERLOAD;
+		heap_end = USERLOAD + size;
 	}
 
 	if (exec_map_stack(newmm->pgdir) < 0)
@@ -341,10 +341,10 @@ int exec_load(struct proc *p, struct trapframe *tf, const void *blob, uint size,
 
 	oldmm = p->mm;
 	p->mm = newmm;
-	newmm->task_size = USERSTACK;
+	newmm->task_size = USEREND;
 	/* 程序断点：数据段末；堆向 USERHEAP_TOP 增长 */
-	if (heap_end < USERBASE)
-		heap_end = USERBASE;
+	if (heap_end < USERLOAD)
+		heap_end = USERLOAD;
 	if (heap_end > USERHEAP_TOP)
 		heap_end = USERHEAP_TOP;
 	newmm->brk = heap_end;

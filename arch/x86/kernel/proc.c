@@ -28,17 +28,19 @@ struct proc *initproc;
 /* kthreadd 进程 */
 struct proc *kthreadd_task;
 
-/* trap 路径在返回 ring3 前据此恢复用户 CR3 */
+/* trap 路径在返回 ring3 前据此恢复用户 CR3（保存物理地址） */
 pagetable_t cpu_user_pgdir[NR_CPUS];
 
 pagetable_t get_user_pgdir(void)
 {
-	return cpu_user_pgdir[cpu_id()];
+	pagetable_t pgdir = cpu_user_pgdir[cpu_id()];
+
+	return pgdir ? (pagetable_t)P2V((uint)pgdir) : 0;
 }
 
 void set_user_pgdir(pagetable_t pgdir)
 {
-	cpu_user_pgdir[cpu_id()] = pgdir;
+	cpu_user_pgdir[cpu_id()] = pgdir ? (pagetable_t)V2P((uint)pgdir) : 0;
 }
 
 /* 进程表锁 */
@@ -381,7 +383,7 @@ void user_enter_ring3(struct proc *p)
 	printk(KERN_DEBUG "user_start: pid=%d eip=0x%x esp=0x%x pgdir=%p\n",
 	       p->pid, p->kframe->eip, p->kframe->esp, pgdir);
 
-	user_enter(p->kframe, pgdir);
+	user_enter(p->kframe, (pagetable_t)V2P((uint)pgdir));
 }
 
 static void user_start_trampoline(void)

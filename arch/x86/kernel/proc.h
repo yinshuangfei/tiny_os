@@ -144,14 +144,19 @@ static inline uint proc_task_size(const struct proc *p)
 	return (p && p->mm) ? p->mm->task_size : 0;
 }
 
+static inline uint proc_user_base(const struct proc *p)
+{
+	return (p && p->mm) ? p->mm->user_base : USERLOAD;
+}
+
 static inline uint proc_brk(const struct proc *p)
 {
-	return (p && p->mm) ? p->mm->brk : USERBASE;
+	return (p && p->mm) ? p->mm->brk : USERLOAD;
 }
 
 static inline uint proc_brk_start(const struct proc *p)
 {
-	return (p && p->mm) ? p->mm->brk_start : USERBASE;
+	return (p && p->mm) ? p->mm->brk_start : USERLOAD;
 }
 
 static inline struct vma *proc_vmas(struct proc *p)

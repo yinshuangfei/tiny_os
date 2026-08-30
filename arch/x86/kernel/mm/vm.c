@@ -18,6 +18,22 @@
 
 /* 内核页目录, 所有内核线程共享。和 Linux 一样：内核页表是全局共用的 */
 pagetable_t kernel_pgdir;
+uint kernel_cr3;
+
+static inline uint pgdir_phys(pagetable_t pgdir)
+{
+	return pgdir ? V2P((uint)pgdir) : 0;
+}
+
+static inline pagetable_t pde_pt_kva(pde_t pde)
+{
+	return (pagetable_t)P2V(PTE_ADDR(pde));
+}
+
+static inline void *pte_page_kva(pte_t pte)
+{
+	return (void *)P2V(PTE_ADDR(pte));
+}
 
 /* -------------------------------------------------------------------------- */
 /* 页表遍历与映射（内核 / 用户页表共用）                                         */
@@ -33,7 +49,7 @@ static pte_t *walk(pagetable_t pgdir, uint va, int alloc, int user)
 	pagetable_t pt;
 
 	if (*pde & PTE_P) {
-		pt = (pagetable_t)PTE_ADDR(*pde);
+		pt = pde_pt_kva(*pde);
 	} else {
 		if (!alloc)
 			return 0;
@@ -45,9 +61,9 @@ static pte_t *walk(pagetable_t pgdir, uint va, int alloc, int user)
 		 * 都会 #PF（err 常见为 0x5 保护违规）。
 		 */
 		if (user)
-			*pde = PA2PTE((uint)pt) | PTE_P | PTE_W | PTE_U;
+			*pde = PA2PTE(V2P((uint)pt)) | PTE_P | PTE_W | PTE_U;
 		else
-			*pde = PA2PTE((uint)pt) | PTE_P | PTE_W;
+			*pde = PA2PTE(V2P((uint)pt)) | PTE_P | PTE_W;
 	}
 	return &pt[PTX(va)];
 }
@@ -113,7 +129,7 @@ static int unmappages(pagetable_t pgdir, uint va, uint npages, int do_free,
 			return -1;
 		}
 		if (do_free)
-			put_page((void *)PTE_ADDR(*pte));
+			put_page(pte_page_kva(*pte));
 		*pte = 0;
 	}
 	return 0;
@@ -122,8 +138,8 @@ static int unmappages(pagetable_t pgdir, uint va, uint npages, int do_free,
 /* 仅当 pgdir 为当前 CR3 时刷新 TLB（用户页表卸载场景） */
 static void tlb_flush_if_active(pagetable_t pgdir)
 {
-	if (r_cr3() == (uint)pgdir)
-		w_cr3((uint)pgdir);
+	if (r_cr3() == pgdir_phys(pgdir))
+		w_cr3(pgdir_phys(pgdir));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -146,7 +162,7 @@ void kvmunmap(uint va, uint size)
 		panic("kvmunmap");
 
 	/** 刷新 TLB */
-	w_cr3((uint)kernel_pgdir);
+	w_cr3(kernel_cr3);
 }
 
 /* 不保证物理连续，可能返回物理上不连续的内存 */
@@ -169,8 +185,9 @@ static void kvminit_map(void)
 	kernel_pgdir = boot_pgdir;
 	memset(kernel_pgdir, 0, PGSIZE);
 
-	/** 分页机制开启，所有物理地址都恒等映射到内核虚拟地址空间 */
-	kvmmap(0, 0, physmem_top, PTE_W);
+	kvmmap(0, 0, KERNEL_BOOT_IDMAP_END, PTE_W);
+	kvmmap(KERNBASE, 0, physmem_top, PTE_W);
+	kernel_cr3 = pgdir_phys(kernel_pgdir);
 }
 
 /**
@@ -183,7 +200,7 @@ void kvm_init(void)
 	kvminit_map();
 
 	/* CPU 在写入 CR3 时，会自动刷新整个 TLB，使旧的虚拟到物理的映射失效 */
-	w_cr3((uint)kernel_pgdir);
+	w_cr3(kernel_cr3);
 	w_cr0(r_cr0() | CR0_PG);
 	printk(KERN_INFO "vm: operating system paging enabled, kernel pgdir: %p\n", kernel_pgdir);
 
@@ -205,12 +222,12 @@ struct mm_struct *mm_create(void)
 	if (!mm)
 		return 0;
 	initlock(&mm->lock, "mm");
-	mm->user_base = USERBASE;
-	mm->task_size = USERSTACK;
+	mm->user_base = USERLOAD;
+	mm->task_size = USEREND;
 	mm->mmap_base = USERHEAP_TOP;
 	mm->stack_top = USERSTACK;
-	mm->brk = USERBASE;
-	mm->brk_start = USERBASE;
+	mm->brk = USERLOAD;
+	mm->brk_start = USERLOAD;
 	mm->pgdir = uvmcreate();
 	if (!mm->pgdir) {
 		kfree(mm);
@@ -241,15 +258,7 @@ pagetable_t uvmcreate(void)
 	/*
 	 * 继承内核页目录项，使 trap 时 ISR 仍可执行
 	 */
-	for (i = 0; i < MAX_KERNEL_PT; i++) {
-		uint va = (uint)i << 22;
-
-		/* 跳过 [USERBASE, USEREND) 所在 PDE，避免与 uvmmap 的用户页共用
-		 * 二级页表 */
-		if (va >= USERBASE && va < USEREND)
-			continue;
-
-		/* 继承内核页目录项 */
+	for (i = PDX(KERNBASE); i < MAX_KERNEL_PT; i++) {
 		if (kernel_pgdir[i] & PTE_P)
 			pgdir[i] = kernel_pgdir[i];
 	}
@@ -266,11 +275,7 @@ void uvmcopy_kernel(pagetable_t pgdir)
 
 	if (pgdir == 0)
 		return;
-	for (i = 0; i < MAX_KERNEL_PT; i++) {
-		uint va = (uint)i << 22;
-
-		if (va >= USERBASE && va < USEREND)
-			continue;
+	for (i = PDX(KERNBASE); i < MAX_KERNEL_PT; i++) {
 		if (kernel_pgdir[i] & PTE_P)
 			pgdir[i] = kernel_pgdir[i];
 	}
@@ -284,33 +289,44 @@ void uvmcopy_kernel(pagetable_t pgdir)
  */
 int uvmcopy(pagetable_t old, pagetable_t new, uint sz)
 {
+	pagetable_t oldpt;
 	pte_t *pte;
-	uint va, pa;
+	uint i, j, va, pa;
 	int perm;
 
-	if (old == 0 || new == 0 || sz < USERBASE)
+	if (old == 0 || new == 0 || sz == 0)
 		return -1;
 	if (sz > USEREND)
 		sz = USEREND;
+	if (sz <= USERBASE)
+		return 0;
 
-	for (va = USERBASE; va < sz; va += PGSIZE) {
-		pte = walk(old, va, 0, 0);
-		if (pte == 0 || !(*pte & PTE_P))
+	for (i = PDX(USERBASE); i <= PDX(sz - 1); i++) {
+		if (!(old[i] & PTE_P) || !(old[i] & PTE_U))
 			continue;
-		pa = PTE_ADDR(*pte);
-		get_page((void *)pa);
+		oldpt = pde_pt_kva(old[i]);
+		for (j = 0; j < 1024; j++) {
+			va = (i << 22) | (j << 12);
+			if (va >= sz)
+				break;
+			pte = &oldpt[j];
+			if (!(*pte & PTE_P))
+				continue;
+			pa = PTE_ADDR(*pte);
+			get_page((void *)P2V(pa));
 
-		if ((*pte & PTE_W) || (*pte & PTE_COW)) {
-			/* 可写或已 COW：双方只读 + COW */
-			*pte = (*pte | PTE_COW) & ~PTE_W;
-			perm = PTE_U | PTE_P | PTE_COW;
-		} else {
-			/* 只读代码页等：共享且保持只读 */
-			perm = PTE_U | PTE_P;
-		}
-		if (uvmmap(new, va, pa, PGSIZE, perm) < 0) {
-			put_page((void *)pa);
-			return -1;
+			if ((*pte & PTE_W) || (*pte & PTE_COW)) {
+				/* 可写或已 COW：双方只读 + COW */
+				*pte = (*pte | PTE_COW) & ~PTE_W;
+				perm = PTE_U | PTE_P | PTE_COW;
+			} else {
+				/* 只读代码页等：共享且保持只读 */
+				perm = PTE_U | PTE_P;
+			}
+			if (uvmmap(new, va, pa, PGSIZE, perm) < 0) {
+				put_page((void *)P2V(pa));
+				return -1;
+			}
 		}
 	}
 	tlb_flush_if_active(old);
@@ -337,7 +353,7 @@ int uvm_cow_fault(pagetable_t pgdir, uint va)
 		return -1;
 
 	pa = PTE_ADDR(*pte);
-	if (page_refcount((void *)pa) == 1) {
+	if (page_refcount((void *)P2V(pa)) == 1) {
 		*pte = (*pte | PTE_W) & ~PTE_COW;
 		tlb_flush_if_active(pgdir);
 		return 0;
@@ -347,10 +363,10 @@ int uvm_cow_fault(pagetable_t pgdir, uint va)
 	if (mem == 0)
 		return -1;
 	for (i = 0; i < PGSIZE; i++)
-		mem[i] = ((char *)pa)[i];
+		mem[i] = ((char *)P2V(pa))[i];
 
-	put_page((void *)pa);
-	*pte = PA2PTE((uint)mem) | PTE_P | PTE_U | PTE_W;
+	put_page((void *)P2V(pa));
+	*pte = PA2PTE(V2P((uint)mem)) | PTE_P | PTE_U | PTE_W;
 	tlb_flush_if_active(pgdir);
 	return 0;
 }
@@ -403,7 +419,7 @@ int uvm_demand_fault(struct proc *p, uint va, int write)
 		return -1;
 
 	page = PGROUNDDOWN(va);
-	if (page < USERBASE || page >= USEREND)
+	if (page < proc_user_base(p) || page >= USEREND)
 		return -1;
 
 	/* 已映射则无需再填（竞态下幂等） */
@@ -431,7 +447,7 @@ int uvm_demand_fault(struct proc *p, uint va, int write)
 	if (mem == 0)
 		return -1;
 	memset(mem, 0, PGSIZE);
-	if (uvmmap(pgdir, page, (uint)mem, PGSIZE, perm) < 0) {
+	if (uvmmap(pgdir, page, V2P((uint)mem), PGSIZE, perm) < 0) {
 		free_page(mem);
 		return -1;
 	}
@@ -495,7 +511,7 @@ int uvminit(pagetable_t pgdir, uint va, const void *src, uint sz)
 	memset(mem, 0, PGSIZE);
 	for (i = 0; i < sz; i++)
 		mem[i] = ((const char *)src)[i];
-	if (uvmmap(pgdir, va, (uint)mem, PGSIZE, PTE_P) < 0) {
+	if (uvmmap(pgdir, va, V2P((uint)mem), PGSIZE, PTE_P) < 0) {
 		free_page(mem);
 		return -1;
 	}
@@ -503,7 +519,7 @@ int uvminit(pagetable_t pgdir, uint va, const void *src, uint sz)
 }
 
 /*
- * 返回 va 对应用户页的物理/线性地址（含页内偏移）；须 PTE_P 且 PTE_U。
+ * 返回 va 对应用户页的内核可访问地址（含页内偏移）；须 PTE_P 且 PTE_U。
  */
 uint walkaddr(pagetable_t pgdir, uint va)
 {
@@ -514,7 +530,7 @@ uint walkaddr(pagetable_t pgdir, uint va)
 	pte = walk(pgdir, va, 0, 0);
 	if (pte == 0 || !(*pte & PTE_P) || !(*pte & PTE_U))
 		return 0;
-	return PTE_ADDR(*pte) | (va & (PGSIZE - 1));
+	return P2V(PTE_ADDR(*pte)) | (va & (PGSIZE - 1));
 }
 
 /*
@@ -594,7 +610,7 @@ int loaduvm(pagetable_t pgdir, uint va, const void *src, uint sz)
 
 	if (pgdir == 0 || src == 0 || sz == 0 || (va % PGSIZE) != 0)
 		return -1;
-	if (va < USERBASE || va + sz > USEREND)
+	if (va < USERLOAD || va + sz > USEREND)
 		return -1;
 
 	for (off = 0; off < sz; off += PGSIZE) {
@@ -608,7 +624,7 @@ int loaduvm(pagetable_t pgdir, uint va, const void *src, uint sz)
 		for (a = 0; a < n; a++)
 			mem[a] = ((const char *)src + off)[a];
 		a = va + off;
-		if (uvmmap(pgdir, a, (uint)mem, PGSIZE, PTE_P | PTE_W) < 0) {
+		if (uvmmap(pgdir, a, V2P((uint)mem), PGSIZE, PTE_P | PTE_W) < 0) {
 			free_page(mem);
 			return -1;
 		}
@@ -632,7 +648,7 @@ int loaduvm_seg(pagetable_t pgdir, uint va, const void *src, uint filesz,
 		return -1;
 	if (memsz == 0)
 		return 0;
-	if (va < USERBASE || va + memsz > USEREND)
+	if (va < USERLOAD || va + memsz > USEREND)
 		return -1;
 
 	end = va + memsz;
@@ -647,12 +663,12 @@ int loaduvm_seg(pagetable_t pgdir, uint va, const void *src, uint filesz,
 			if (mem == 0)
 				return -1;
 			memset(mem, 0, PGSIZE);
-			if (uvmmap(pgdir, i, (uint)mem, PGSIZE, perm) < 0) {
+			if (uvmmap(pgdir, i, V2P((uint)mem), PGSIZE, perm) < 0) {
 				free_page(mem);
 				return -1;
 			}
 		} else {
-			mem = (char *)PTE_ADDR(pa);
+			mem = (char *)PGROUNDDOWN(pa);
 		}
 
 		/* 本页与文件映像 [va, file_end) 的交集 */
@@ -672,25 +688,25 @@ int loaduvm_seg(pagetable_t pgdir, uint va, const void *src, uint filesz,
  */
 void uvmfree(pagetable_t pgdir)
 {
-	uint va;
 	pte_t *pte;
 	int i;
 
 	if (pgdir == 0)
 		return;
 
-	for (va = USERBASE; va < USEREND; va += PGSIZE) {
-		pte = walk(pgdir, va, 0, 0);
-		if (pte == 0)
-			continue;
-		if (*pte & PTE_P) {
-			put_page((void *)PTE_ADDR(*pte));
-			*pte = 0;
-		}
-	}
 	for (i = PDX(USERBASE); i <= PDX(USEREND - 1); i++) {
 		if (pgdir[i] & PTE_P && (pgdir[i] & PTE_U)) {
-			free_page((void *)PTE_ADDR(pgdir[i]));
+			pagetable_t pt = pde_pt_kva(pgdir[i]);
+			int j;
+
+			for (j = 0; j < 1024; j++) {
+				pte = &pt[j];
+				if (!(*pte & PTE_P))
+					continue;
+				put_page(pte_page_kva(*pte));
+				*pte = 0;
+			}
+			free_page(pt);
 			pgdir[i] = 0;
 		}
 	}

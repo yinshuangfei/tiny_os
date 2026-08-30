@@ -1,30 +1,47 @@
-/* QEMU -kernel 直接加载（K=1），内核链接并运行在 0x100000 */
-LOAD_BASE = 0x100000;
+/* 高半区内核：低地址 bootstrap @ 1 MiB，主映像链接到 0xC0100000 */
+LOAD_BASE = 0x00100000;
+KERNEL_HIGH_LOAD_PA = 0x00102000;
+KERNBASE = 0xC0000000;
+KERNLINK = KERNBASE + KERNEL_HIGH_LOAD_PA;
 
 SECTIONS
 {
 	. = LOAD_BASE;
 
-	.text : {
+	.text.boot : AT(LOAD_BASE) {
+		*(.text.boot)
+	}
+
+	. = ALIGN(4096);
+
+	.data.boot : {
+		*(.data.boot)
+	}
+
+	. = KERNLINK;
+
+	.text : AT(ADDR(.text) - KERNBASE) {
 		*(.text*)
 	}
 
-	.rodata : {
+	.rodata : AT(ADDR(.rodata) - KERNBASE) {
 		*(.rodata*)
 	}
 
-	.data : {
+	.data : AT(ADDR(.data) - KERNBASE) {
 		*(.data*)
 		edata = .;
 	}
 
-	.bss : {
+	.bss : AT(ADDR(.bss) - KERNBASE) {
 		*(.bss*)
 		*(COMMON)
 		end = .;
 	}
 
-	.note : ALIGN(4) {
+	. = ALIGN(4);
+
+	.note : AT(ADDR(.note) - KERNBASE) {
 		*(.note*)
 	}
 

@@ -313,8 +313,12 @@ setup.bin: $(BOOTDIR)/setup.o $(KDIR)/setup.ld
 kernel_body.elf: $(BOOTDIR)/entry_bin.o $(OBJS) $(KDIR)/kernel.ld
 	@$(LD) -m elf_i386 -T $(KDIR)/kernel.ld -e _start -o $@ $(BOOTDIR)/entry_bin.o $(OBJS)
 
+# 须含 .text.boot/.data.boot：高半区下 _start 与 entry_pgdir 在低端 LMA；
+# 若只抽 .text，flat binary 会从 0x102000 的高半区代码起，K=0 跳 0x100000 即崩。
 kernel.bin: setup.bin kernel_body.elf
-	@$(OBJCOPY) -O binary -j .text -j .rodata -j .data kernel_body.elf kernel_body.bin
+	@$(OBJCOPY) -O binary \
+		-j .text.boot -j .data.boot -j .text -j .rodata -j .data \
+		kernel_body.elf kernel_body.bin
 	@cat setup.bin kernel_body.bin > $@
 
 boot.img: $(BOOTDIR)/boot.bin kernel.bin

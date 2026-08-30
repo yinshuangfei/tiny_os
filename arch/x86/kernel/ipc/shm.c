@@ -25,7 +25,7 @@ struct shm_seg {
 	int key;		/* 共享内存的键值 */
 	uint size;		/* 页对齐后长度 */
 	uint npages;		/* 页数 */
-	void *pages[SHM_MAX_PAGES];	/* 物理页指针数组 */
+	void *pages[SHM_MAX_PAGES];	/* 物理页的内核虚拟地址（alloc_page） */
 	int nattch;		/* 挂载次数 */
 	int dest;		/* destroy 标记 */
 };
@@ -95,7 +95,7 @@ static int shm_map_range(struct proc *p, struct vma *v, struct shm_seg *s)
 		if (walkaddr(pgdir, va) != 0)
 			(void)uvmunmap(pgdir, va, 1, 1);
 		get_page(s->pages[i]);
-		if (uvmmap(pgdir, va, (uint)s->pages[i], PGSIZE, perm) < 0) {
+		if (uvmmap(pgdir, va, V2P((uint)s->pages[i]), PGSIZE, perm) < 0) {
 			put_page(s->pages[i]);
 			return -1;
 		}
@@ -428,7 +428,7 @@ int shm_demand_fault(struct proc *p, struct vma *v, uint page, int write)
 	if (v->prot & PROT_WRITE)
 		perm |= PTE_W;
 	get_page(s->pages[idx]);
-	if (uvmmap(proc_pagetable(p), page, (uint)s->pages[idx], PGSIZE, perm) < 0) {
+	if (uvmmap(proc_pagetable(p), page, V2P((uint)s->pages[idx]), PGSIZE, perm) < 0) {
 		put_page(s->pages[idx]);
 		release(&shm_lock);
 		return -1;

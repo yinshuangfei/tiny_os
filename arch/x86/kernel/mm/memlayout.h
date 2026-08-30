@@ -1,10 +1,14 @@
 /**
- * x86 物理内存布局
+ * x86 32 位地址空间布局（Linux 风格 3G/1G split）
  *
- * 0x00000000 - 0x000fffff : 低端内存（BIOS、MMIO）
- * 0x00080000              : 保留低端区域（历史 boot 栈地址，已迁至 BSS）
- * 0x00100000              : 内核加载地址（KERNBASE）
- * physmem_top             : 运行时探测的 RAM 上界（页对齐，受 PHYSMEM_TOP_MAX 约束）
+ * 虚拟地址：
+ *   0x00000000 - 0xBFFFFFFF : 用户空间
+ *   0xC0000000 - 0xFFFFFFFF : 内核空间
+ *
+ * 物理地址：
+ *   0x00000000 - 0x000FFFFF : 低端内存（BIOS、VGA、trampoline 等）
+ *   0x00100000              : 内核物理加载地址
+ *   physmem_top             : 运行时探测的 RAM 上界（页对齐，受 PHYSMEM_TOP_MAX 约束）
  */
 
 #define PGSIZE     4096
@@ -23,20 +27,34 @@
 /* 内核页目录项数（4KB 页、非 PAE：覆盖完整 4GiB VA） */
 #define MAX_KERNEL_PT  1024
 
-#define KERNBASE   0x00100000
+#define KERNEL_LOAD_PA       0x00100000u
+#define KERNEL_HIGH_LOAD_PA  0x00102000u
+#define KERNBASE             0xC0000000u
+#define KERNLINK             (KERNBASE + KERNEL_HIGH_LOAD_PA)
 
 /*
- * 用户虚拟地址空间（独立页表，避免与内核恒等映射共用二级页表）：
- * 须位于恒等映射 RAM 之上，否则大内存时 mem_map/buddy 物理地址会落入
- * 用户 VA 窗口，用户页表故意跳过该 PDE 后内核路径会缺页。
- * USERBASE          用户代码起始
- * USEREND           用户空间上界（开区间）
+ * 低端恒等映射窗口：
+ * 仅供 BSP/AP 早期启动、BIOS warm-reset 向量、VGA 文本显存等使用。
+ * 该恒等映射保留在 kernel_pgdir 中，但不会复制到用户页表。
+ */
+#define KERNEL_BOOT_IDMAP_END 0x00400000u
+
+/* 低端 RAM 的内核 direct-map：kva = pa + KERNBASE */
+#define P2V(pa)              ((uint)(pa) + KERNBASE)
+#define V2P(va)              ((uint)(va) - KERNBASE)
+
+/*
+ * 用户虚拟地址空间：
+ * USERBASE          用户地址空间下界
+ * USERLOAD          用户程序默认装载基址（保留低页，避免 NULL 附近映射）
+ * USEREND           用户空间上界（开区间）/ 内核起始
  * USERSTACK         用户栈顶（栈向下增长）
  * USERSTACK_BOTTOM  预映射用户栈底
  * USERHEAP_TOP      heap/mmap 可用上界（为栈和 guard 留空）
  */
-#define USERBASE            0xC0000000u
-#define USEREND             0xD0000000u	/* 256 MiB 用户窗口 */
+#define USERBASE            0x00000000u
+#define USERLOAD            0x00400000u
+#define USEREND             KERNBASE
 #define USERSTACK           USEREND
 #define USER_STACK_PAGES    16u		/* 64 KiB 用户栈 */
 #define USER_STACK_SIZE     (USER_STACK_PAGES * PGSIZE)
@@ -81,11 +99,12 @@ void trapstack_init(void);
 #define INTERRUPT_STACK_TOP (interrupt_stacks[0] + KSTACKSIZE)
 
 /*
- * 非 PAE 内核恒等映射下，物理 RAM 可管理上界（页对齐）。
- * 映射区间为 [0, physmem_top)，须 ≤ USERBASE，以免与用户 VA 重叠。
+ * 非 PAE + 3G/1G split 下，低端 RAM 的可 direct-map 上界（页对齐）。
+ * 这里保留最高 128 MiB 给高端 MMIO / 固定内核映射窗口，等价于 Linux
+ * 传统 896 MiB lowmem 的教学缩略版。
  * 实际大小由 mem_probe() 按机器/QEMU -m 探测。
  */
-#define PHYSMEM_TOP_MAX  USERBASE
+#define PHYSMEM_TOP_MAX      0x38000000u
 
 /** setup.S（E820）与内核共享的引导信息块 */
 #define BOOT_INFO        0x5000

@@ -39,6 +39,7 @@ struct proc_snap {
 	int state;			/* 状态 */
 	char name[NNAME];		/* 进程名称 */
 	uint sz;			/* 进程大小 */
+	uint user_base;			/* 用户映像起始 */
 	uint brk;			/* 堆大小 */
 	uint brk_start;
 	uint vmsize_kb;		/* 虚拟地址空间约数（类 VmSize） */

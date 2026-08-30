@@ -37,6 +37,11 @@ void main(void)
 	kbd_init();
 	/* 初始化物理页分配器 */
 	pmm_init();
+	/*
+	 * 先建立完整的高半区内核 direct-map，再初始化会大量申请
+	 * 内核堆对象的子系统。bootstrap 页表只覆盖低端窗口。
+	 */
+	kvm_init();
 	/* 内核小对象堆（PCB 等动态结构） */
 	kmem_init();
 	/*
@@ -48,8 +53,6 @@ void main(void)
 	driver_core_init();
 	/* /dev/console → CONSOLE_MAJOR（须在 chrdev_init 之后） */
 	console_register_device();
-	/* 初始化页表并开启分页 */
-	kvm_init();
 	/* Local APIC + IOAPIC（失败则继续用 8259） */
 	apic_init();
 	/* 初始化进程表 */

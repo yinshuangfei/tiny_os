@@ -108,12 +108,12 @@ static int proc_pid_maps(struct proc_snap *s, char *buf, uint size)
 	int i;
 	int heap_prot = PROT_READ | PROT_WRITE;
 
-	if (!s->has_user_mm && s->brk <= USERBASE)
+	if (!s->has_user_mm && s->brk <= s->user_base)
 		return 0;
 
-	/* [USERBASE, brk_start)：代码/数据 */
-	if (s->brk_start > USERBASE) {
-		if (maps_line(buf, size, &len, USERBASE, s->brk_start,
+	/* [user_base, brk_start)：代码/数据 */
+	if (s->brk_start > s->user_base) {
+		if (maps_line(buf, size, &len, s->user_base, s->brk_start,
 			      PROT_READ | PROT_EXEC, "[text]") < 0)
 			return (int)len;
 	}
@@ -122,8 +122,8 @@ static int proc_pid_maps(struct proc_snap *s, char *buf, uint size)
 		if (maps_line(buf, size, &len, s->brk_start, s->brk,
 			      heap_prot, "[heap]") < 0)
 			return (int)len;
-	} else if (s->brk > USERBASE && s->brk_start <= USERBASE) {
-		if (maps_line(buf, size, &len, USERBASE, s->brk,
+	} else if (s->brk > s->user_base && s->brk_start <= s->user_base) {
+		if (maps_line(buf, size, &len, s->user_base, s->brk,
 			      heap_prot, "[heap]") < 0)
 			return (int)len;
 	}

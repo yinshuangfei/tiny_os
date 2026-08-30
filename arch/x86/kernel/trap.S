@@ -49,7 +49,7 @@
 .extern ide_intr_irq15
 .extern preempt_check
 .extern signal_notify
-.extern kernel_pgdir
+.extern kernel_cr3
 .extern cpu_user_pgdir
 .extern interrupt_stack_tops
 .extern lapic
@@ -129,7 +129,7 @@
 
 /* ISR 代码在内核 VA，须先切回 kernel_pgdir 才能继续取指/访存 */
 .macro SWITCH_TO_KERNEL
-	movl kernel_pgdir, %eax
+	movl kernel_cr3, %eax
 	movl %eax, %cr3
 	movw $SEG_KDATA, %ax
 	movw %ax, %ds

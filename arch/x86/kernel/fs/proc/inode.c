@@ -6,6 +6,7 @@
 #include "../../param.h"
 #include "../../proc.h"
 #include "../../mm/memlayout.h"
+#include "../../mm/mmu.h"
 #include "../../mm/vm.h"
 #include "../../lock/spinlock.h"
 #include "../../lock/proc_lock.h"
@@ -95,7 +96,7 @@ int parse_pid_name(const char *name)
 	return pid;
 }
 
-/* 虚拟地址空间约数：[USERBASE,brk) + 栈区 + 匿名 VMA */
+/* 虚拟地址空间约数：[user_base,brk) + 栈区 + 匿名 VMA */
 static uint calc_vmsize_kb(struct proc *p)
 {
 	uint bytes = 0;
@@ -103,10 +104,10 @@ static uint calc_vmsize_kb(struct proc *p)
 	int i;
 
 	/* 内核线程无用户地址空间 */
-	if (!proc_pagetable(p) && proc_brk(p) <= USERBASE)
+	if (!proc_pagetable(p) && proc_brk(p) <= proc_user_base(p))
 		return 0;
-	if (proc_brk(p) > USERBASE)
-		bytes += proc_brk(p) - USERBASE;
+	if (proc_brk(p) > proc_user_base(p))
+		bytes += proc_brk(p) - proc_user_base(p);
 	bytes += USER_STACK_SIZE;
 	vmas = proc_vmas_const(p);
 	if (!vmas)
@@ -121,13 +122,22 @@ static uint calc_vmsize_kb(struct proc *p)
 /* 常驻集：用户页表中 PTE_P 页数（类 get_mm_rss 教学近似） */
 static uint calc_vmrss_kb(pagetable_t pgdir)
 {
-	uint va, pages = 0;
+	uint pages = 0;
+	int i;
 
 	if (!pgdir)
 		return 0;
-	for (va = USERBASE; va < USEREND; va += PGSIZE) {
-		if (walkaddr(pgdir, va))
-			pages++;
+	for (i = PDX(USERBASE); i <= PDX(USEREND - 1); i++) {
+		pagetable_t pt;
+		int j;
+
+		if (!(pgdir[i] & PTE_P) || !(pgdir[i] & PTE_U))
+			continue;
+		pt = (pagetable_t)P2V(PTE_ADDR(pgdir[i]));
+		for (j = 0; j < 1024; j++) {
+			if ((pt[j] & PTE_P) && (pt[j] & PTE_U))
+				pages++;
+		}
 	}
 	return pages * (PGSIZE / 1024);
 }
@@ -147,11 +157,13 @@ int snap_proc(int pid, struct proc_snap *s)
 		s->ppid = p->parent ? p->parent->pid : 0;
 		s->state = p->state;
 		s->sz = proc_task_size(p);
+		s->user_base = proc_user_base(p);
 		s->brk = proc_brk(p);
 		s->brk_start = proc_brk_start(p);
 		s->vmsize_kb = calc_vmsize_kb(p);
 		s->vmrss_kb = calc_vmrss_kb(proc_pagetable(p));
-		s->has_user_mm = proc_pagetable(p) != 0 || proc_brk(p) > USERBASE;
+		s->has_user_mm = proc_pagetable(p) != 0 ||
+			proc_brk(p) > proc_user_base(p);
 		if (proc_vmas_const(p))
 			memcpy(s->vmas, proc_vmas_const(p), sizeof(s->vmas));
 		else

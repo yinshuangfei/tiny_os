@@ -82,15 +82,17 @@ static struct page *addr_to_page(void *addr)
 {
 	uint a = (uint)addr;
 
+	if (a >= KERNBASE)
+		a = V2P(a);
 	if (a < mem_start || a >= mem_end || (a & (PGSIZE - 1)) != 0)
 		return 0;
 	return &mem_map[(a - mem_start) / PGSIZE];
 }
 
-/* struct page → 该页首字节物理地址 */
+/* struct page → 该页首字节的内核 direct-map 地址 */
 static void *page_to_addr(struct page *page)
 {
-	return (void *)(mem_start + (page - mem_map) * PGSIZE);
+	return (void *)P2V(mem_start + (page - mem_map) * PGSIZE);
 }
 
 /*
@@ -111,7 +113,11 @@ static struct page *page_buddy(struct page *page, unsigned int order)
 static void free_area_add(struct page *page, unsigned int order)
 {
 	page->order = order;
-	list_add(&page->list, &free_area[order].free_list);
+	/*
+	 * 启动早期 bootstrap high-map 只覆盖低端窗口，优先从低地址块分配，
+	 * 可避免在 kvm_init() 建完整 direct-map 之前拿到未映射的高端页。
+	 */
+	list_add_tail(&page->list, &free_area[order].free_list);
 	free_area[order].nr_free++;
 	nr_free += 1U << order;
 }
@@ -189,7 +195,7 @@ static struct page *__alloc_pages(unsigned int order)
  *   [mem_start, physmem_top) — 可分配物理页
  *
  * 释放时按最大对齐块入池，减少启动阶段反复合并。
- * 须在 kvm_init 之前调用（此时尚未开分页，物理地址 == 线性地址）。
+ * 入口已先开最小高半区页表，因此这里只操作内核 direct-map 地址。
  */
 void pmm_init(void)
 {
@@ -197,7 +203,7 @@ void pmm_init(void)
 	uint base, map_bytes, addr, left, idx;
 	char total_size[HUMAN_SIZE_MAX] = {0};
 
-	base = PGROUNDUP((uint)end);
+	base = PGROUNDUP(V2P((uint)end));
 	if (base >= physmem_top)
 		panic("pmm: no memory after kernel");
 
@@ -211,7 +217,7 @@ void pmm_init(void)
 	if (base + map_bytes >= physmem_top)
 		panic("pmm: mem_map does not fit");
 
-	mem_map = (struct page *)base;
+	mem_map = (struct page *)P2V(base);
 	mem_start = base + map_bytes;
 	mem_end = physmem_top;
 	nr_pages = (mem_end - mem_start) / PGSIZE;
@@ -297,6 +303,7 @@ void free_pages(void *addr, unsigned int order)
 	release(&pmm_lock);
 }
 
+/* 返回虚拟地址 */
 void *alloc_page(void)
 {
 	return alloc_pages(0);

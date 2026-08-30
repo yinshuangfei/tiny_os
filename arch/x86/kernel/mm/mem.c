@@ -3,7 +3,8 @@
  *   1. QEMU fw_cfg（-kernel 路径，读 -m 参数）
  *   2. boot_info（MBR 路径，setup 通过 BIOS E820 写入）
  *
- * 结果写入 physmem_top（页对齐）。仅受 32 位恒等映射上界 PHYSMEM_TOP_MAX 约束。
+ * 结果写入 physmem_top（页对齐）。仅受 32 位 lowmem direct-map 上界
+ * PHYSMEM_TOP_MAX 约束。
  */
 #include "../types.h"
 #include "../defs.h"
@@ -62,7 +63,7 @@ static int boot_info_ram_size(uint *top)
 
 	if (info[0] != BOOT_INFO_MAGIC)
 		return -1;
-	if (info[1] <= KERNBASE)
+	if (info[1] <= KERNEL_LOAD_PA)
 		return -1;
 	*top = info[1];
 	return 0;
@@ -80,9 +81,10 @@ void mem_probe(void)
 	top = PGROUNDDOWN(top);
 	if (top > PHYSMEM_TOP_MAX)
 		top = PHYSMEM_TOP_MAX;
-	if (top <= KERNBASE) {
-		printf("mem: RAM size: 0x%x, KERNBASE: 0x%x\n", top, KERNBASE);
-		panic("mem: RAM too small, below the KERNBASE");
+	if (top <= KERNEL_LOAD_PA) {
+		printf("mem: RAM size: 0x%x, kernel_load_pa: 0x%x\n",
+		       top, KERNEL_LOAD_PA);
+		panic("mem: RAM too small, below the kernel load address");
 	}
 
 	physmem_top = top;

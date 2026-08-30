@@ -119,7 +119,7 @@ static void do_boot_cpu(int cpu, uint32 apicid)
 	/* 0x8000-4: 栈顶，0x8000-8: 入口，0x8000-12: 内核页表 */
 	p[-1] = (uint32)&kernel_stacks[cpu][0] + KSTACKSIZE;
 	p[-2] = (uint32)start_secondary;
-	p[-3] = (uint32)kernel_pgdir;
+	p[-3] = V2P((uint32)kernel_pgdir);
 
 	ap_started[cpu] = 0;
 	cpus[cpu].id = cpu;

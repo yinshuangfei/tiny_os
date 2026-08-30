@@ -37,7 +37,7 @@ static int region_available(struct proc *p, uint start, uint end)
 	uint va;
 	pagetable_t pgdir;
 
-	if (start < USERBASE || end > USERHEAP_TOP || start >= end)
+	if (start < proc_user_base(p) || end > USERHEAP_TOP || start >= end)
 		return 0;
 	if (start < PGROUNDUP(proc_brk(p)))
 		return 0;
@@ -226,7 +226,7 @@ uint do_mmap(struct proc *p, uint addr, uint len, int prot, int flags,
 		return (uint)-1;
 
 	len = PGROUNDUP(len);
-	if (len == 0 || len > USERHEAP_TOP - USERBASE)
+	if (len == 0 || len > USERHEAP_TOP - proc_user_base(p))
 		return (uint)-1;
 
 	flags &= 0xffff;

@@ -1,6 +1,6 @@
 .code16
 .set SETUP_BASE, 0x7e00		/* boot.S 把 kernel.bin 读入的临时地址 */
-.set STAGE2_LOAD, 0x100000	/* 内核主体链接/运行地址（与 kernel.ld 一致） */
+.set STAGE2_LOAD, 0x100000	/* kernel_body 物理加载址（.text.boot / _start） */
 .set BOOT_PARAMS, 0x7DF0	/* boot.S 写入的扇区数，物理地址固定 */
 .set CODE_SEL, 0x08
 .set DATA_SEL, 0x10

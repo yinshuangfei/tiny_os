@@ -11,22 +11,16 @@
 
 .extern cpu_user_pgdir
 .extern lapic
-.extern set_user_pgdir
 
 /*
- * void user_enter(struct trapframe *tf, pagetable_t pgdir);
- * 注意：set_user_pgdir → cpu_id() 会破坏 eax/ecx/edx，须在 call 后重载 tf。
+ * void user_enter(struct trapframe *tf, pagetable_t pgdir_phys);
+ * 调用方已先通过 set_user_pgdir() 记录当前 CPU 的用户 CR3 物理地址，
+ * 这里直接装入 CR3 并 iret 到 ring3，避免对物理地址再做一次 V2P。
  */
 .globl user_enter
 user_enter:
 	movl 4(%esp), %eax	/* tf */
-	movl 8(%esp), %ebx	/* pgdir */
-
-	/* 设置用户页表 */
-	pushl %ebx
-	call set_user_pgdir
-	addl $4, %esp
-	movl 4(%esp), %eax	/* 重载 tf（set_user_pgdir 已破坏 eax） */
+	movl 8(%esp), %ebx	/* pgdir_phys */
 	movl %ebx, %cr3
 
 	/* 用户数据段（RPL=3）；SS 由下面 iret 加载 */

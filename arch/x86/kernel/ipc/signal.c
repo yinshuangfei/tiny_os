@@ -187,7 +187,7 @@ static int signal_setup_frame(struct proc *p, struct trapframe *tf, int sig,
 	sp = tf->esp;
 	if (sp < USERSTACK_BOTTOM + 64 || sp >= USERSTACK)
 		return -1;
-	if (handler < USERBASE || handler >= USEREND)
+	if (handler < USERLOAD || handler >= USEREND)
 		return -1;
 
 	old = kmalloc(sizeof(*old));
@@ -327,7 +327,7 @@ int sys_signal(struct trapframe *tf)
 		return -1;
 
 	if (handler != SIG_DFL && handler != SIG_IGN &&
-	    (handler < USERBASE || handler >= USEREND))
+	    (handler < USERLOAD || handler >= USEREND))
 		return -1;
 
 	old = p->sighand[sig];
