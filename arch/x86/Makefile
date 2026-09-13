@@ -89,11 +89,14 @@ TEST_ELF=$(USERDIR)/test.elf
 TEST_OBJS=$(USER_LIB_OBJS) $(USERDIR)/test.o
 FREE_ELF=$(USERDIR)/free.elf
 FREE_OBJS=$(USER_LIB_OBJS) $(USERDIR)/free.o
+TOUCH_ELF=$(USERDIR)/touch.elf
+TOUCH_OBJS=$(USER_LIB_OBJS) $(USERDIR)/touch.o
 
 # 打进 hd.img 根目录的文件：host路径[:镜像内名字]
 HD_FILES = \
 	$(TEST_ELF):test \
-	$(FREE_ELF):free
+	$(FREE_ELF):free \
+	$(TOUCH_ELF):touch
 
 ifeq ($(K),1)
 QEMUOPTS += -kernel kernel.elf
@@ -115,7 +118,7 @@ e2e-dual-mount: kernel.elf
 	@python3 e2e_test/test_dual_mount.py
 
 # hd.img：ext2 + 样例 + HD_FILES（任意 host 文件，见 mkhd-ext2.sh）
-$(HD_IMG): scripts/mkhd-ext2.sh $(TEST_ELF) $(FREE_ELF)
+$(HD_IMG): scripts/mkhd-ext2.sh $(TEST_ELF) $(FREE_ELF) $(TOUCH_ELF)
 	@rm -f $@
 	@sh scripts/mkhd-ext2.sh $@ $(HD_SIZE_MB) $(HD_FILES)
 
@@ -213,7 +216,7 @@ AS_OBJS = \
 	$(KDIR)/trampoline.o \
 
 OBJS = $(C_OBJS) $(AS_OBJS)
-USER_BUILD_OBJS = $(sort $(INITCODE_OBJS) $(SH_OBJS) $(TEST_OBJS) $(FREE_OBJS))
+USER_BUILD_OBJS = $(sort $(INITCODE_OBJS) $(SH_OBJS) $(TEST_OBJS) $(FREE_OBJS) $(TOUCH_OBJS))
 DEPFILES = $(C_OBJS:.o=.d) $(filter-out $(USERDIR)/lib/start.d,$(USER_BUILD_OBJS:.o=.d))
 
 -include $(DEPFILES)
@@ -233,7 +236,13 @@ $(TEST_ELF): $(TEST_OBJS) $(USERDIR)/user.ld
 $(FREE_ELF): $(FREE_OBJS) $(USERDIR)/user.ld
 	@$(LD) -m elf_i386 -T $(USERDIR)/user.ld -o $@ $(FREE_OBJS)
 
+$(TOUCH_ELF): $(TOUCH_OBJS) $(USERDIR)/user.ld
+	@$(LD) -m elf_i386 -T $(USERDIR)/user.ld -o $@ $(TOUCH_OBJS)
+
 $(USERDIR)/free.o: $(USERDIR)/free.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(USERDIR)/touch.o: $(USERDIR)/touch.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/init.o: $(USERDIR)/init.c

@@ -811,7 +811,9 @@ static int cmd_help(int argc, char **argv)
 	printf("  %s         end of line\n", C_YELLOW("Ctrl+E"));
 	printf("  %s         clear screen\n", C_YELLOW("Ctrl+L"));
 	printf("  %s         delete previous word\n", C_YELLOW("Ctrl+W"));
-	printf("%s sh\n", C_BOLD("Programs:"));
+	printf("%s\n", C_BOLD("Programs:"));
+	printf("  %s       memory summary (/mnt/free)\n", C_YELLOW("free"));
+	printf("  %s      create empty file (/mnt/touch)\n", C_YELLOW("touch"));
 	return 0;
 }
 
