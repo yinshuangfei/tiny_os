@@ -93,8 +93,9 @@ struct stat {
 #define O_CREATE	0x200
 #define O_CREAT		O_CREATE	/* POSIX / Linux 别名 */
 #define O_APPEND	0x400	/* Linux O_APPEND */
-#define O_EXCL		0x1000	/* 与 O_CREAT 合用（sem_open 等） */
 #define O_NONBLOCK	0x800	/* Linux O_NONBLOCK */
+#define O_EXCL		0x1000	/* 与 O_CREAT 合用（sem_open 等） */
+#define O_TRUNC		0x2000	/* 打开时截断为 0（> 重定向） */
 #define F_DUPFD		0
 #define F_GETFD		1
 #define F_SETFD		2

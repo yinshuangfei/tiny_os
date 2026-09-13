@@ -2,6 +2,7 @@
  * 简易用户态 shell：从 stdin（串口）读命令，内置 help/echo/cd/pwd/ls/history 等，
  * 方向键：上下历史，左右移动光标（可在光标处插入）；
  * Ctrl+←/→ 按单词移动；Ctrl+A/E 行首行尾，Ctrl+L 清屏，Ctrl+W 删词。
+ * 支持管道 | 与输出重定向 > / >>（例：echo abc > a）。
  * 其它名称经 fork + execve + waitpid 执行。
  * 提示符 / 帮助 / 错误使用 ANSI 颜色（对端终端解释，同 Linux）；
  * 可用内置命令 color on|off 开关。
@@ -811,6 +812,10 @@ static int cmd_help(int argc, char **argv)
 	printf("  %s         end of line\n", C_YELLOW("Ctrl+E"));
 	printf("  %s         clear screen\n", C_YELLOW("Ctrl+L"));
 	printf("  %s         delete previous word\n", C_YELLOW("Ctrl+W"));
+	printf("%s\n", C_BOLD("Redir:"));
+	printf("  %s           stdout to file (truncate)\n", C_YELLOW("> file"));
+	printf("  %s          stdout append to file\n", C_YELLOW(">> file"));
+	printf("  %s            pipe stdout to next cmd\n", C_YELLOW("|"));
 	printf("%s\n", C_BOLD("Programs:"));
 	printf("  %s       memory summary (/mnt/free)\n", C_YELLOW("free"));
 	printf("  %s      create empty file (/mnt/touch)\n", C_YELLOW("touch"));
@@ -1170,6 +1175,93 @@ static int find_pipe(char **argv, int argc)
 	return -1;
 }
 
+/*
+ * 从 argv 摘除 > file / >> file（空白分词后的独立 token）。
+ * *path_out 为 NULL 表示无输出重定向。成功返回 0，语法错误 -1。
+ */
+static int parse_redir(char **argv, int *argc, char **path_out, int *append_out)
+{
+	int i, j, append;
+
+	*path_out = 0;
+	*append_out = 0;
+
+	for (i = 0; i < *argc; i++) {
+		if (strcmp(argv[i], ">>") == 0)
+			append = 1;
+		else if (strcmp(argv[i], ">") == 0)
+			append = 0;
+		else
+			continue;
+
+		if (i + 1 >= *argc) {
+			printf("%s redirect: missing filename\n", C_RED("sh:"));
+			return -1;
+		}
+		if (*path_out) {
+			printf("%s redirect: multiple redirects\n", C_RED("sh:"));
+			return -1;
+		}
+		*path_out = argv[i + 1];
+		*append_out = append;
+		for (j = i; j + 2 <= *argc; j++)
+			argv[j] = argv[j + 2];
+		*argc -= 2;
+		argv[*argc] = 0;
+		i--;
+	}
+
+	if (*path_out && *argc == 0) {
+		printf("%s redirect: missing command\n", C_RED("sh:"));
+		return -1;
+	}
+	return 0;
+}
+
+/* 将 stdout(1) 重定向到 path；append 非 0 时追加 */
+static int apply_stdout_redir(const char *path, int append)
+{
+	int fd, flags;
+
+	flags = O_WRONLY | O_CREATE;
+	if (append)
+		flags |= O_APPEND;
+	else
+		flags |= O_TRUNC;
+
+	fd = open(path, flags);
+	if (fd < 0) {
+		printf("%s cannot open %s\n", C_RED("sh:"), path);
+		return -1;
+	}
+	close(1);
+	if (dup(fd) != 1) {
+		printf("%s dup failed\n", C_RED("sh:"));
+		close(fd);
+		return -1;
+	}
+	close(fd);
+	return 0;
+}
+
+/* 当前进程：可选重定向后执行内置或 exec，然后 exit */
+static void exec_simple(int argc, char **argv) __attribute__((noreturn));
+static void exec_simple(int argc, char **argv)
+{
+	char *redir;
+	int append;
+
+	if (parse_redir(argv, &argc, &redir, &append) < 0)
+		exit(1);
+	if (redir && apply_stdout_redir(redir, append) < 0)
+		exit(1);
+	if (run_builtin(argc, argv))
+		exit(0);
+	execve(argv[0], argv, 0);
+	printf("%s exec %s failed\n", C_RED("sh:"), argv[0]);
+	exit(1);
+}
+
 /* 递归处理管道 */
 static void runcmd(int argc, char **argv)
 {
@@ -1177,11 +1269,7 @@ static void runcmd(int argc, char **argv)
 
 	bar = find_pipe(argv, argc);
 	if (bar < 0) {
-		if (run_builtin(argc, argv))
-			exit(0);
-		execve(argv[0], argv, 0);
-		printf("%s exec %s failed\n", C_RED("sh:"), argv[0]);
-		exit(1);
+		exec_simple(argc, argv);
 	}
 	if (bar == 0 || bar == argc - 1) {
 		printf("%s invalid pipe\n", C_RED("sh:"));
@@ -1204,11 +1292,7 @@ static void runcmd(int argc, char **argv)
 		close(p[1]);
 		argv[bar] = 0;
 		signal(SIGINT, SIG_DFL);
-		if (run_builtin(bar, argv))
-			exit(0);
-		execve(argv[0], argv, 0);
-		printf("%s exec %s failed\n", C_RED("sh:"), argv[0]);
-		exit(1);
+		exec_simple(bar, argv);
 	}
 
 	/* 子进程：右端, 读取 */
@@ -1256,7 +1340,8 @@ static void run_external(int argc, char **argv)
 static void run_line(char *line)
 {
 	char *argv[MAXARGV];
-	int argc, pid, status;
+	char *redir;
+	int argc, pid, status, append;
 
 	argc = split_argv(line, argv, MAXARGV);
 	if (argc == 0) {
@@ -1268,6 +1353,30 @@ static void run_line(char *line)
 		if (pid == 0) {
 			signal(SIGINT, SIG_DFL);
 			runcmd(argc, argv);
+		}
+		if (pid < 0) {
+			printf("%s fork failed\n", C_RED("sh:"));
+			return;
+		}
+		waitpid(pid, &status, 0);
+		return;
+	}
+
+	if (parse_redir(argv, &argc, &redir, &append) < 0)
+		return;
+
+	/* 有重定向时必须 fork：内置命令若在 shell 内 dup 会弄脏父进程 fd */
+	if (redir) {
+		pid = fork();
+		if (pid == 0) {
+			signal(SIGINT, SIG_DFL);
+			if (apply_stdout_redir(redir, append) < 0)
+				exit(1);
+			if (run_builtin(argc, argv))
+				exit(0);
+			execve(argv[0], argv, 0);
+			printf("%s exec %s failed\n", C_RED("sh:"), argv[0]);
+			exit(1);
 		}
 		if (pid < 0) {
 			printf("%s fork failed\n", C_RED("sh:"));

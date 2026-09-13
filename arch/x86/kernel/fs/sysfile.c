@@ -32,6 +32,16 @@ int sys_open(struct trapframe *tf)
 	if (!ip)
 		return -1;
 
+	/* O_TRUNC：可写打开时截断普通文件（ramfs 释放 data） */
+	if ((flags & O_TRUNC) && (flags & (O_WRONLY | O_RDWR)) &&
+	    ip->type == T_FILE) {
+		if (ip->data) {
+			kfree(ip->data);
+			ip->data = 0;
+		}
+		ip->size = 0;
+	}
+
 	f = filealloc();
 	if (!f) {
 		fs_iput(ip);

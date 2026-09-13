@@ -104,6 +104,8 @@ struct file {
 #define O_CREATE	0x200
 #define O_APPEND	0x400
 #define O_NONBLOCK	0x800
+#define O_TRUNC		0x2000	/* 打开时截断为 0（用于 > 重定向） */
+#define O_EXCL		0x1000
 
 /* fcntl cmd / fd flags（与 user/include/syscall.h 一致） */
 #define F_DUPFD		0

@@ -834,6 +834,103 @@ void posix_sem_test(void)
 }
 
 /*
+ * 输出重定向语义（对齐 shell：echo abc > a / >> a）：
+ * O_TRUNC 截断覆盖、O_APPEND 追加、fork + close(1) + dup 写文件。
+ */
+void redir_test(void)
+{
+	char buf[64];
+	const char *path = "/t_redir";
+	int fd, pid, status, ok;
+
+	unlink(path);
+
+	/* > ：创建并写入 */
+	ok = 1;
+	fd = open(path, O_WRONLY | O_CREATE | O_TRUNC);
+	if (fd < 0) {
+		printf("redir: create %s failed\n", path);
+		ok = 0;
+	} else {
+		if (write(fd, "abc\n", 4) != 4)
+			ok = 0;
+		close(fd);
+	}
+	if (ok && (read_file(path, buf, sizeof(buf)) < 0 || !streq(buf, "abc\n"))) {
+		printf("redir: after > got '%s'\n", buf);
+		ok = 0;
+	}
+	syscall_pr_result("open-trunc", ok);
+
+	/* >> ：追加（不截断） */
+	ok = 1;
+	fd = open(path, O_WRONLY | O_CREATE | O_APPEND);
+	if (fd < 0) {
+		printf("redir: append open failed\n");
+		ok = 0;
+	} else {
+		if (write(fd, "def\n", 4) != 4)
+			ok = 0;
+		close(fd);
+	}
+	if (ok && (read_file(path, buf, sizeof(buf)) < 0 ||
+		   !streq(buf, "abc\ndef\n"))) {
+		printf("redir: after >> got '%s'\n", buf);
+		ok = 0;
+	}
+	syscall_pr_result("open-append", ok);
+
+	/* > ：再次截断覆盖 */
+	ok = 1;
+	fd = open(path, O_WRONLY | O_CREATE | O_TRUNC);
+	if (fd < 0) {
+		ok = 0;
+	} else {
+		if (write(fd, "xyz\n", 4) != 4)
+			ok = 0;
+		close(fd);
+	}
+	if (ok && (read_file(path, buf, sizeof(buf)) < 0 || !streq(buf, "xyz\n"))) {
+		printf("redir: trunc overwrite got '%s'\n", buf);
+		ok = 0;
+	}
+	syscall_pr_result("open-trunc-overwrite", ok);
+
+	/* shell 路径：子进程把 stdout dup 到文件再 printf */
+	unlink(path);
+	ok = 1;
+	pid = fork();
+	if (pid < 0) {
+		printf("redir: fork failed\n");
+		ok = 0;
+	} else if (pid == 0) {
+		fd = open(path, O_WRONLY | O_CREATE | O_TRUNC);
+		if (fd < 0)
+			exit(1);
+		close(1);
+		if (dup(fd) != 1)
+			exit(1);
+		close(fd);
+		printf("abc\n");
+		exit(0);
+	} else {
+		if (waitpid(pid, &status, 0) != pid ||
+		    !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+			printf("redir: child failed status=0x%x\n", status);
+			ok = 0;
+		}
+		if (ok && (read_file(path, buf, sizeof(buf)) < 0 ||
+			   !streq(buf, "abc\n"))) {
+			printf("redir: dup stdout got '%s'\n", buf);
+			ok = 0;
+		}
+	}
+	common_pr_result("redir-dup", ok);
+
+	unlink(path);
+}
+
+/*
  * FPU/SSE：x87 算术、%f 打印，以及 fork 后 XMM 寄存器隔离（lazy FXSAVE）。
  */
 void fpu_test(void)
@@ -1264,5 +1361,6 @@ int main(int argc, char *argv[], char *envp[])
 	smp_test();
 	shm_test();
 	posix_sem_test();
+	redir_test();
 	exit(0);
 }
