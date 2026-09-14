@@ -79,7 +79,8 @@ USER_LIB_OBJS = \
 	$(USERDIR)/lib/string.o \
 	$(USERDIR)/lib/ansi.o \
 	$(USERDIR)/lib/termios.o \
-	$(USERDIR)/lib/sched.o
+	$(USERDIR)/lib/sched.o \
+	$(USERDIR)/lib/dirent.o
 
 INITCODE_BIN=$(USERDIR)/init.bin
 INITCODE_OBJS=$(USER_LIB_OBJS) $(USERDIR)/init.o
@@ -282,6 +283,9 @@ $(USERDIR)/lib/termios.o: $(USERDIR)/lib/termios.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/lib/sched.o: $(USERDIR)/lib/sched.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(USERDIR)/lib/dirent.o: $(USERDIR)/lib/dirent.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(USERDIR)/lib/usys.o: $(USERDIR)/lib/usys.S

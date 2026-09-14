@@ -460,3 +460,129 @@ sigreturn:
 	movl $SYS_sigreturn, %eax
 	int $0x80
 	ret
+
+.globl lstat
+lstat:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl $SYS_lstat, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl dup2
+dup2:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl $SYS_dup2, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl access
+access:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl $SYS_access, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl truncate
+truncate:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl $SYS_truncate, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl ftruncate
+ftruncate:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl $SYS_ftruncate, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl fchdir
+fchdir:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl $SYS_fchdir, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl mknod
+mknod:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl 16(%esp), %edx
+	movl $SYS_mknod, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl creat
+creat:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl $SYS_creat, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl chmod
+chmod:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl $SYS_chmod, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl chown
+chown:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl 16(%esp), %edx
+	movl $SYS_chown, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl utime
+utime:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl 12(%esp), %ecx
+	movl $SYS_utime, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl fsync
+fsync:
+	pushl %ebx
+	movl 8(%esp), %ebx
+	movl $SYS_fsync, %eax
+	int $0x80
+	popl %ebx
+	ret
+
+.globl sync
+sync:
+	movl $SYS_sync, %eax
+	int $0x80
+	ret

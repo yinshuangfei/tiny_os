@@ -660,6 +660,7 @@ static const struct inode_operations ext2_iops = {
 	.mkdir		= ext2_mkdir,
 	.rmdir		= ext2_rmdir,
 	.mknod		= ext2_mknod,
+	.truncate	= 0,	/* 只读：无截断 */
 	.evict		= ext2_evict,
 	.read		= ext2_read,
 	.write		= ext2_write,

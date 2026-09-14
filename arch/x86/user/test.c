@@ -931,6 +931,152 @@ void redir_test(void)
 }
 
 /*
+ * POSIX 文件系统接口补充：lstat/dup2/access/truncate/chmod/creat/opendir 等。
+ */
+void posix_fs_test(void)
+{
+	char buf[64];
+	struct stat st;
+	int fd, nfd, ok;
+	DIR *d;
+	struct dirent *de;
+	int saw;
+
+	unlink("/t_posix");
+	unlink("/t_posix2");
+	unlink("/t_fifo");
+
+	/* creat + stat 字段 */
+	ok = 1;
+	fd = creat("/t_posix", 0644);
+	if (fd < 0) {
+		printf("posix_fs: creat failed\n");
+		ok = 0;
+	} else {
+		write(fd, "hi", 2);
+		close(fd);
+	}
+	if (ok && (stat("/t_posix", &st) < 0 || !S_ISREG(st.st_mode) ||
+		   st.st_size != 2 || (st.st_mode & 0777) != 0644)) {
+		printf("posix_fs: stat after creat bad\n");
+		ok = 0;
+	}
+	syscall_pr_result("creat", ok);
+
+	/* truncate / ftruncate */
+	ok = 1;
+	if (truncate("/t_posix", 1) < 0 ||
+	    read_file("/t_posix", buf, sizeof(buf)) < 0 || buf[0] != 'h' ||
+	    strlen(buf) != 1) {
+		printf("posix_fs: truncate failed\n");
+		ok = 0;
+	}
+	fd = open("/t_posix", O_RDWR);
+	if (fd < 0 || ftruncate(fd, 0) < 0) {
+		ok = 0;
+	} else {
+		close(fd);
+		if (stat("/t_posix", &st) < 0 || st.st_size != 0)
+			ok = 0;
+	}
+	syscall_pr_result("truncate", ok);
+
+	/* access / chmod */
+	ok = 1;
+	if (access("/t_posix", F_OK) < 0 || chmod("/t_posix", 0400) < 0 ||
+	    access("/t_posix", R_OK) < 0) {
+		ok = 0;
+	}
+	if (access("/no_such_posix_file", F_OK) == 0)
+		ok = 0;
+	syscall_pr_result("access", ok);
+	syscall_pr_result("chmod", ok);
+
+	/* dup2 */
+	ok = 1;
+	fd = open("/t_posix", O_RDWR | O_TRUNC);
+	if (fd < 0) {
+		ok = 0;
+	} else {
+		write(fd, "Z", 1);
+		nfd = dup2(fd, 20);
+		if (nfd != 20)
+			ok = 0;
+		else {
+			lseek(20, 0, SEEK_SET);
+			if (read(20, buf, 1) != 1 || buf[0] != 'Z')
+				ok = 0;
+			close(20);
+		}
+		close(fd);
+	}
+	syscall_pr_result("dup2", ok);
+
+	/* O_EXCL */
+	ok = 1;
+	fd = open("/t_posix", O_CREAT | O_EXCL | O_WRONLY);
+	if (fd >= 0) {
+		close(fd);
+		ok = 0;
+	}
+	syscall_pr_result("open-excl", ok);
+
+	/* lstat 对符号链接 */
+	ok = 1;
+	unlink("/t_posix2");
+	if (symlink("/t_posix", "/t_posix2") < 0) {
+		printf("posix_fs: symlink failed\n");
+		ok = 0;
+	} else if (lstat("/t_posix2", &st) < 0 || !S_ISLNK(st.st_mode)) {
+		printf("posix_fs: lstat not link\n");
+		ok = 0;
+	} else if (stat("/t_posix2", &st) < 0 || !S_ISREG(st.st_mode)) {
+		printf("posix_fs: stat follow failed\n");
+		ok = 0;
+	}
+	syscall_pr_result("lstat", ok);
+
+	/* opendir / readdir */
+	ok = 1;
+	saw = 0;
+	d = opendir("/");
+	if (!d) {
+		ok = 0;
+	} else {
+		while ((de = readdir(d)) != 0) {
+			if (strcmp(de->d_name, "t_posix") == 0)
+				saw = 1;
+		}
+		closedir(d);
+		if (!saw)
+			ok = 0;
+	}
+	lib_pr_result("opendir", ok);
+
+	/* mkfifo：创建节点即可（不测阻塞读写） */
+	ok = 1;
+	unlink("/t_fifo");
+	if (mkfifo("/t_fifo", 0666) < 0) {
+		printf("posix_fs: mkfifo failed\n");
+		ok = 0;
+	} else if (stat("/t_fifo", &st) < 0 || !S_ISFIFO(st.st_mode)) {
+		ok = 0;
+	}
+	lib_pr_result("mkfifo", ok);
+
+	/* fsync / sync：空操作应成功 */
+	fd = open("/t_posix", O_RDONLY);
+	ok = (fd >= 0 && fsync(fd) == 0 && sync() == 0);
+	if (fd >= 0)
+		close(fd);
+	syscall_pr_result("fsync", ok);
+
+	unlink("/t_posix");
+	unlink("/t_posix2");
+	unlink("/t_fifo");
+}
+
+/*
  * FPU/SSE：x87 算术、%f 打印，以及 fork 后 XMM 寄存器隔离（lazy FXSAVE）。
  */
 void fpu_test(void)
@@ -1362,5 +1508,6 @@ int main(int argc, char *argv[], char *envp[])
 	shm_test();
 	posix_sem_test();
 	redir_test();
+	posix_fs_test();
 	exit(0);
 }

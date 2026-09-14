@@ -1,6 +1,7 @@
 /*
  * 目录项（用户 ABI），字段命名对齐 Linux linux_dirent64 / dirent。
  * 读目录 fd 时按本结构顺序返回（教学实现用定长记录）。
+ * opendir / readdir / closedir 为其用户态封装（见 user/lib/dirent.c）。
  */
 #ifndef __USER_DIRENT_H__
 #define __USER_DIRENT_H__
@@ -15,7 +16,10 @@
 #define DT_LNK		10
 #define DT_SOCK		12
 
-/* 本内核路径分量上限（ramfs）；Linux NAME_MAX 多为 255 */
+/* 本内核路径分量上限（ramfs 定长 dirent）；勿改为 255：
+ * sizeof(struct dirent) 须能一次装进 sys_read 内核缓冲（当前 128B）。
+ * Linux NAME_MAX 多为 255，此处为教学简化。
+ */
 #define NAME_MAX	27
 
 struct dirent {
@@ -25,5 +29,7 @@ struct dirent {
 	unsigned char	d_type;		/* DT_* */
 	char		d_name[NAME_MAX + 1];
 } __attribute__((packed));
+
+typedef struct DIR DIR;
 
 #endif

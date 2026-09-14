@@ -42,6 +42,7 @@ static const struct inode_operations pipe_iops = {
 	.mkdir = 0,
 	.rmdir = 0,
 	.mknod = 0,
+	.truncate = 0,
 	.evict = pipe_evict,
 	.read = pipe_read,
 	.write = pipe_write,
@@ -87,6 +88,7 @@ static struct inode *pipe_inode_alloc(struct pipe *pi)
 			ip->parent = 0;
 			ip->i_op = &pipe_iops;
 			ip->i_pipe = pi;
+			fs_inode_init_meta(ip, T_FIFO, VFS_DEF_FILE_MODE);
 			return ip;
 		}
 	}
@@ -287,4 +289,46 @@ bad:
 		fileclose(*f1);
 	*f0 = *f1 = 0;
 	return -1;
+}
+
+/*
+ * 命名 FIFO：为已有 inode（如 ramfs ialloc）挂接 pipe 缓冲，并改用 pipe_iops。
+ * readers/writers 初始为 0，在 open 时经 fifo_on_open 递增。
+ */
+int fifo_init_inode(struct inode *ip)
+{
+	struct pipe *pi;
+
+	if (!ip || ip->type != T_FIFO)
+		return -1;
+	if (ip->i_pipe)
+		return 0;
+	pi = (struct pipe *)kmalloc(sizeof(*pi));
+	if (!pi)
+		return -1;
+	pi->readers = 0;
+	pi->writers = 0;
+	pi->nread = 0;
+	pi->nwrite = 0;
+	initlock(&pi->lock, "fifo");
+	ip->i_pipe = pi;
+	ip->i_op = &pipe_iops;
+	return 0;
+}
+
+void fifo_on_open(struct inode *ip, int readable, int writable)
+{
+	struct pipe *pi;
+
+	if (!ip || ip->type != T_FIFO || !ip->i_pipe)
+		return;
+	pi = ip->i_pipe;
+	acquire(&pi->lock);
+	if (readable)
+		pi->readers++;
+	if (writable)
+		pi->writers++;
+	wakeup(&pi->readers);
+	wakeup(&pi->writers);
+	release(&pi->lock);
 }

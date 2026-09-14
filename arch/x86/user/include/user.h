@@ -1,5 +1,6 @@
 /*
  * 用户态 C 程序最小头文件（与 usys.S 桩一致）。
+ * 文件系统接口为 POSIX 教学子集。
  */
 #ifndef __USER_USER_H__
 #define __USER_USER_H__
@@ -12,6 +13,7 @@
 #include "semaphore.h"
 
 struct timespec;
+struct utimbuf;
 
 int execve(const char *filename, char *const argv[], char *const envp[]);
 int exit(int) __attribute__((noreturn));
@@ -44,11 +46,15 @@ void *shmat(int shmid, const void *shmaddr, int shmflg);
 int shmdt(const void *shmaddr);
 int shmctl(int shmid, int cmd, void *buf);
 /* POSIX 信号量见 semaphore.h */
+
+/* —— POSIX 文件系统接口（syscall + 少量 libc 封装） —— */
 int read(int fd, void *buf, int n);
 int write(int, const void *, int);
 int open(const char *path, int flags);
+int creat(const char *path, int mode);
 int close(int fd);
 int dup(int fd);
+int dup2(int oldfd, int newfd);
 int pipe(int fd[2]);
 int ioctl(int fd, unsigned int request, void *arg);
 int fcntl(int fd, int cmd, int arg);
@@ -56,18 +62,35 @@ int flock(int fd, int operation);
 int lseek(int fd, int offset, int whence);
 int fstat(int fd, struct stat *st);
 int stat(const char *path, struct stat *st);
+int lstat(const char *path, struct stat *st);
+int access(const char *path, int amode);
 int readlink(const char *path, char *buf, int bufsiz);
 int chdir(const char *path);
+int fchdir(int fd);
 int getcwd(char *buf, int size);
 int mkdir(const char *path, int mode);
 int rmdir(const char *path);
 int link(const char *oldpath, const char *newpath);
 int symlink(const char *target, const char *linkpath);
+int unlink(const char *path);
+int rename(const char *oldpath, const char *newpath);
+int truncate(const char *path, int length);
+int ftruncate(int fd, int length);
+int mknod(const char *path, int mode, unsigned int dev);
+int mkfifo(const char *path, int mode);
+int chmod(const char *path, int mode);
+int chown(const char *path, int uid, int gid);
+int utime(const char *path, const struct utimbuf *times);
+int fsync(int fd);
+int sync(void);
 int mount(const char *source, const char *target, const char *fstype,
 	  unsigned long flags, const void *data);
 int umount(const char *target);
-int unlink(const char *path);
-int rename(const char *oldpath, const char *newpath);
+
+/* 目录流（封装 open + read(dirent)） */
+DIR *opendir(const char *name);
+struct dirent *readdir(DIR *dirp);
+int closedir(DIR *dirp);
 
 int printf(const char *fmt, ...);
 int sprintf(char *buf, const char *fmt, ...);

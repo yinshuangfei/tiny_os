@@ -3,6 +3,14 @@
  * 对齐 Linux include/linux/fs.h 教学子集：inode / dentry / file 与通用 API。
  * 实现见 super.c、inode.c、dcache.c、namei.c、file.c；
  * 具体存储由 inode_operations 后端提供。
+ *
+ * 分层约定：
+ *   namei / sysfile  — 路径与系统调用编排（不碰具体 FS）
+ *   inode_operations — 各后端（ramfs / ext2 / proc / pipe）的目录与数据操作
+ *   file.c           — 打开文件表、fd、读写/lseek/ioctl/flock
+ *   chrdev f_op      — 字符设备专用（console 等），不经 i_op->read/write
+ *
+ * POSIX 文件系统接口（用户可见）由 sysfile + user/lib 提供；见 syscall.h。
  */
 #ifndef __VFS_H__
 #define __VFS_H__
@@ -38,6 +46,7 @@ struct file;
 /*
  * 目录/文件后端操作（对齐 Linux inode_operations 教学子集）。
  * lookup 成功时返回已 fs_idup 的 inode；失败返回 NULL。
+ * 未实现的回调可为 NULL（调用方返回 -1）。
  */
 struct inode_operations {
 	struct inode *(*lookup)(struct inode *dir, const char *name);
@@ -55,6 +64,8 @@ struct inode_operations {
 	/* 同文件系统内重命名/移动 */
 	int (*rename)(struct inode *old_dir, const char *old_name,
 		      struct inode *new_dir, const char *new_name);
+	/* 将普通文件长度设为 length（可截断或扩展空洞，由后端决定） */
+	int (*truncate)(struct inode *ip, uint length);
 	void (*evict)(struct inode *ip);
 	int (*read)(struct inode *ip, char *dst, uint off, uint n);
 	int (*write)(struct inode *ip, char *src, uint off, uint n);
@@ -66,7 +77,14 @@ struct inode {
 	dev_t rdev;			/* T_CHAR / T_BLK：设备号（12+20） */
 	uint ref;			/* 引用计数 */
 	uint size;			/* 文件、目录大小（块设备可为容量字节数） */
-	char *data;			/* T_FILE 内容（后端私有用法） */
+	uint mode;			/* 权限位（S_IRWXU 等，不含 S_IF*） */
+	uint nlink;			/* 硬链接数 */
+	uint uid;			/* 所有者（教学默认 0） */
+	uint gid;			/* 组（教学默认 0） */
+	uint atime;			/* 访问时间（秒，自启动或 epoch） */
+	uint mtime;			/* 修改时间 */
+	uint ctime;			/* 状态改变时间 */
+	char *data;			/* T_FILE / T_LNK 内容（后端私有用法） */
 	struct pipe *i_pipe;		/* T_FIFO：pipe_inode_info（类 Linux i_pipe） */
 	struct dentry *dents;		/* T_DIR 子项（dcache） */
 	struct inode *parent;		/* 父目录（root->parent == root） */
@@ -96,7 +114,7 @@ struct file {
 	uint off;			/* 文件偏移量（Linux f_pos） */
 };
 
-/* open flags（与常见 Unix 子集对齐） */
+/* open flags（与常见 Unix 子集对齐；与 user/include/syscall.h 一致） */
 #define O_RDONLY	0x000
 #define O_WRONLY	0x001
 #define O_RDWR		0x002
@@ -104,8 +122,8 @@ struct file {
 #define O_CREATE	0x200
 #define O_APPEND	0x400
 #define O_NONBLOCK	0x800
-#define O_TRUNC		0x2000	/* 打开时截断为 0（用于 > 重定向） */
 #define O_EXCL		0x1000
+#define O_TRUNC		0x2000	/* 打开时截断为 0（用于 > 重定向） */
 
 /* fcntl cmd / fd flags（与 user/include/syscall.h 一致） */
 #define F_DUPFD		0
@@ -126,15 +144,28 @@ struct file {
 #define SEEK_CUR	1
 #define SEEK_END	2
 
+/* access(2) 模式位 */
+#define F_OK		0
+#define X_OK		1
+#define W_OK		2
+#define R_OK		4
+
+/* 默认创建权限（chmod 可改） */
+#define VFS_DEF_FILE_MODE	0644
+#define VFS_DEF_DIR_MODE	0755
+
 /* VFS 根目录（super.c） */
 void vfs_set_root(struct inode *root);
 struct inode *vfs_root(void);
 
-/* inode 引用与通用读写（inode.c） */
+/* inode 引用与通用读写 / 截断（inode.c） */
 void fs_iput(struct inode *ip);
 struct inode *fs_idup(struct inode *ip);
 int fs_readi(struct inode *ip, char *dst, uint off, uint n);
 int fs_writei(struct inode *ip, char *src, uint off, uint n);
+int fs_truncate(struct inode *ip, uint length);
+void fs_inode_touch(struct inode *ip, int set_mtime, int set_atime);
+void fs_inode_init_meta(struct inode *ip, short type, uint mode);
 
 /* 打开文件表 / 进程 fd（VFS，对齐 Linux fs/file.c 角色） */
 void fileinit(void);
@@ -158,5 +189,8 @@ void fd_close_on_exec(struct proc *p);
 /* 匿名管道（Linux pipe(2) / pipefs 教学子集） */
 int pipealloc(struct file **f0, struct file **f1);
 void pipe_release(struct file *f);
+/* 为已有 inode 挂接 FIFO 缓冲（命名管道 mkfifo） */
+int fifo_init_inode(struct inode *ip);
+void fifo_on_open(struct inode *ip, int readable, int writable);
 
 #endif

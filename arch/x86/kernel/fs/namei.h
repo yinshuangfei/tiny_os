@@ -18,5 +18,9 @@ int fs_symlink(const char *target, const char *linkpath);
 int fs_unlink(const char *path);
 int fs_rename(const char *oldpath, const char *newpath);
 int fs_getcwd(char *buf, int max);
+int fs_access(const char *path, int amode);
+int fs_chmod(const char *path, uint mode);
+int fs_chown(const char *path, uint uid, uint gid);
+int fs_utime(const char *path, uint atime, uint mtime);
 
 #endif

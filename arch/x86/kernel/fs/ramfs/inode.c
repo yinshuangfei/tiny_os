@@ -29,6 +29,7 @@ static int ramfs_rename(struct inode *old_dir, const char *old_name,
 static void ramfs_evict(struct inode *ip);
 static int ramfs_read(struct inode *ip, char *dst, uint off, uint n);
 static int ramfs_write(struct inode *ip, char *src, uint off, uint n);
+static int ramfs_truncate(struct inode *ip, uint length);
 
 static const struct inode_operations ramfs_iops = {
 	.lookup		= ramfs_lookup,
@@ -40,6 +41,7 @@ static const struct inode_operations ramfs_iops = {
 	.link		= ramfs_hardlink,
 	.unlink		= ramfs_unlink,
 	.rename		= ramfs_rename,
+	.truncate	= ramfs_truncate,
 	.evict		= ramfs_evict,
 	.read		= ramfs_read,
 	.write		= ramfs_write,
@@ -70,12 +72,12 @@ static struct inode *ialloc(short type)
 {
 	int i;
 	struct inode *ip;
+	uint mode;
 
 	for (i = 0; i < NINODE; i++) {
 		ip = &inodes[i];
 		if (ip->type == 0) {
 			ip->inum = (uint)(i + 1);
-			ip->type = type;
 			ip->ref = 1;
 			ip->size = 0;
 			ip->data = 0;
@@ -86,6 +88,13 @@ static struct inode *ialloc(short type)
 			ip->i_sb = 0;
 			ip->name[0] = '\0';
 			ip->i_op = &ramfs_iops;
+			if (type == T_DIR)
+				mode = VFS_DEF_DIR_MODE;
+			else if (type == T_LNK)
+				mode = 0777;
+			else
+				mode = VFS_DEF_FILE_MODE;
+			fs_inode_init_meta(ip, type, mode);
 			return ip;
 		}
 	}
@@ -170,7 +179,7 @@ static int ramfs_mknod(struct inode *dir, const char *name, short type,
 {
 	struct inode *ip;
 
-	if (type != T_CHAR && type != T_BLK)
+	if (type != T_CHAR && type != T_BLK && type != T_FIFO)
 		return -1;
 	if (d_lookup(dir, name))
 		return -1;
@@ -178,6 +187,12 @@ static int ramfs_mknod(struct inode *dir, const char *name, short type,
 	if (!ip)
 		return -1;
 	ip->rdev = rdev;
+	if (type == T_FIFO) {
+		if (fifo_init_inode(ip) < 0) {
+			fs_iput(ip);
+			return -1;
+		}
+	}
 	if (d_add(dir, name, ip) < 0) {
 		fs_iput(ip);
 		return -1;
@@ -222,7 +237,11 @@ static int ramfs_hardlink(struct inode *dir, const char *name, struct inode *ip)
 		return -1;
 	if (ip->type == T_DIR)
 		return -1;
-	return d_add(dir, name, ip);
+	if (d_add(dir, name, ip) < 0)
+		return -1;
+	ip->nlink++;
+	fs_inode_touch(ip, 1, 0);
+	return 0;
 }
 
 static int ramfs_unlink(struct inode *dir, const char *name)
@@ -234,6 +253,9 @@ static int ramfs_unlink(struct inode *dir, const char *name)
 		return -1;
 	if (de->ip->type == T_DIR)
 		return -1;
+	if (de->ip->nlink > 0)
+		de->ip->nlink--;
+	fs_inode_touch(de->ip, 1, 0);
 	return d_unlink(dir, name);
 }
 
@@ -403,6 +425,40 @@ static int ramfs_write(struct inode *ip, char *src, uint off, uint n)
 	if (off + n > ip->size)
 		ip->size = off + n;
 	return (int)n;
+}
+
+static int ramfs_truncate(struct inode *ip, uint length)
+{
+	char *buf;
+	uint i;
+
+	if (!ip || ip->type != T_FILE)
+		return -1;
+	if (length == ip->size)
+		return 0;
+	if (length == 0) {
+		if (ip->data) {
+			kfree(ip->data);
+			ip->data = 0;
+		}
+		ip->size = 0;
+		return 0;
+	}
+	buf = kmalloc(length);
+	if (!buf)
+		return -1;
+	if (ip->data) {
+		for (i = 0; i < length && i < ip->size; i++)
+			buf[i] = ip->data[i];
+		kfree(ip->data);
+	} else {
+		i = 0;
+	}
+	for (; i < length; i++)
+		buf[i] = 0;
+	ip->data = buf;
+	ip->size = length;
+	return 0;
 }
 
 static void seed_file(const char *path, const char *text)

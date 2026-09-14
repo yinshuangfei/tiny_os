@@ -36,10 +36,14 @@ static const char *skipelem(const char *path, char *name)
 	return path;
 }
 
-/* 教学：仅支持单分量相对目标（如 /proc/self → "N"） */
+/* 跟随符号链接：绝对路径经 namex；相对路径暂支持单分量（如 /proc/self → "N"） */
+static struct inode *namex(const char *path, int nameiparent, char *name,
+			   int follow);
+
 static struct inode *follow_symlink(struct inode *link, int *depth)
 {
-	char target[DIRSIZ];
+	char target[NNAME];
+	char namebuf[DIRSIZ];
 	struct inode *parent, *next;
 	int n, i;
 
@@ -47,16 +51,20 @@ static struct inode *follow_symlink(struct inode *link, int *depth)
 		fs_iput(link);
 		return 0;
 	}
-	n = fs_readi(link, target, 0, DIRSIZ - 1);
+	n = fs_readi(link, target, 0, sizeof(target) - 1);
 	if (n <= 0) {
 		fs_iput(link);
 		return 0;
 	}
 	target[n] = '\0';
+
+	/* 绝对路径：从根重新解析（可含多分量） */
 	if (target[0] == '/') {
 		fs_iput(link);
-		return 0;
+		return namex(target, 0, namebuf, 1);
 	}
+
+	/* 相对路径暂仅支持单分量（相对链接父目录） */
 	for (i = 0; target[i]; i++) {
 		if (target[i] == '/') {
 			fs_iput(link);
@@ -243,7 +251,7 @@ struct inode *fs_mknod(const char *path, short type,
 	struct inode *dp;
 	dev_t rdev;
 
-	if (type != T_CHAR && type != T_BLK)
+	if (type != T_CHAR && type != T_BLK && type != T_FIFO)
 		return 0;
 
 	dp = namex(path, 1, name, 1);
@@ -253,7 +261,7 @@ struct inode *fs_mknod(const char *path, short type,
 		fs_iput(dp);
 		return 0;
 	}
-	rdev = MKDEV(major, minor);
+	rdev = (type == T_FIFO) ? 0 : MKDEV(major, minor);
 	if (dp->i_op->mknod(dp, name, type, rdev) < 0) {
 		fs_iput(dp);
 		return 0;
@@ -513,5 +521,70 @@ int fs_rename(const char *oldpath, const char *newpath)
 	}
 	fs_iput(new_dir);
 	fs_iput(old_dir);
+	return 0;
+}
+
+/* access：教学版按 mode 位检查（进程视为 root/owner） */
+int fs_access(const char *path, int amode)
+{
+	struct inode *ip;
+	uint m;
+
+	ip = fs_namei(path);
+	if (!ip)
+		return -1;
+	if (amode == F_OK) {
+		fs_iput(ip);
+		return 0;
+	}
+	m = ip->mode;
+	fs_iput(ip);
+	if ((amode & R_OK) && !(m & 0444))
+		return -1;
+	if ((amode & W_OK) && !(m & 0222))
+		return -1;
+	if ((amode & X_OK) && !(m & 0111))
+		return -1;
+	return 0;
+}
+
+int fs_chmod(const char *path, uint mode)
+{
+	struct inode *ip;
+
+	ip = fs_namei(path);
+	if (!ip)
+		return -1;
+	ip->mode = mode & 07777;
+	fs_inode_touch(ip, 1, 0);	/* ctime via mtime touch */
+	fs_iput(ip);
+	return 0;
+}
+
+int fs_chown(const char *path, uint uid, uint gid)
+{
+	struct inode *ip;
+
+	ip = fs_namei(path);
+	if (!ip)
+		return -1;
+	ip->uid = uid;
+	ip->gid = gid;
+	fs_inode_touch(ip, 1, 0);
+	fs_iput(ip);
+	return 0;
+}
+
+int fs_utime(const char *path, uint atime, uint mtime)
+{
+	struct inode *ip;
+
+	ip = fs_namei(path);
+	if (!ip)
+		return -1;
+	ip->atime = atime;
+	ip->mtime = mtime;
+	ip->ctime = mtime;
+	fs_iput(ip);
 	return 0;
 }

@@ -1,5 +1,5 @@
 /*
- * touch：若不存在则创建空文件；已存在则打开并关闭（本系统暂无 utime）。
+ * touch：若不存在则创建空文件；已存在则更新时间戳（utime）。
  * 用法：touch <path>...
  */
 #include "user.h"
@@ -13,6 +13,13 @@ static int touch_one(const char *path)
 {
 	int fd;
 
+	if (access(path, F_OK) == 0) {
+		if (utime(path, 0) < 0) {
+			printf("touch: cannot touch '%s'\n", path);
+			return -1;
+		}
+		return 0;
+	}
 	fd = open(path, O_WRONLY | O_CREAT);
 	if (fd < 0) {
 		printf("touch: cannot touch '%s'\n", path);

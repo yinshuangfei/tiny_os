@@ -1,6 +1,8 @@
 /*
  * 系统调用号（内核 / 用户态共享）。
  * int 0x80 约定：eax=号，ebx..ebp=参数 0..5，返回值在 eax。
+ *
+ * 文件系统相关号对齐 Linux i386；本 OS 提供 POSIX 教学子集。
  */
 #ifndef __USER_SYSCALL_H__
 #define __USER_SYSCALL_H__
@@ -12,16 +14,22 @@
 #define SYS_open	5
 #define SYS_close	6
 #define SYS_waitpid	7
+#define SYS_creat	8	/* Linux i386 __NR_creat */
 #define SYS_link	9	/* Linux i386 __NR_link */
 #define SYS_unlink	10	/* Linux i386 __NR_unlink */
 #define SYS_execve	11
 #define SYS_chdir	12	/* Linux i386 __NR_chdir */
+#define SYS_mknod	14	/* Linux i386 __NR_mknod */
+#define SYS_chmod	15	/* Linux i386 __NR_chmod */
 #define SYS_stat	18	/* Linux i386 __NR_oldstat（与 fstat=28 同代） */
 #define SYS_lseek	19	/* Linux i386 __NR_lseek */
 #define SYS_getpid	20
 #define SYS_mount	21	/* Linux i386 __NR_mount */
 #define SYS_umount	22	/* Linux i386 __NR_umount */
 #define SYS_fstat	28	/* Linux i386 __NR_oldfstat */
+#define SYS_utime	30	/* Linux i386 __NR_utime */
+#define SYS_access	33	/* Linux i386 __NR_access */
+#define SYS_sync	36	/* Linux i386 __NR_sync */
 #define SYS_kill	37	/* Linux i386 __NR_kill */
 #define SYS_rename	38	/* Linux i386 __NR_rename */
 #define SYS_mkdir	39	/* Linux i386 __NR_mkdir */
@@ -32,12 +40,19 @@
 #define SYS_signal	48	/* Linux i386 __NR_signal */
 #define SYS_ioctl	54	/* Linux i386 __NR_ioctl */
 #define SYS_fcntl	55	/* Linux i386 __NR_fcntl */
+#define SYS_dup2	63	/* Linux i386 __NR_dup2 */
 #define SYS_symlink	83	/* Linux i386 __NR_symlink */
+#define SYS_lstat	84	/* Linux i386 __NR_oldlstat */
 #define SYS_readlink	85	/* Linux i386 __NR_readlink */
 #define SYS_munmap	91	/* Linux i386 __NR_munmap */
+#define SYS_truncate	92	/* Linux i386 __NR_truncate */
+#define SYS_ftruncate	93	/* Linux i386 __NR_ftruncate */
+#define SYS_fsync	118	/* Linux i386 __NR_fsync */
 #define SYS_sigreturn	119	/* Linux i386 __NR_sigreturn */
+#define SYS_fchdir	133	/* Linux i386 __NR_fchdir */
 #define SYS_flock	143	/* Linux i386 __NR_flock */
 #define SYS_nanosleep	162	/* Linux i386 __NR_nanosleep */
+#define SYS_chown	182	/* Linux i386 __NR_chown */
 #define SYS_getcwd	183	/* Linux i386 __NR_getcwd */
 #define SYS_mmap2	192	/* Linux i386 __NR_mmap2（offset 为页偏移） */
 #define SYS_getcpu	318	/* Linux i386 __NR_getcpu */
@@ -60,17 +75,39 @@ struct timespec {
 	unsigned int tv_nsec;
 };
 
+/* utime(2) 参数（times==NULL 时用当前时间） */
+struct utimbuf {
+	unsigned int actime;
+	unsigned int modtime;
+};
+
 /*
- * fstat 结果（字段名对齐 Linux struct stat 常用子集）。
- * st_mode 使用 S_IF* 文件类型位。
+ * fstat / stat / lstat 结果（字段名对齐 Linux struct stat 常用子集）。
+ * st_mode 使用 S_IF* 文件类型位，低位为权限（S_IRWXU 等）。
  */
 #define S_IFMT		00170000
 #define S_IFIFO		0010000
-#define S_IFDIR		0040000
 #define S_IFCHR		0020000
+#define S_IFDIR		0040000
 #define S_IFBLK		0060000
 #define S_IFREG		0100000
 #define S_IFLNK		0120000
+
+#define S_ISUID		04000
+#define S_ISGID		02000
+#define S_ISVTX		01000
+#define S_IRWXU		00700
+#define S_IRUSR		00400
+#define S_IWUSR		00200
+#define S_IXUSR		00100
+#define S_IRWXG		00070
+#define S_IRGRP		00040
+#define S_IWGRP		00020
+#define S_IXGRP		00010
+#define S_IRWXO		00007
+#define S_IROTH		00004
+#define S_IWOTH		00002
+#define S_IXOTH		00001
 
 #define S_ISFIFO(m)	(((m) & S_IFMT) == S_IFIFO)
 #define S_ISDIR(m)	(((m) & S_IFMT) == S_IFDIR)
@@ -81,8 +118,15 @@ struct timespec {
 
 struct stat {
 	unsigned short	st_mode;
+	unsigned short	st_nlink;
+	unsigned int	st_uid;
+	unsigned int	st_gid;
 	unsigned int	st_ino;
 	unsigned int	st_size;
+	unsigned int	st_rdev;
+	unsigned int	st_atime;
+	unsigned int	st_mtime;
+	unsigned int	st_ctime;
 };
 
 /* open flags */
@@ -96,6 +140,13 @@ struct stat {
 #define O_NONBLOCK	0x800	/* Linux O_NONBLOCK */
 #define O_EXCL		0x1000	/* 与 O_CREAT 合用（sem_open 等） */
 #define O_TRUNC		0x2000	/* 打开时截断为 0（> 重定向） */
+
+/* access(2) 模式位 */
+#define F_OK		0
+#define X_OK		1
+#define W_OK		2
+#define R_OK		4
+
 #define F_DUPFD		0
 #define F_GETFD		1
 #define F_SETFD		2
@@ -136,6 +187,11 @@ struct stat {
 #define IPC_RMID	0	/* destroy 标记 */
 
 #define SHM_RDONLY	010000	/* shmat：只读附着 */
+
+/* makedev / major / minor（教学简化：8+8） */
+#define makedev(ma, mi)	(((unsigned int)(ma) << 8) | ((unsigned int)(mi) & 0xff))
+#define major(dev)	(((unsigned int)(dev) >> 8) & 0xfff)
+#define minor(dev)	((unsigned int)(dev) & 0xff)
 #endif
 
 #endif
